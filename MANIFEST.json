@@ -1,0 +1,167 @@
+[
+  {
+    "path": "CHANGELOG.md",
+    "sha256": "87cc1132336259a4be027d111ee614efad204101ae4a8c7f5614a2cff8460590",
+    "bytes": 892
+  },
+  {
+    "path": "README.md",
+    "sha256": "6bf81c9a5ebed33439626bf96cd9b25286c66d87b6a3791a3fcc25be95a1ed8d",
+    "bytes": 3815
+  },
+  {
+    "path": "docs/IMPLEMENTATION_NOTES.md",
+    "sha256": "389f38b541e5d2c8ca3b81919cba4765ec8ba6f291870891bf8361e879206b30",
+    "bytes": 3099
+  },
+  {
+    "path": "docs/SECURITY_INVARIANTS.md",
+    "sha256": "f1510f3b5b11f3ac4baba05041df354b3294ec98a034a6953f13590ca67ecf3e",
+    "bytes": 1623
+  },
+  {
+    "path": "supabase/migrations/20260808000100_extensions.sql",
+    "sha256": "989a7662fb21902fec1ebfedc0ba6714edb7473516759f425658f121e42183a5",
+    "bytes": 756
+  },
+  {
+    "path": "supabase/migrations/20260808000200_users.sql",
+    "sha256": "6d9074c7aaeb03c7f49e5c36a9675645f215a71750ee69d5ce0214e3c27a67f2",
+    "bytes": 947
+  },
+  {
+    "path": "supabase/migrations/20260808000300_roles_permissions.sql",
+    "sha256": "ee1086a6932c4444576ea1eaf62a4ba684f7d7232a5437093ad1958131db65c1",
+    "bytes": 2102
+  },
+  {
+    "path": "supabase/migrations/20260808000400_projects.sql",
+    "sha256": "37a51ad3997168589b60c0940cd2b1e1f6a32f38a1cbc2f73891a25f67ce75e3",
+    "bytes": 983
+  },
+  {
+    "path": "supabase/migrations/20260808000500_project_memberships.sql",
+    "sha256": "9f7242fbea055030ac63b1e85e3f7e748cced1c0c75ea900abcda65546de8906",
+    "bytes": 1338
+  },
+  {
+    "path": "supabase/migrations/20260808000600_messages.sql",
+    "sha256": "8b15aa5709b146003e5786028b10ca99fac49457aa0d2ee1297b96bbdeadf5cc",
+    "bytes": 1002
+  },
+  {
+    "path": "supabase/migrations/20260808000700_message_versions.sql",
+    "sha256": "0294ae91410c23602df349c1ad27371a99fb95aae7d6983e3df6c581673c9c4c",
+    "bytes": 1265
+  },
+  {
+    "path": "supabase/migrations/20260808000800_message_support.sql",
+    "sha256": "19117121c8da56d2785d786fd8aa155f8372c40cfe6fd412c99ea6f90efb068d",
+    "bytes": 673
+  },
+  {
+    "path": "supabase/migrations/20260808000900_topics.sql",
+    "sha256": "3f32039bbaf99f2f29f51e36cccd56b83861a1a434f31b452ae5126a06394d20",
+    "bytes": 957
+  },
+  {
+    "path": "supabase/migrations/20260808001000_decisions.sql",
+    "sha256": "9eda1ccfb19adf8eb09572f4d6f51838728cb9633c340f92bcb9ec01896047f3",
+    "bytes": 1574
+  },
+  {
+    "path": "supabase/migrations/20260808001100_tasks.sql",
+    "sha256": "0034d39e644c200ffd5dbb4ee6c67fc3d8e4577420bfd11153da23b894c5e752",
+    "bytes": 1199
+  },
+  {
+    "path": "supabase/migrations/20260808001200_blockers.sql",
+    "sha256": "28fb44ce49ceaa7089586f1ac89919375e97350269072f7fcf044354cd95cfdc",
+    "bytes": 1224
+  },
+  {
+    "path": "supabase/migrations/20260808001300_milestones.sql",
+    "sha256": "89c997c43edac25bb6d21cf7819655d83da78c5b4911e47f58111e810314c9b5",
+    "bytes": 852
+  },
+  {
+    "path": "supabase/migrations/20260808001400_files.sql",
+    "sha256": "3fdeaf07aab894ddc34ce069a9f187a4d0e7eb2730060d07e0a9dcdc6c0506a7",
+    "bytes": 1249
+  },
+  {
+    "path": "supabase/migrations/20260808001500_entity_links.sql",
+    "sha256": "19040e73a093b7ab44d28c001cb4a499500c9b6efb69f2c21d0ff068ccc81d90",
+    "bytes": 508
+  },
+  {
+    "path": "supabase/migrations/20260808001600_source_links.sql",
+    "sha256": "e4cfd63f9eec890ca4e80496475317487f62e746c60e447ec10981940b93054a",
+    "bytes": 519
+  },
+  {
+    "path": "supabase/migrations/20260808001700_ai_runs.sql",
+    "sha256": "0e7c1e70c301c9790a1a981b7581e7bd4c2baaf1b99558d05032ce651a82fc92",
+    "bytes": 1412
+  },
+  {
+    "path": "supabase/migrations/20260808001800_ai_proposals.sql",
+    "sha256": "c4b2f22ae9e2c09577518f0f8615b586b04d7c91f1a3f03269099644e645c9ad",
+    "bytes": 976
+  },
+  {
+    "path": "supabase/migrations/20260808001900_alerts_notifications.sql",
+    "sha256": "cbe7266910732c194f8f6dfea2a5c5f1855e66d7a5bfc6b6600155803f092654",
+    "bytes": 1049
+  },
+  {
+    "path": "supabase/migrations/20260808002000_idempotency.sql",
+    "sha256": "021f0d3bbbdc3cb8be0e77cd63cbf9d2c76e74f0f369e3cf4d4fb66087be5576",
+    "bytes": 469
+  },
+  {
+    "path": "supabase/migrations/20260808002100_domain_events.sql",
+    "sha256": "a8796318722b2785f659bb253682301a6e057094466d20bbb277ac903761508a",
+    "bytes": 918
+  },
+  {
+    "path": "supabase/migrations/20260808002200_audit_events.sql",
+    "sha256": "05c28cca19f2c21874336738130fdfc97b61d9faa710ae86086f1d4f5a6a1871",
+    "bytes": 831
+  },
+  {
+    "path": "supabase/migrations/20260808002300_project_health.sql",
+    "sha256": "bf756f2652acfe57dd38b4e23cc93d4800365dc04777ff6a585d8102c25f37ab",
+    "bytes": 1657
+  },
+  {
+    "path": "supabase/migrations/20260808002400_security_helpers.sql",
+    "sha256": "e374145afe6bcef5da8646abd7e07b99ce12fa3e4c25b4611e73c7672aee9eba",
+    "bytes": 5404
+  },
+  {
+    "path": "supabase/migrations/20260808002500_indexes.sql",
+    "sha256": "0bfc1fb44d1a17478a151e77228b71eb90203bec553bfaefedd025ab29f4f63d",
+    "bytes": 4338
+  },
+  {
+    "path": "supabase/migrations/20260808002600_rls.sql",
+    "sha256": "cf27e6ec5b8b24c09ae58a209cb864a1cd93346b0604fa49880916d2f8e71953",
+    "bytes": 7472
+  },
+  {
+    "path": "supabase/migrations/20260808002700_seed_roles_permissions.sql",
+    "sha256": "55b81db5250699614dc2de0b9aa59a3e6507ea628be918af69965d5ecc3329c2",
+    "bytes": 7839
+  },
+  {
+    "path": "tests/rls_manual_test.md",
+    "sha256": "74892efd877229424197bcc987a74bccca48ddb799209ac41aeda353f3ea9aee",
+    "bytes": 963
+  },
+  {
+    "path": "tests/schema_smoke.sql",
+    "sha256": "816a43ff6f996ca6e0d282fa25c8723e682a7f3b36de18817d13ef76eb9d83ac",
+    "bytes": 1587
+  }
+]
