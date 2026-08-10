@@ -16,6 +16,18 @@ All notable changes to Cadence will be documented in this file.
 - Added standard API success and error response envelopes.
 - Added API health endpoint.
 - Defined Team Agent and Tasks module ownership boundaries.
+- Added Supabase authentication adapter.
+- Added bearer JWT validation for protected API routes.
+- Added Cadence identity resolution for authenticated users.
+- Added disabled-user and unprovisioned-user rejection.
+- Added GET /api/v1/me.
+- Added authenticated RequestContext creation.
+- Added request and correlation ID handling for authenticated API calls.
+
+### Verified
+
+- Manually verified authentication scenarios for missing, invalid,
+  unprovisioned, disabled and active identities.
 
 ### Architecture
 

@@ -47,8 +47,6 @@ Completed:
 
 Not yet implemented:
 
-- Authentication.
-- `/me` endpoint.
 - Database connectivity.
 - RBAC enforcement.
 - Project Workspace read model.
@@ -130,13 +128,49 @@ TeamAgentService.confirmProposal()
 
 Team Agent must never write directly to Tasks persistence.
 
-## Next Implementation Checkpoint
+## Completed
 
-VS001-02 — Authentication + `/me`
+- Supabase authentication adapter implemented.
+- Bearer JWT validation implemented.
+- Cadence identity resolution implemented.
+- Disabled and unprovisioned identities rejected.
+- Authenticated RequestContext implemented.
+- GET /api/v1/me implemented and manually verified.
 
 Acceptance test:
 
 A valid JWT resolves to a Cadence user.
+
+## Authentication Flow
+
+Supabase Auth authenticates v0.1 users.
+
+Supabase Auth user ID
+    ↓
+users.external_user_id
+    ↓
+Cadence user ID
+    ↓
+project membership / RBAC
+
+Authentication is intentionally isolated from Cadence
+project authorization so the authentication provider
+can later be replaced with Microsoft Entra ID.
+
+External authentication failures return the same
+UNAUTHENTICATED response whether the token is invalid,
+the Cadence user is missing, or the Cadence user is disabled.
+
+Internal application logs retain the specific failure reason
+for troubleshooting.
+
+## Next Implementation Checkpoint
+
+VS001-03 — Project Workspace Read Model
+
+Acceptance test:
+
+An authorised project member can load the project summary.
 
 ## Known Issues
 

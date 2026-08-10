@@ -11,7 +11,5 @@ export interface RequestContext {
     | "api"
     | "system";
 
-  identityProvider:
-    | "local"
-    | "entra";
+  identityProvider: string;
 }
