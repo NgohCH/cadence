@@ -1,5 +1,35 @@
 # Cadence Database Migration Package Changelog
 
+# Changelog
+
+All notable changes to Cadence will be documented in this file.
+
+## Unreleased ## 0.1.0 - 2026-08-10
+
+### Added
+
+- Started Vertical Slice VS-001 covering the discussion-to-task workflow.
+- Added initial modular API application structure.
+- Added shared RequestContext definition.
+- Added request and correlation ID middleware.
+- Added shared domain event structure with correlation and causation IDs.
+- Added standard API success and error response envelopes.
+- Added API health endpoint.
+- Defined Team Agent and Tasks module ownership boundaries.
+
+### Architecture
+
+- Team Agent must not create or modify authoritative task state directly.
+- Confirmed task proposals must invoke TasksService.
+- Tasks module remains responsible for task creation, assignment permissions, persistence, provenance, and task domain events.
+- Request IDs identify individual HTTP requests.
+- Correlation IDs identify the complete business journey across requests and events.
+- Causation IDs identify the event that directly caused another event.
+
+### Documentation
+
+- Standardised implementation permission name on `agent.approve` to align with the v0.1 API contract.
+
 ## 0.1.0 - 2026-08-08
 
 ### Added
