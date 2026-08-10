@@ -1,13 +1,15 @@
 -- Cadence v0.1
 -- Migration: versioned AI prompts and AI run provenance
 
+create extension if not exists pgcrypto with schema extensions;
+
 create table public.ai_prompt_versions (
   id uuid primary key default gen_random_uuid(),
   prompt_key text not null,
   version text not null,
   template_text text not null,
   content_sha256 text generated always as (
-    encode(digest(template_text, 'sha256'), 'hex')
+    encode(extensions.digest(template_text, 'sha256'), 'hex')
   ) stored,
   is_active boolean not null default false,
   notes text,
