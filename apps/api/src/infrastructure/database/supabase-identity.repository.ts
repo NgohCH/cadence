@@ -22,7 +22,7 @@ export class SupabaseIdentityRepository
         status,
         identity_provider
       `)
-      .eq("external_user_id", authSubject)
+      .eq("auth_user_id", authSubject)
       .maybeSingle();
 
     if (error) {

@@ -98,10 +98,18 @@ function logAuthenticationFailure(
   requestId: string,
   correlationId: string
 ): void {
-  const reason =
-    error instanceof Error
-      ? error.message
-      : "UNKNOWN_AUTHENTICATION_ERROR";
+  let reason = "UNKNOWN_AUTHENTICATION_ERROR";
+
+  if (error instanceof Error) {
+    reason = error.message;
+  } else if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    reason = error.message;
+  }
 
   console.warn("Authentication failed", {
     reason,
