@@ -17,6 +17,7 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
   * Human confirmation
   * Task creation
   * Audit trail
+
 * Added initial modular API application structure.
 * Added shared `RequestContext` definition.
 * Added request ID generation and middleware.
@@ -25,6 +26,7 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 * Added standard API success and error response envelopes.
 * Added API health endpoint.
 * Defined Team Agent and Tasks module ownership boundaries.
+
 * Added Supabase authentication adapter.
 * Added bearer JWT validation for protected API routes.
 * Added Cadence identity resolution for authenticated users.
@@ -38,12 +40,47 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 * Updated API development and start commands to load `.env` through Node.
 * Improved authentication failure logging so infrastructure errors retain useful diagnostic messages without exposing internal details to API clients.
 
+* Added project-scoped RBAC types, repository contract, and service.
+* Added Supabase-backed project membership, role, and permission resolution.
+* Added Project Workspace domain/read-model types.
+* Added Project Workspace repository contract.
+* Added Project Workspace service.
+* Added Supabase-backed Project Workspace read repository.
+* Added Project Workspace API route:
+
+  `GET /api/v1/projects/{projectId}/summary`
+
+* Added server-side `project.view` authorization for Project Workspace access.
+* Added active project-membership enforcement for Project Workspace access.
+* Added Project Workspace aggregation of:
+
+  * project metadata,
+  * current Project Health,
+  * logged-in user's pending task count,
+  * logged-in user's overdue task count,
+  * active blocker count,
+  * next milestone,
+  * active project/user alerts.
+
+* Added migration:
+
+  `20260812201900_project_health_backfill.sql`
+
+  to establish missing current Project Health baseline rows for existing projects.
+
 ### Changed
 
 * Corrected Supabase identity resolution in `SupabaseIdentityRepository`.
 * Changed the Supabase-to-Cadence identity lookup from `public.users.external_user_id` to `public.users.auth_user_id`.
 * Updated local API startup configuration to use Node's environment-file support.
 * Updated development startup to use Node watch mode with `tsx` for TypeScript execution.
+
+* Integrated project membership and RBAC authorization into the authenticated API request flow.
+* Reused the authenticated `RequestContext.actorUserId` for project-scoped authorization rather than accepting user identity from client input.
+* Reused the server-side Supabase database client across identity, RBAC, and Project Workspace repositories.
+* Corrected the Project Workspace repository to read current health from `public.project_health` rather than incorrectly expecting `health_status` on `public.projects`.
+* Aligned the Project Workspace project-owner read type with the live `projects.owner_user_id NOT NULL` database schema.
+* Removed temporary Project Workspace diagnostic logging after successful live verification.
 
 ### Verified
 
@@ -64,6 +101,32 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 * Verified `.env` is excluded from Git.
 * Verified `.env.example` remains available for source control.
 * Verified Supabase secret credentials are not stored in committed configuration.
+
+* Verified Project Health backfill migration was applied to the remote Supabase database.
+* Verified existing Alice Project and Bob Project both have current Project Health state:
+
+  `on_track`
+
+  with source:
+
+  `system`
+
+* Verified an authenticated active project member with `project.view` can retrieve the Project Workspace summary.
+* Verified Alice can retrieve Alice Project through `GET /api/v1/projects/{projectId}/summary`.
+* Verified the Project Workspace response includes project lifecycle state, Project Health, task counts, blocker count, next milestone, alerts, request ID, and correlation ID.
+* Verified Alice Project currently returns one pending task and zero overdue tasks for Alice.
+* Verified an authenticated user without active membership in the requested project receives:
+
+  `404 NOT_FOUND`
+
+* Verified the `404 NOT_FOUND` behaviour intentionally avoids disclosing project existence to a non-member.
+* Verified an authenticated active project member without `project.view` receives:
+
+  `403 PERMISSION_DENIED`
+
+* Verified the `403 PERMISSION_DENIED` path using a temporary isolated test role without modifying normal system-role permissions.
+* Verified the temporary RBAC test fixture was removed and Bob's Alice Project membership was restored to the normal `VIEWER` role.
+* Verified the Project Workspace endpoint continues to return HTTP `200` after removal of temporary diagnostic logging.
 * Verified TypeScript type checking passes with `tsc --noEmit`.
 
 ### Architecture
@@ -89,6 +152,30 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 * Supabase secret keys remain server-side only and must never be committed to Git or exposed to browser clients.
 
 * Environment-specific credentials must remain outside source-controlled files.
+
+* * Project-scoped authorization now follows:
+
+  `authenticated Cadence identity → active project membership → project role → permission codes → project resource`
+
+* Project membership and permissions are resolved server-side.
+
+* Client-supplied project IDs are not trusted as authorization evidence.
+
+* A missing active membership is treated externally as `404 NOT_FOUND` for protected project resources.
+
+* An active membership without the required permission is treated as `403 PERMISSION_DENIED`.
+
+* Permission codes remain the authorization primitive; endpoint logic does not depend directly on role names.
+
+* Project Workspace authorization requires `project.view`.
+
+* Project Health remains independently stored in `public.project_health`.
+
+* Project Workspace may aggregate Project Health for read purposes without moving ownership of health state into the Projects module.
+
+* Missing current Project Health is treated as a data-integrity failure rather than silently defaulting application responses to `on_track`.
+
+* Existing projects were backfilled with the schema-defined `on_track` current-health baseline without manufacturing historical health-change events.
 
 * Team Agent must not create or modify authoritative task state directly.
 
@@ -120,9 +207,16 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
   * invalid tokens,
   * unmapped Cadence users,
   * disabled Cadence users.
+
 * Internal logs retain the specific authentication failure reason for troubleshooting without disclosing that information to API clients.
 * Server-side Supabase access uses the Supabase secret API key.
 * Authentication token verification uses the configured Supabase authentication client.
+* Authentication does not imply project authorization.
+* Project membership is checked before protected Project Workspace data is returned.
+* `project.view` is enforced server-side.
+* Project resources are intentionally hidden with `404 NOT_FOUND` when no active project membership exists.
+* Active project members lacking the required permission receive `403 PERMISSION_DENIED`.
+* Normal system-role permissions were not modified during negative authorization testing.
 
 ### Documentation
 
@@ -130,6 +224,7 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 * Maintained module ownership documentation for VS-001.
 * Maintained `HANDOFF.md` as the operational engineering handoff record.
 * Maintained `CHANGELOG.md` as the traceable record of implementation and architecture changes.
+* Recorded VS001-03 Project Workspace architecture, authorization behaviour, Project Health correction, migration, and verification results.
 
 ### Current VS-001 Status
 
@@ -158,14 +253,27 @@ Completed:
 * Supabase-to-Cadence identity linkage verification.
 * Local API environment configuration.
 * Git protection of local secrets.
+* VS001-03 Project Workspace read model.
+* Project-scoped API membership enforcement.
+* Project-scoped API RBAC enforcement.
+* `project.view` permission enforcement.
+* `GET /api/v1/projects/{projectId}/summary`.
+* Project Health integration into the workspace read model.
+* Project Health baseline backfill for existing projects.
+* Project Workspace `200 OK` happy-path verification.
+* Cross-project `404 NOT_FOUND` isolation verification.
+* Same-project `403 PERMISSION_DENIED` verification.
+* Request and correlation tracing on Project Workspace responses.
 * TypeScript type checking.
 
 Next:
 
-* Complete VS001-02 documentation and source-control checkpoint.
-* Begin VS001-03 Project Workspace read model.
-* Implement `GET /projects/{projectId}/summary`.
-* Introduce project membership and `project.view` authorization into the API request flow.
+* Update `HANDOFF.md` with the completed VS001-03 implementation state.
+* Inspect the VS001-03 Git diff.
+* Confirm no secrets or local environment files are staged.
+* Create the VS001-03 source-control checkpoint.
+* Update the draft pull request if required.
+* Continue VS-001 into the Discussion portion of the vertical slice.
 
 ---
 
