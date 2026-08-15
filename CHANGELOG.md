@@ -68,6 +68,48 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
   to establish missing current Project Health baseline rows for existing projects.
 
+* Added the first implemented Discussion command:
+
+  `DiscussionService.postMessage()`
+
+* Added Discussion repository contract and message types.
+* Added Supabase-backed Discussion repository.
+* Added Discussion HTTP route:
+
+  `POST /api/v1/projects/{projectId}/messages`
+
+* Added server-side `message.create` authorization for posting project messages.
+* Added Discussion validation for:
+
+  * required message content,
+  * maximum 20,000-character message content,
+  * project UUID format,
+  * optional thread-parent UUID format,
+  * thread-parent existence,
+  * thread-parent project ownership,
+  * deleted thread-parent rejection.
+
+* Added migration:
+
+  `20260813000100_post_discussion_message.sql`
+
+* Added PostgreSQL function:
+
+  `public.post_discussion_message(...)`
+
+  to atomically persist:
+
+  * the message,
+  * immutable message version 1,
+  * `MessageCreated.v1` domain event.
+
+* Added defence-in-depth `message.create` authorization inside the Discussion persistence function.
+* Added service-role-only execution controls for the Discussion write function.
+* Added request correlation propagation into `MessageCreated.v1`.
+* Added Node built-in test runner integration for the API.
+* Added `npm test` API test command.
+* Added six executable Discussion service unit tests.
+
 ### Changed
 
 * Corrected Supabase identity resolution in `SupabaseIdentityRepository`.
@@ -77,10 +119,21 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 * Integrated project membership and RBAC authorization into the authenticated API request flow.
 * Reused the authenticated `RequestContext.actorUserId` for project-scoped authorization rather than accepting user identity from client input.
-* Reused the server-side Supabase database client across identity, RBAC, and Project Workspace repositories.
+* Reused the server-side Supabase database client across identity, RBAC, Project Workspace, and Discussion repositories.
 * Corrected the Project Workspace repository to read current health from `public.project_health` rather than incorrectly expecting `health_status` on `public.projects`.
 * Aligned the Project Workspace project-owner read type with the live `projects.owner_user_id NOT NULL` database schema.
 * Removed temporary Project Workspace diagnostic logging after successful live verification.
+
+* Extended the authenticated API server composition to include the Discussion module.
+* Established Discussion write flow as:
+
+  `Route -> DiscussionService -> RBAC -> DiscussionRepository -> PostgreSQL RPC`
+
+* Established human-originated Discussion messages as root commands with:
+
+  `causation_id = null`
+
+* Standardised Discussion message content by trimming leading and trailing whitespace before persistence.
 
 ### Verified
 
@@ -127,6 +180,64 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 * Verified the `403 PERMISSION_DENIED` path using a temporary isolated test role without modifying normal system-role permissions.
 * Verified the temporary RBAC test fixture was removed and Bob's Alice Project membership was restored to the normal `VIEWER` role.
 * Verified the Project Workspace endpoint continues to return HTTP `200` after removal of temporary diagnostic logging.
+
+* Verified migration `20260813000100_post_discussion_message.sql` was applied successfully to the linked remote Supabase database.
+* Verified an authenticated authorised user can post a Discussion message through:
+
+  `POST /api/v1/projects/{projectId}/messages`
+
+* Verified successful Discussion message creation returns HTTP `201`.
+* Verified successful message creation persists exactly one message with:
+
+  * `author_type = human`,
+  * `current_version = 1`,
+  * expected authenticated Cadence author,
+  * expected project,
+  * expected content.
+
+* Verified successful message creation persists exactly one immutable message version with:
+
+  * `version_number = 1`,
+  * matching message ID,
+  * matching content,
+  * authenticated Cadence user as editor,
+  * `editor_type = human`.
+
+* Verified successful message creation persists exactly one domain event with:
+
+  * `event_type = MessageCreated`,
+  * `event_version = 1`,
+  * `aggregate_type = message`,
+  * aggregate ID matching the new message,
+  * expected project ID,
+  * authenticated Cadence user as actor,
+  * `actor_type = human`,
+  * `status = pending`.
+
+* Verified the API response correlation ID matches `domain_events.correlation_id`.
+* Verified the human-originated message event stores:
+
+  `causation_id = null`
+
+* Verified whitespace-only Discussion content returns:
+
+  `400 VALIDATION_ERROR`
+
+* Verified an invalid/non-existent thread parent returns:
+
+  `400 VALIDATION_ERROR`
+
+* Verified invalid thread-parent processing creates no partial message row.
+* Verified an active project member using the normal `VIEWER` role receives:
+
+  `403 PERMISSION_DENIED`
+
+  when attempting to post a Discussion message because `VIEWER` does not contain `message.create`.
+
+* Verified the denied Discussion operation creates no message.
+* Verified the temporary Viewer authentication, Cadence user, and project-membership fixture used for the negative authorization test was removed successfully.
+* Verified six Discussion service unit tests pass.
+* Verified the complete API test command reports zero failures.
 * Verified TypeScript type checking passes with `tsc --noEmit`.
 
 ### Architecture
@@ -139,7 +250,7 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 * Supabase v0.1 authentication maps:
 
-  `auth.users.id` → `public.users.auth_user_id` → Cadence user
+  `auth.users.id -> public.users.auth_user_id -> Cadence user`
 
 * `public.users.external_user_id` is not currently used for Supabase identity resolution.
 
@@ -153,9 +264,9 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 * Environment-specific credentials must remain outside source-controlled files.
 
-* * Project-scoped authorization now follows:
+* Project-scoped authorization follows:
 
-  `authenticated Cadence identity → active project membership → project role → permission codes → project resource`
+  `authenticated Cadence identity -> active project membership -> project role -> permission codes -> project resource`
 
 * Project membership and permissions are resolved server-side.
 
@@ -169,6 +280,8 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 * Project Workspace authorization requires `project.view`.
 
+* Discussion message creation requires `message.create`.
+
 * Project Health remains independently stored in `public.project_health`.
 
 * Project Workspace may aggregate Project Health for read purposes without moving ownership of health state into the Projects module.
@@ -176,6 +289,39 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 * Missing current Project Health is treated as a data-integrity failure rather than silently defaulting application responses to `on_track`.
 
 * Existing projects were backfilled with the schema-defined `on_track` current-health baseline without manufacturing historical health-change events.
+
+* Discussion owns authoritative message state and immutable message-version history.
+
+* Discussion message creation follows:
+
+  `authenticated request -> RequestContext -> DiscussionService -> RBAC -> DiscussionRepository -> Supabase/PostgreSQL`
+
+* Discussion application code depends on the repository abstraction rather than directly on Supabase.
+
+* The concrete Supabase Discussion adapter remains under infrastructure rather than inside the Discussion domain module.
+
+* Message creation persists message state, immutable version history, and `MessageCreated.v1` atomically in one PostgreSQL transaction.
+
+* The Discussion write RPC is an internal persistence mechanism and not a public application interface.
+
+* Discussion write RPC execution is restricted to `service_role`.
+
+* Application-level RBAC and database-level permission enforcement are both retained for defence in depth.
+
+* `MessageCreated.v1` is represented by:
+
+  * `event_type = MessageCreated`
+  * `event_version = 1`
+
+* Human HTTP message creation is currently a root command and therefore uses:
+
+  `causation_id = null`
+
+* Team Agent must not be called synchronously from the Discussion write transaction.
+
+* Team Agent may later consume `MessageCreated.v1` through the domain-event/outbox boundary.
+
+* A Team Agent failure must not prevent humans from posting Discussion messages.
 
 * Team Agent must not create or modify authoritative task state directly.
 
@@ -214,9 +360,15 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 * Authentication does not imply project authorization.
 * Project membership is checked before protected Project Workspace data is returned.
 * `project.view` is enforced server-side.
+* `message.create` is enforced server-side for Discussion writes.
 * Project resources are intentionally hidden with `404 NOT_FOUND` when no active project membership exists.
 * Active project members lacking the required permission receive `403 PERMISSION_DENIED`.
 * Normal system-role permissions were not modified during negative authorization testing.
+* The Discussion write function is restricted to `service_role`.
+* The Discussion write function uses `SECURITY DEFINER` with a fixed `search_path`.
+* The Discussion write function performs its own `message.create` permission check before persistence.
+* Browser or client applications must not invoke the Discussion write RPC directly.
+* Discussion negative authorization testing used an isolated temporary user fixture and did not weaken the normal `VIEWER` role.
 
 ### Documentation
 
@@ -225,6 +377,8 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 * Maintained `HANDOFF.md` as the operational engineering handoff record.
 * Maintained `CHANGELOG.md` as the traceable record of implementation and architecture changes.
 * Recorded VS001-03 Project Workspace architecture, authorization behaviour, Project Health correction, migration, and verification results.
+* Expanded the Discussion module README to document VS001-04 ownership, interfaces, validation, errors, persistence, security, correlation, testing, verification, known limitations, and module boundaries.
+* Recorded VS001-04 Discussion message-creation implementation, migration, architecture decisions, security controls, and verification results.
 
 ### Current VS-001 Status
 
@@ -264,16 +418,52 @@ Completed:
 * Cross-project `404 NOT_FOUND` isolation verification.
 * Same-project `403 PERMISSION_DENIED` verification.
 * Request and correlation tracing on Project Workspace responses.
+* VS001-04 Discussion message creation.
+* `POST /api/v1/projects/{projectId}/messages`.
+* `message.create` permission enforcement.
+* Discussion repository abstraction.
+* Supabase Discussion persistence adapter.
+* Atomic Message + Message Version + `MessageCreated.v1` persistence.
+* Discussion correlation-ID propagation.
+* Discussion content validation.
+* Discussion thread-parent validation.
+* Discussion `400 VALIDATION_ERROR` verification.
+* Discussion `403 PERMISSION_DENIED` verification.
+* Discussion rollback/no-partial-write verification.
+* Six Discussion service unit tests.
+* API-wide `npm test` command.
 * TypeScript type checking.
+
+In progress:
+
+* Complete VS001-04 engineering handoff documentation.
+* Inspect the complete VS001-04 Git diff.
+* Confirm no secrets or local environment files are staged.
+* Create the VS001-04 source-control checkpoint.
+* Push the VS001-04 checkpoint to `feature/vs-001`.
 
 Next:
 
-* Update `HANDOFF.md` with the completed VS001-03 implementation state.
-* Inspect the VS001-03 Git diff.
-* Confirm no secrets or local environment files are staged.
-* Create the VS001-03 source-control checkpoint.
-* Update the draft pull request if required.
-* Continue VS-001 into the Discussion portion of the vertical slice.
+* Continue VS-001 from the committed Discussion message-creation boundary.
+* Begin the Team Agent task-proposal portion of the vertical slice.
+* Consume `MessageCreated.v1` through the event boundary rather than coupling Team Agent directly to the Discussion write path.
+
+### Known Limitations / Deferred Work
+
+* Discussion message listing is not yet implemented.
+* Individual Discussion message retrieval is not yet implemented.
+* Discussion message-history retrieval is not yet implemented.
+* Discussion editing and deletion are not yet implemented.
+* Discussion reactions are not yet implemented.
+* Discussion mentions are not yet implemented.
+* Discussion file-link handling is not yet implemented.
+* `mention_user_ids` and `file_ids` from the broader API contract are not yet implemented by VS001-04.
+* Discussion command idempotency is not yet implemented.
+* Automatic retries of state-changing Discussion commands should not be introduced until idempotency is implemented.
+* Team Agent consumption of `MessageCreated.v1` is not yet implemented.
+* Pending domain-event processing is not yet implemented.
+* Discussion-specific audit processing is not yet implemented.
+* Several module `*.test.ts` files remain empty placeholders; Node counts those files as successful test entries even though they contain no substantive assertions.
 
 ---
 

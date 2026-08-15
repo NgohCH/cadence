@@ -8,6 +8,7 @@ import { SupabaseAuthProvider } from "./infrastructure/auth/supabase-auth-provid
 import { SupabaseIdentityRepository } from "./infrastructure/database/supabase-identity.repository";
 import { SupabaseRbacRepository } from "./infrastructure/database/supabase-rbac.repository";
 import { SupabaseProjectsRepository } from "./infrastructure/database/supabase-projects.repository";
+import { SupabaseDiscussionRepository } from "./infrastructure/database/supabase-discussion.repository";
 
 import { createAuthenticateMiddleware } from "./middleware/authenticate";
 import { requestTraceMiddleware } from "./middleware/request-trace.middleware";
@@ -19,6 +20,9 @@ import { RbacService } from "./modules/rbac/rbac.service";
 
 import { ProjectsService } from "./modules/projects/projects.service";
 import { createProjectsRouter } from "./modules/projects/projects.routes";
+
+import { DiscussionService } from "./modules/discussion/discussion.service";
+import { createDiscussionRouter } from "./modules/discussion/discussion.routes";
 
 const app = express();
 
@@ -87,6 +91,11 @@ const projectsRepository =
     databaseClient
   );
 
+const discussionRepository =
+  new SupabaseDiscussionRepository(
+    databaseClient
+  );
+
 /*
  * Application services
  */
@@ -105,6 +114,12 @@ const projectsService =
   new ProjectsService(
     rbacService,
     projectsRepository
+  );
+
+const discussionService =
+  new DiscussionService(
+    rbacService,
+    discussionRepository
   );
 
 const authenticate =
@@ -153,6 +168,9 @@ app.use(
   createIdentityRouter(),
   createProjectsRouter(
     projectsService
+  ),
+  createDiscussionRouter(
+    discussionService
   )
 );
 

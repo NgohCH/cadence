@@ -28,12 +28,11 @@ Status:
 
 Current checkpoint:
 
-**VS001-03 Project Workspace Read Model implementation and manual verification complete. Documentation and source-control checkpoint in progress.**
+**VS001-04 Discussion Message Creation implementation, live verification, automated tests, and documentation complete. Source-control checkpoint in progress.**
 
-Next implementation area after the VS001-03 source-control checkpoint:
+Next implementation area after the VS001-04 source-control checkpoint:
 
-**Discussion portion of VS-001**
-
+**Team Agent task-proposal portion of VS-001, beginning with asynchronous consumption of `MessageCreated.v1`.**
 ---
 
 # VS-001 Objective
@@ -1846,12 +1845,18 @@ SupabaseAuthProvider
 SupabaseIdentityRepository
 SupabaseRbacRepository
 SupabaseProjectsRepository
+SupabaseDiscussionRepository
+
 IdentityService
 RbacService
 ProjectsService
+DiscussionService
+
 authentication middleware
+
 identity router
 projects router
+discussion router
 ```
 
 A shared server-side Supabase database client is used for backend database repositories.
@@ -1862,11 +1867,27 @@ Protected API routes are mounted under:
 /api/v1
 ```
 
-Authentication middleware executes before the protected Identity and Projects route handlers.
+Authentication middleware executes before protected Identity, Projects, and Discussion route handlers.
+
+The current protected Discussion endpoint is:
+
+```text
+POST /api/v1/projects/{projectId}/messages
+```
+
+Server composition remains explicit in `src/server.ts`.
+
+The Discussion module depends on the `DiscussionRepository` abstraction rather than directly on Supabase.
+
+The concrete Supabase persistence adapter remains under:
+
+```text
+src/infrastructure/database
+```
 
 This composition should remain explicit and easy to trace.
 
-Avoid introducing hidden dependency resolution or implicit cross-module wiring without a clear architectural reason.
+Avoid introducing hidden dependency resolution, service locators, or implicit cross-module wiring without a clear architectural reason.
 
 ---
 
@@ -1980,6 +2001,274 @@ As those modules gain dedicated application services, maintain the established o
 
 ---
 
+# VS001-04 Discussion Message Creation
+
+VS001-04 implements the first authoritative Discussion write through the Cadence API.
+
+Implemented application command:
+
+```text
+DiscussionService.postMessage()
+```
+
+HTTP endpoint:
+
+```text
+POST /api/v1/projects/{projectId}/messages
+```
+
+Required permission:
+
+```text
+message.create
+```
+
+## VS001-04 Request Flow
+
+```text
+authenticated HTTP request
+  ->
+authentication middleware
+  ->
+RequestContext
+  ->
+Discussion route
+  ->
+DiscussionService.postMessage()
+  ->
+RbacService.getProjectAccess()
+  ->
+active project membership
+  ->
+message.create
+  ->
+DiscussionRepository.createMessage()
+  ->
+SupabaseDiscussionRepository
+  ->
+public.post_discussion_message(...)
+  ->
+PostgreSQL transaction
+```
+
+The route does not own persistence logic.
+
+The Discussion service depends on the `DiscussionRepository` abstraction rather than directly on Supabase.
+
+## Implementation Files
+
+```text
+apps/api/src/modules/discussion/
+  discussion.errors.ts
+  discussion.repository.ts
+  discussion.routes.ts
+  discussion.service.ts
+  discussion.test.ts
+  discussion.types.ts
+  README.md
+
+apps/api/src/infrastructure/database/
+  supabase-discussion.repository.ts
+
+supabase/migrations/
+  20260813000100_post_discussion_message.sql
+```
+
+## Atomic Persistence
+
+`public.post_discussion_message(...)` atomically persists:
+
+```text
+messages
+  +
+message_versions version 1
+  +
+MessageCreated.v1 domain event
+```
+
+`MessageCreated.v1` is stored as:
+
+```text
+event_type = MessageCreated
+event_version = 1
+aggregate_type = message
+aggregate_id = new message ID
+status = pending
+```
+
+All writes occur in one PostgreSQL transaction.
+
+If validation, authorization, message creation, version creation, or event creation fails, the transaction must not leave a partial Discussion message.
+
+## Authorization
+
+Application authorization follows:
+
+```text
+authenticated Cadence identity
+  ->
+active project membership
+  ->
+project role
+  ->
+permission codes
+  ->
+message.create
+```
+
+An active project member without `message.create` receives `403 PERMISSION_DENIED`.
+
+Authorization remains based on permission codes rather than hard-coded role names.
+
+## Defence in Depth
+
+The PostgreSQL function performs a second `message.create` permission check immediately before persistence.
+
+This supplements application-service RBAC rather than replacing it.
+
+The write function is:
+
+```text
+SECURITY DEFINER
+search_path = public, pg_temp
+```
+
+Execution is revoked from:
+
+```text
+public
+anon
+authenticated
+```
+
+and granted only to:
+
+```text
+service_role
+```
+
+Browser clients must not invoke the Discussion persistence RPC directly.
+
+## Validation
+
+VS001-04 validates:
+
+* content must be supplied as a string at the HTTP boundary,
+* trimmed content must not be empty,
+* content must not exceed 20,000 characters,
+* project IDs must be valid UUIDs,
+* optional thread-parent IDs must be valid UUIDs,
+* a supplied thread parent must exist,
+* the parent must belong to the same project,
+* a deleted message cannot be used as a thread parent.
+
+Content is trimmed before persistence.
+
+## Correlation and Causation
+
+Correlation flows through:
+
+```text
+HTTP request
+  ->
+RequestContext.correlationId
+  ->
+DiscussionService
+  ->
+DiscussionRepository
+  ->
+post_discussion_message(...)
+  ->
+domain_events.correlation_id
+```
+
+Live verification confirmed that the API response correlation ID matched the resulting `MessageCreated.v1` event correlation ID.
+
+For the current human-originated HTTP command:
+
+```text
+causation_id = null
+```
+
+## Team Agent Boundary
+
+Discussion message creation does not synchronously call Team Agent.
+
+The intended continuation is:
+
+```text
+Discussion transaction commits
+  ->
+MessageCreated.v1 remains pending
+  ->
+event processing
+  ->
+Team Agent consumes MessageCreated.v1
+  ->
+Team Agent may produce a task proposal
+```
+
+A downstream Team Agent failure must not prevent humans from posting Discussion messages.
+
+## VS001-04 Verification
+
+Live verification confirmed:
+
+* authorised message creation returns HTTP `201`,
+* one message row is created,
+* one immutable version-1 row is created,
+* one `MessageCreated.v1` event is created,
+* message author, version editor, and event actor match the authenticated Cadence user,
+* response and event correlation IDs match,
+* whitespace-only content returns `400 VALIDATION_ERROR`,
+* an invalid thread parent returns `400 VALIDATION_ERROR`,
+* invalid operations leave no partial message row,
+* a normal VIEWER lacking `message.create` receives `403 PERMISSION_DENIED`,
+* the denied operation persists no message,
+* the temporary Viewer fixture was removed after verification.
+
+## Automated Tests
+
+VS001-04 adds six substantive Discussion service unit tests.
+
+Run:
+
+```powershell
+npm run typecheck
+npm test
+```
+
+Verified result:
+
+```text
+Discussion tests: 6 passed
+Discussion tests: 0 failed
+```
+
+The full Node test command currently reports 12 successful entries, but several other module test files remain empty placeholders and must not be treated as substantive automated coverage.
+
+## Current Limitations
+
+VS001-04 does not yet implement:
+
+* message listing,
+* individual message retrieval,
+* message-history retrieval,
+* message editing or deletion,
+* reactions,
+* mentions,
+* file-link handling,
+* Team Agent event consumption,
+* pending domain-event processing,
+* Discussion-specific audit processing,
+* message-command idempotency.
+
+The broader API contract includes `mention_user_ids` and `file_ids`, but VS001-04 does not yet implement those capabilities.
+
+Automatic retries of state-changing Discussion commands should not be introduced until idempotency is implemented.
+
+---
+
 # Module Boundary
 
 For AI-proposed task confirmation, the established boundary remains:
@@ -2065,54 +2354,88 @@ This remains a critical requirement for the later portion of VS-001.
 * authorized Project Workspace `200` verification
 * cross-project `404` verification
 * same-project missing-permission `403` verification
-* temporary RBAC fixture cleanup
+* Project Workspace temporary RBAC fixture cleanup
 * final Project Workspace live sanity check
+* VS001-04 Discussion message types
+* VS001-04 Discussion repository contract
+* `DiscussionService.postMessage()`
+* Supabase Discussion repository
+* Discussion HTTP router
+* `POST /api/v1/projects/{projectId}/messages`
+* `message.create` enforcement
+* message-content validation
+* optional thread-parent validation
+* atomic message creation
+* immutable message version 1 creation
+* `MessageCreated.v1` persistence
+* Discussion correlation-ID propagation
+* Discussion database defence-in-depth authorization
+* service-role-only Discussion write RPC
+* successful Discussion `201` live verification
+* Discussion `400 VALIDATION_ERROR` verification
+* Discussion `403 PERMISSION_DENIED` verification
+* Discussion no-partial-write verification
+* temporary Viewer fixture cleanup
+* six substantive Discussion service unit tests
+* API `npm test` command
 * TypeScript type checking
+* VS001-04 Discussion README documentation
 * `CHANGELOG.md`
 * `HANDOFF.md`
 
 ## Current Documentation / Source-Control Checkpoint
 
-Before continuing into Discussion:
+VS001-04 implementation, live verification, automated tests, and documentation are complete.
 
-* ensure `CHANGELOG.md` contains the VS001-03 changes,
-* ensure `HANDOFF.md` reflects this current state,
+Before continuing into Team Agent:
+
+* ensure `CHANGELOG.md` contains the VS001-04 changes,
+* ensure `HANDOFF.md` reflects the VS001-04 checkpoint,
 * inspect the Git working tree,
-* inspect staged changes carefully,
+* inspect all untracked files,
+* stage only intended source, migration, test, and documentation files,
 * confirm `.env` and all credentials remain unstaged,
-* review the final diff,
-* commit the VS001-03 checkpoint,
-* update the draft pull request if required.
+* inspect the staged diff,
+* run `npm run typecheck`,
+* run `npm test`,
+* commit the VS001-04 checkpoint,
+* push `feature/vs-001`.
 
 ## Next Implementation Area
 
-After the VS001-03 checkpoint is safely committed:
+After the VS001-04 checkpoint is safely committed:
 
 ```text
-Discussion
+Team Agent task proposal
 ```
 
 within the existing VS-001 vertical slice.
 
-The next implementation should continue the same pattern:
+The next implementation must begin at the established event boundary:
 
 ```text
-authenticated RequestContext
+MessageCreated.v1
   ->
-project membership
+domain-event processing
   ->
-required permission
+Team Agent
   ->
-Discussion service
-  ->
-Discussion-owned persistence
-  ->
-standard response
-  ->
-traceable domain event where state changes
+task proposal
 ```
 
-Do not skip module ownership or server-side authorization because Project Workspace authorization now works.
+Do not call Team Agent directly from the Discussion message-creation transaction.
+
+Do not allow Team Agent to write directly to authoritative Tasks persistence.
+
+The later confirmation path must continue to use:
+
+```text
+TeamAgentService.confirmProposal()
+  ->
+TasksService.createTask()
+```
+
+with the required RBAC checks in the owning modules.
 
 ---
 
@@ -2120,12 +2443,10 @@ Do not skip module ownership or server-side authorization because Project Worksp
 
 The following portions of the vertical slice are still outstanding:
 
-* Discussion persistence through the VS-001 API flow
-* Discussion API authorization integration
-* discussion message creation through VS-001
-* discussion message domain-event persistence through VS-001
+* pending domain-event processing
+* Team Agent consumption of `MessageCreated.v1`
 * Team Agent execution
-* Team Agent task proposal generation
+* Team Agent task-proposal generation
 * proposal provenance through the VS-001 flow
 * human proposal confirmation
 * `agent.approve` enforcement through the VS-001 flow
@@ -2135,7 +2456,18 @@ The following portions of the vertical slice are still outstanding:
 * task domain-event persistence through VS-001
 * complete correlated audit reconstruction across the vertical slice
 * end-to-end VS-001 UI
-* automated regression coverage for the manually verified authentication and Project Workspace paths
+* automated regression coverage for the manually verified authentication paths
+* automated regression coverage for Project Workspace integration paths
+* Discussion message-listing queries
+* Discussion individual-message retrieval
+* Discussion message-history retrieval
+* Discussion editing and deletion
+* Discussion reactions
+* Discussion mentions
+* Discussion file-link handling
+* Discussion command idempotency
+* `mention_user_ids` handling
+* `file_ids` handling
 
 ---
 
@@ -2161,6 +2493,15 @@ The following portions of the vertical slice are still outstanding:
 18. Negative authorization testing should not mutate legitimate role definitions where isolated fixtures can be used.
 19. Temporary test fixtures must be restored or removed after verification.
 20. Structural database changes must remain migration-driven and traceable.
+21. Discussion message creation requires `message.create`.
+22. Discussion performs application-level RBAC before persistence.
+23. The Discussion persistence function performs a second `message.create` check for defence in depth.
+24. `public.post_discussion_message(...)` must remain unavailable to `public`, `anon`, and `authenticated` roles.
+25. The Discussion write RPC is an internal server-side persistence mechanism and is executable only through trusted service-role access.
+26. Discussion message creation must not directly invoke Team Agent.
+27. Downstream Team Agent failure must not roll back or prevent a successfully committed human Discussion message.
+28. Automatic retries of Discussion write commands must not be introduced without an idempotency strategy.
+29. Correlation and causation metadata must remain intact across later asynchronous event processing.
 
 ---
 
@@ -2195,9 +2536,9 @@ When adding or changing functionality:
 
 # Immediate Next Engineering Step
 
-VS001-03 implementation is complete.
+VS001-04 implementation, live verification, automated testing, and documentation are complete.
 
-Do **not** begin Discussion code until the current checkpoint is safely recorded in source control.
+The immediate activity is the VS001-04 source-control checkpoint.
 
 From the repository root:
 
@@ -2205,28 +2546,87 @@ From the repository root:
 C:\Users\chngo\cadence
 ```
 
-the next activity is:
+perform:
+
+1. inspect the complete working tree,
+2. inspect all tracked and untracked VS001-04 files,
+3. confirm `20260813000100_post_discussion_message.sql` is present,
+4. confirm `apps/api/.env` is ignored and unstaged,
+5. confirm no credentials or temporary test data are present in source files,
+6. run `npm run typecheck`,
+7. run `npm test`,
+8. stage only intended implementation, migration, test, and documentation files,
+9. inspect `git diff --cached`,
+10. confirm `CHANGELOG.md` and `HANDOFF.md` accurately describe VS001-04,
+11. commit the VS001-04 checkpoint,
+12. push `feature/vs-001`.
+
+Only after that checkpoint should development continue into:
 
 ```text
-VS001-03 source-control checkpoint
+MessageCreated.v1
+  ->
+event processing
+  ->
+Team Agent task proposal
 ```
 
-Perform the following:
+The next slice must preserve the asynchronous boundary.
 
-1. inspect the current Git working tree,
-2. review all files changed during VS001-03,
-3. confirm `20260812201900_project_health_backfill.sql` is present,
-4. confirm `.env` is ignored and is not staged,
-5. inspect the staged diff before committing,
-6. confirm `CHANGELOG.md` and `HANDOFF.md` accurately describe the checkpoint,
-7. commit the VS001-03 changes,
-8. update the existing draft pull request if required.
+Do not modify `DiscussionService.postMessage()` to synchronously call Team Agent.
 
-Only after that checkpoint should development continue into the Discussion portion of VS-001.
+Do not allow Team Agent to create authoritative Tasks records directly.
 
 ---
 
 # Known Issues / Watch Items
+
+## Discussion Idempotency
+
+VS001-04 does not yet implement idempotency for message creation.
+
+The broader API design anticipates retry-safe commands, but automatic retries of:
+
+```text
+POST /api/v1/projects/{projectId}/messages
+```
+
+could create duplicate messages until an idempotency mechanism is implemented.
+
+Do not introduce automatic retries for this command without addressing idempotency.
+
+## Pending Domain Events
+
+`MessageCreated.v1` is persisted with:
+
+```text
+status = pending
+```
+
+VS001-04 does not implement the worker or dispatcher that processes pending domain events.
+
+The next Team Agent implementation should begin from this event boundary rather than bypassing it.
+
+## Discussion API Contract Gaps
+
+The broader API contract includes:
+
+```text
+mention_user_ids
+file_ids
+```
+
+VS001-04 does not implement those fields.
+
+Do not silently claim those capabilities are supported.
+
+## Discussion Automated Coverage
+
+Six substantive Discussion service unit tests exist.
+
+The persistence transaction and HTTP integration paths have been manually verified against the linked Supabase environment.
+
+Database-backed automated integration tests remain future work.
 
 ## `external_user_id`
 
@@ -2503,9 +2903,155 @@ after code changes.
 
 ---
 
+# Troubleshooting Discussion Message Creation
+
+For failures involving:
+
+```text
+POST /api/v1/projects/{projectId}/messages
+```
+
+check the following in order.
+
+### 1. Authentication
+
+Confirm the request has a valid bearer token and resolves to an active Cadence user.
+
+### 2. RequestContext
+
+Confirm these values are present:
+
+```text
+actorUserId
+correlationId
+requestId
+```
+
+### 3. Active Project Membership
+
+Check:
+
+```text
+public.project_memberships
+```
+
+for an active membership matching the authenticated actor and requested project.
+
+### 4. Permission
+
+Resolve the project role and confirm:
+
+```text
+message.create
+```
+
+is present.
+
+Project membership alone does not grant message creation.
+
+### 5. Request Validation
+
+Check:
+
+```text
+content
+projectId
+thread_parent_id
+```
+
+for validation errors.
+
+Message content must remain within the 20,000-character limit after trimming.
+
+### 6. Thread Parent
+
+If a thread parent is supplied, verify:
+
+* it exists,
+* it belongs to the same project,
+* it is not deleted.
+
+### 7. Persistence Migration
+
+Confirm migration:
+
+```text
+20260813000100_post_discussion_message.sql
+```
+
+has been applied to the linked Supabase database.
+
+Confirm:
+
+```text
+public.post_discussion_message(...)
+```
+
+exists.
+
+### 8. Atomic Persistence
+
+For a successful command, inspect:
+
+```text
+messages
+message_versions
+domain_events
+```
+
+using the returned message ID.
+
+A valid initial write should show:
+
+```text
+messages.current_version = 1
+message_versions.version_number = 1
+domain_events.event_type = MessageCreated
+domain_events.event_version = 1
+```
+
+### 9. Correlation
+
+Compare the API response correlation ID with:
+
+```text
+domain_events.correlation_id
+```
+
+They should match.
+
+### 10. TypeScript and Tests
+
+From:
+
+```text
+apps/api
+```
+
+run:
+
+```powershell
+npm run typecheck
+npm test
+```
+
+### 11. Server Process During Manual Testing
+
+During manual testing, distinguish an application failure from a development watch-process restart.
+
+If necessary, stop stale Node watch processes and restart the API cleanly with:
+
+```powershell
+npm start
+```
+
+Because message creation is not yet idempotent, inspect the database before retrying a request whose outcome is uncertain.
+
+---
+
 # Current Architecture Checkpoint
 
-At the end of VS001-03, the working backend architecture now demonstrates:
+At the end of VS001-04, the working backend architecture demonstrates:
 
 ```text
 Supabase Auth
@@ -2520,18 +3066,73 @@ RBAC Role
   ->
 Permission Code
   ->
-Projects Service
+Application Service
+```
+
+For the Project Workspace read path:
+
+```text
+ProjectsService
   ->
-Read Repository
+ProjectWorkspaceReadRepository
   ->
 Supabase/PostgreSQL
   ->
 Standard API Response
 ```
 
-This validates a major portion of the Cadence security and modularity model.
+For the Discussion write path:
 
-The same architectural discipline should now be carried forward into Discussion and later modules rather than implementing each feature as an isolated endpoint.
+```text
+Discussion route
+  ->
+DiscussionService
+  ->
+message.create
+  ->
+DiscussionRepository
+  ->
+SupabaseDiscussionRepository
+  ->
+post_discussion_message()
+  ->
+atomic PostgreSQL transaction
+     |
+     +-- message
+     +-- message version 1
+     +-- MessageCreated.v1
+  ->
+Standard API Response
+```
+
+This validates several major Cadence architecture requirements:
+
+* authentication remains separate from authorization,
+* authorization is project-scoped,
+* permission codes are the authorization primitive,
+* modules depend on interfaces rather than infrastructure implementations,
+* authoritative state writes remain owned by the responsible module,
+* material state changes emit domain events,
+* message state, history, and event emission can be committed atomically,
+* request correlation survives into persisted domain events,
+* database functions can provide defence-in-depth security without replacing service-layer authorization,
+* downstream Team Agent processing can remain asynchronous.
+
+The next architecture checkpoint must extend this flow from:
+
+```text
+MessageCreated.v1
+```
+
+into:
+
+```text
+event processing
+  ->
+Team Agent task proposal
+```
+
+without coupling Team Agent directly into the Discussion write transaction.
 
 ---
 
@@ -2547,11 +3148,14 @@ A new engineer should be able to determine:
 * which module owns each responsibility,
 * how authentication works,
 * how project authorization works,
-* what security rules apply,
 * how Project Workspace is assembled,
+* how Discussion message creation works,
+* how Discussion persistence remains atomic,
 * where current Project Health is stored,
+* how domain-event correlation is preserved,
 * what migrations have been introduced,
 * what has been manually verified,
+* what automated tests exist,
 * what remains unfinished,
 * what known watch items exist,
 * how to troubleshoot the current implementation,
@@ -2562,11 +3166,15 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-complete the VS001-03 source-control checkpoint
+complete the VS001-04 source-control checkpoint
 ```
 
 followed by:
 
 ```text
-begin the Discussion portion of VS-001
+consume MessageCreated.v1 through the event boundary
+  ->
+begin Team Agent task-proposal processing
 ```
+
+Do not bypass the established module boundaries merely to complete the vertical slice more quickly.
