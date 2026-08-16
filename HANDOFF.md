@@ -28,11 +28,12 @@ Status:
 
 Current checkpoint:
 
-**VS001-04 Discussion Message Creation implementation, live verification, automated tests, and documentation complete. Source-control checkpoint in progress.**
+**VS001-05 Asynchronous Team Agent Task-Proposal Processing implementation, live verification, automated tests, and documentation complete. Source-control checkpoint in progress.**
 
-Next implementation area after the VS001-04 source-control checkpoint:
+Next implementation area after the VS001-05 source-control checkpoint:
 
-**Team Agent task-proposal portion of VS-001, beginning with asynchronous consumption of `MessageCreated.v1`.**
+**VS001-06 Human Proposal Review, beginning from a non-authoritative pending Team Agent proposal and preserving the Team Agent-to-Tasks module boundary.**
+
 ---
 
 # VS-001 Objective
@@ -217,22 +218,42 @@ Current development script:
 node --env-file=.env --watch --import tsx src/server.ts
 ```
 
-Normal start:
+Normal API start:
 
 ```powershell
 npm start
 ```
 
-Current start script:
+Current API start script:
 
 ```text
 node --env-file=.env --import tsx src/server.ts
 ```
 
+One-shot Team Agent worker:
+
+```powershell
+npm run worker:once
+```
+
+Current worker script:
+
+```text
+node --env-file=.env --import tsx src/worker.ts
+```
+
+The current worker processes at most one available `team-agent.message-created.v1` delivery and exits.
+
 Type checking:
 
 ```powershell
 npm run typecheck
+```
+
+Automated tests:
+
+```powershell
+npm test
 ```
 
 Build:
@@ -241,10 +262,11 @@ Build:
 npm run build
 ```
 
-Type checking currently passes with:
+Current verification:
 
 ```text
-tsc --noEmit
+npm run typecheck = passed
+npm test = 20 passed, 0 failed
 ```
 
 ---
@@ -1838,7 +1860,13 @@ Passed
 
 # Server Composition
 
-The API bootstrap currently creates and composes:
+The HTTP API composition root is:
+
+```text
+apps/api/src/server.ts
+```
+
+It currently creates and composes:
 
 ```text
 SupabaseAuthProvider
@@ -1885,7 +1913,39 @@ The concrete Supabase persistence adapter remains under:
 src/infrastructure/database
 ```
 
-This composition should remain explicit and easy to trace.
+## Worker Composition
+
+Asynchronous Team Agent processing uses a separate composition root:
+
+```text
+apps/api/src/worker.ts
+```
+
+The one-shot worker composes:
+
+```text
+SupabaseDomainEventRepository
+  ->
+DomainEventProcessor
+  ->
+MessageCreatedV1Handler
+
+DiscussionService
+  ->
+SupabaseDiscussionRepository
+
+TeamAgentService
+  ->
+SupabaseTeamAgentRepository
+```
+
+`DiscussionService` currently requires `RbacService` in its constructor even though the trusted internal `getMessageVersion()` path does not perform an RBAC check. The worker therefore composes the existing Discussion service rather than bypassing the module boundary and reading Discussion tables directly.
+
+The worker is intentionally not embedded in `server.ts`.
+
+Do not introduce a permanent polling loop into the HTTP server process merely for convenience. Production worker hosting, supervision, cadence, and scaling remain future operational decisions.
+
+Both composition roots should remain explicit and easy to trace.
 
 Avoid introducing hidden dependency resolution, service locators, or implicit cross-module wiring without a clear architectural reason.
 
@@ -2086,7 +2146,7 @@ message_versions version 1
 MessageCreated.v1 domain event
 ```
 
-`MessageCreated.v1` is stored as:
+`MessageCreated.v1` is inserted as:
 
 ```text
 event_type = MessageCreated
@@ -2094,6 +2154,14 @@ event_version = 1
 aggregate_type = message
 aggregate_id = new message ID
 status = pending
+```
+
+With the VS001-05 fan-out trigger now present, matching consumer deliveries are materialised in the same database transaction and the domain-event fan-out status is then marked `processed`.
+
+Consumer completion is tracked separately in:
+
+```text
+public.domain_event_deliveries
 ```
 
 All writes occur in one PostgreSQL transaction.
@@ -2194,21 +2262,25 @@ causation_id = null
 
 Discussion message creation does not synchronously call Team Agent.
 
-The intended continuation is:
+VS001-05 now implements the asynchronous continuation:
 
 ```text
-Discussion transaction commits
+Discussion transaction
   ->
-MessageCreated.v1 remains pending
+MessageCreated.v1
   ->
-event processing
+domain-event fan-out
   ->
-Team Agent consumes MessageCreated.v1
+independent Team Agent delivery
   ->
-Team Agent may produce a task proposal
+worker
+  ->
+Team Agent task proposal
 ```
 
-A downstream Team Agent failure must not prevent humans from posting Discussion messages.
+A downstream Team Agent failure does not roll back or prevent a successfully committed human Discussion message.
+
+Discussion remains unaware of which downstream consumers subscribe to `MessageCreated.v1`.
 
 ## VS001-04 Verification
 
@@ -2245,7 +2317,7 @@ Discussion tests: 6 passed
 Discussion tests: 0 failed
 ```
 
-The full Node test command currently reports 12 successful entries, but several other module test files remain empty placeholders and must not be treated as substantive automated coverage.
+The full Node test command now reports 20 passing entries after VS001-05 additions. Several module `*.test.ts` files remain placeholder test files, so the passing entry count should not be interpreted as uniform coverage across all modules.
 
 ## Current Limitations
 
@@ -2258,14 +2330,799 @@ VS001-04 does not yet implement:
 * reactions,
 * mentions,
 * file-link handling,
-* Team Agent event consumption,
-* pending domain-event processing,
 * Discussion-specific audit processing,
 * message-command idempotency.
 
 The broader API contract includes `mention_user_ids` and `file_ids`, but VS001-04 does not yet implement those capabilities.
 
 Automatic retries of state-changing Discussion commands should not be introduced until idempotency is implemented.
+
+---
+
+# VS001-05 Asynchronous Team Agent Task-Proposal Processing
+
+Status:
+
+**Implementation, live verification, automated tests, and documentation complete. Source-control checkpoint in progress.**
+
+VS001-05 implements the first asynchronous downstream consumer in Cadence.
+
+The verified flow is:
+
+```text
+Discussion message
+  ->
+MessageCreated.v1
+  ->
+domain-event subscription fan-out
+  ->
+per-consumer Team Agent delivery
+  ->
+one-shot worker
+  ->
+DomainEventProcessor
+  ->
+MessageCreatedV1Handler
+  ->
+exact immutable Discussion message version
+  ->
+TeamAgentService
+  ->
+completed AI run
+  ->
+pending task proposal
+  ->
+AIProposalCreated.v1
+```
+
+No authoritative Task is created in VS001-05.
+
+Human review remains the boundary between AI-generated proposal state and authoritative project task state.
+
+## Architectural Boundary
+
+The following dependency must not exist:
+
+```text
+DiscussionService.postMessage()
+  -X->
+TeamAgentService
+```
+
+Discussion owns the message transaction and emits `MessageCreated.v1`.
+
+Generic event infrastructure materialises consumer deliveries.
+
+Team Agent consumes the event later.
+
+This prevents Team Agent availability or execution failure from becoming a prerequisite for a human to post a Discussion message.
+
+## New Database Migrations
+
+VS001-05 adds four migrations:
+
+```text
+supabase/migrations/20260815200500_domain_event_deliveries.sql
+supabase/migrations/20260815201000_domain_event_delivery_processing.sql
+supabase/migrations/20260815202000_domain_event_subscriptions.sql
+supabase/migrations/20260815203000_team_agent_task_proposals.sql
+```
+
+All four migrations have been applied to the linked remote Supabase database.
+
+The final migration push completed successfully. A Docker catalogue/cache warning occurred after application because Docker Desktop was not running; the migration itself completed and the required database objects were verified directly.
+
+## Domain Event Subscriptions
+
+VS001-05 adds:
+
+```text
+public.domain_event_subscriptions
+```
+
+The first active subscription is:
+
+```text
+consumer_name = team-agent.message-created.v1
+event_type = MessageCreated
+event_version = 1
+is_active = true
+```
+
+Subscription registration is infrastructure configuration.
+
+Discussion does not register or call its consumers directly.
+
+## Per-Consumer Deliveries
+
+VS001-05 adds:
+
+```text
+public.domain_event_deliveries
+```
+
+Delivery identity is:
+
+```text
+event_id
++
+consumer_name
+```
+
+This separates event fan-out state from downstream consumer-processing state.
+
+Conceptually:
+
+```text
+MessageCreated.v1
+        |
+        +--> Team Agent delivery
+        |
+        +--> future Notifications delivery
+        |
+        +--> future Project Health delivery
+```
+
+Each consumer may independently be pending, processing, processed, or failed.
+
+One consumer's status must not represent another consumer's status.
+
+## Fan-Out Semantics
+
+The database function:
+
+```text
+public.fan_out_domain_event()
+```
+
+runs after a domain event is inserted.
+
+For each active matching subscription it creates a delivery row using conflict-safe insertion.
+
+After fan-out, the domain event itself is marked:
+
+```text
+status = processed
+```
+
+This means:
+
+```text
+domain_events.status
+```
+
+represents completion of outbox fan-out, not completion of every downstream consumer.
+
+Actual consumer state is represented by:
+
+```text
+domain_event_deliveries.status
+```
+
+This distinction is important when troubleshooting.
+
+## Legacy Event Cutover
+
+When VS001-05 subscriptions were introduced, old pre-VS001-05 pending events were explicitly marked processed before registering the new Team Agent subscription.
+
+This was a deliberate cutover decision:
+
+```text
+no automatic replay of pre-VS001-05 pending events
+```
+
+The verified VS001-05 test message was created after the subscription existed and therefore received a normal Team Agent delivery.
+
+## Delivery Claiming
+
+Atomic claiming is performed through:
+
+```text
+public.claim_domain_event_delivery(...)
+```
+
+The claim uses PostgreSQL:
+
+```text
+FOR UPDATE OF d SKIP LOCKED
+```
+
+This allows concurrent workers to claim different available deliveries without claiming the same delivery simultaneously.
+
+A claim records:
+
+```text
+status = processing
+processing_attempts += 1
+claimed_at
+claim_token
+lease_expires_at
+```
+
+The current default lease is:
+
+```text
+900 seconds
+```
+
+## Claim-Token and Lease Protection
+
+The claim token prevents stale workers from completing another worker's reclaimed delivery.
+
+Conceptually:
+
+```text
+Worker A claims delivery with token A
+  ->
+Worker A stalls
+  ->
+lease expires
+  ->
+Worker B reclaims with token B
+  ->
+Worker A later attempts completion with token A
+  ->
+rejected
+```
+
+Expired processing leases can be reclaimed.
+
+## Delivery Completion and Failure
+
+Successful completion uses:
+
+```text
+public.complete_domain_event_delivery(...)
+```
+
+and succeeds only when the supplied:
+
+```text
+event_id
+consumer_name
+claim_token
+```
+
+still identify the active processing claim.
+
+Failure uses:
+
+```text
+public.fail_domain_event_delivery(...)
+```
+
+which stores:
+
+```text
+status = failed
+last_error
+available_at
+```
+
+and clears the active claim.
+
+Failed deliveries remain retryable according to their availability timestamp.
+
+## Generic Event Processing Infrastructure
+
+Reusable application event-processing contracts are located under:
+
+```text
+apps/api/src/infrastructure/events/
+```
+
+Files:
+
+```text
+domain-event.ts
+domain-event.handler.ts
+domain-event.repository.ts
+domain-event.processor.ts
+domain-event.processor.test.ts
+```
+
+Database adapter:
+
+```text
+apps/api/src/infrastructure/database/supabase-domain-event.repository.ts
+```
+
+The shared `DomainEvent` envelope now includes:
+
+```text
+eventId
+eventType
+eventVersion
+aggregateType
+aggregateId
+correlationId
+causationId
+occurredAt
+actorType
+actorId
+projectId
+payload
+```
+
+`DomainEventProcessor.processNext(handler)` performs:
+
+```text
+claim
+  ->
+handler
+  ->
+complete
+```
+
+On handler failure it attempts to mark the claim failed and then rethrows the processing error.
+
+The generic processor contains no Team Agent business logic.
+
+## Discussion Immutable-Version Query
+
+`MessageCreated.v1` references the immutable Discussion message version rather than copying the full message body into the event.
+
+VS001-05 adds:
+
+```text
+DiscussionService.getMessageVersion(
+  projectId,
+  messageId,
+  versionNumber
+)
+```
+
+and the corresponding Discussion repository query.
+
+The Supabase Discussion adapter reads the exact immutable version while verifying the message belongs to the expected project.
+
+Team Agent must not bypass this boundary by querying:
+
+```text
+public.messages
+public.message_versions
+```
+
+directly.
+
+This matters because an event referring to version 1 must still be processed against version 1 even if the message has subsequently been edited.
+
+The current `getMessageVersion()` method is a trusted internal module query. If message-history retrieval is later exposed over HTTP, that HTTP path must perform its own project membership and RBAC checks.
+
+## Team Agent Event Handler
+
+Handler:
+
+```text
+apps/api/src/modules/team-agent/message-created.handler.ts
+```
+
+Consumer name:
+
+```text
+team-agent.message-created.v1
+```
+
+The handler validates:
+
+```text
+event_type = MessageCreated
+event_version = 1
+aggregate_type = message
+project envelope consistency
+message aggregate consistency
+```
+
+It validates that the payload's:
+
+```text
+project_id
+message_id
+version_number
+```
+
+match the event envelope and retrieves the exact Discussion version.
+
+If the immutable version cannot be found, processing fails rather than silently using different content.
+
+## Team Agent Service
+
+The handler calls:
+
+```text
+TeamAgentService.processMessageForTaskProposal()
+```
+
+The current implementation is deliberately deterministic and is used to prove the architecture before external LLM integration.
+
+Current model metadata:
+
+```text
+model_provider = cadence-development
+model_name = deterministic-task-proposal-v1
+prompt_version_id = null
+```
+
+The current implementation does not fabricate AI confidence.
+
+```text
+confidence = null
+```
+
+## Verified Development Proposal
+
+Verified source message:
+
+```text
+Daniel, please finalise the syllabus by Friday.
+```
+
+Current deterministic proposal:
+
+```text
+title       = Daniel, please finalise the syllabus by Friday.
+description = Daniel, please finalise the syllabus by Friday.
+assigned_to = null
+due_date    = null
+confidence  = null
+status      = pending
+```
+
+`assigned_to` is deliberately null because VS001-05 does not yet implement authoritative human-name-to-user resolution.
+
+`due_date` is deliberately null because VS001-05 does not yet implement relative-date resolution with timezone/calendar context.
+
+These values must not be guessed merely to make the proposal appear more complete.
+
+## Team Agent Persistence
+
+Repository contract:
+
+```text
+apps/api/src/modules/team-agent/team-agent.repository.ts
+```
+
+Supabase adapter:
+
+```text
+apps/api/src/infrastructure/database/supabase-team-agent.repository.ts
+```
+
+Persistence RPC:
+
+```text
+public.create_team_agent_task_proposal(...)
+```
+
+The function validates the source `MessageCreated.v1`, its project/message/correlation references, and the exact immutable message version before creating Team Agent state.
+
+## AI Run Idempotency
+
+VS001-05 adds:
+
+```text
+ai_runs.source_event_id
+```
+
+with a foreign key to:
+
+```text
+public.domain_events(id)
+```
+
+and a unique partial index:
+
+```text
+ai_runs_source_event_uidx
+```
+
+This makes the source event the idempotency key for the Team Agent run.
+
+Normal retries of the same source event return the existing run/proposal rather than creating duplicates.
+
+Database conflict handling also protects against a race between a stale worker and a newly reclaimed worker attempting the same source event concurrently.
+
+## AI Proposal Persistence
+
+The Team Agent persistence function creates:
+
+```text
+public.ai_runs
++
+public.ai_proposals
+```
+
+The current task proposal is stored as:
+
+```text
+proposal_type = task
+status = pending
+```
+
+A pending proposal is non-authoritative.
+
+The function does not create or modify:
+
+```text
+public.tasks
+```
+
+## AIProposalCreated.v1
+
+Successful persistence emits:
+
+```text
+AIProposalCreated.v1
+```
+
+with:
+
+```text
+aggregate_type = ai_proposal
+aggregate_id = proposal_id
+actor_type = agent
+```
+
+The event payload includes the proposal/run/source references required for downstream traceability.
+
+The new event goes through the same generic fan-out infrastructure. If there are no active subscriptions for `AIProposalCreated.v1`, fan-out still completes and the domain-event status becomes processed.
+
+## Correlation and Causation
+
+The proposal event preserves the original business correlation ID.
+
+Its causation ID is the source `MessageCreated.v1` event ID.
+
+Verified chain:
+
+```text
+MessageCreated.v1
+  event_id = 2cecb0d3-93a5-41b6-9a78-5c2fe32b5c32
+  correlation_id = 0b02f7ba-649d-447d-862e-6f1f7bfd46bd
+        |
+        v
+AIProposalCreated.v1
+  event_id = d13d11b0-a8a2-45d4-8ac4-0012ad7f906b
+  correlation_id = 0b02f7ba-649d-447d-862e-6f1f7bfd46bd
+  causation_id = 2cecb0d3-93a5-41b6-9a78-5c2fe32b5c32
+```
+
+## One-Shot Worker
+
+Entry point:
+
+```text
+apps/api/src/worker.ts
+```
+
+Command:
+
+```powershell
+npm run worker:once
+```
+
+The current worker:
+
+```text
+claims at most one Team Agent delivery
+  ->
+processes it
+  ->
+exits
+```
+
+It does not run a permanent polling loop.
+
+If no delivery is available:
+
+```text
+Cadence worker: no pending Team Agent delivery.
+```
+
+A production worker-hosting model, scheduler, polling cadence, health monitoring, supervision, retry backoff, and horizontal scaling strategy remain future operational work.
+
+## Live Verification
+
+The following VS001-05 flow was verified against the linked Supabase database.
+
+Source event:
+
+```text
+event_id =
+2cecb0d3-93a5-41b6-9a78-5c2fe32b5c32
+
+event_type =
+MessageCreated
+
+correlation_id =
+0b02f7ba-649d-447d-862e-6f1f7bfd46bd
+
+message_id =
+e2f2d384-380b-4fd0-9dca-b3049600d1b3
+```
+
+Before processing:
+
+```text
+consumer_name = team-agent.message-created.v1
+delivery_status = pending
+processing_attempts = 0
+```
+
+After processing:
+
+```text
+delivery_status = processed
+processing_attempts = 1
+last_error = null
+```
+
+Created AI run:
+
+```text
+079dee92-d47f-4b66-8e24-e8f458552c70
+```
+
+Verified AI run:
+
+```text
+status = completed
+model_provider = cadence-development
+model_name = deterministic-task-proposal-v1
+```
+
+Created proposal:
+
+```text
+2312c92f-43aa-4584-ade7-532a49c3eb08
+```
+
+Verified proposal:
+
+```text
+proposal_type = task
+status = pending
+assigned_to = null
+due_date = null
+confidence = null
+```
+
+Created derived event:
+
+```text
+AIProposalCreated.v1
+d13d11b0-a8a2-45d4-8ac4-0012ad7f906b
+```
+
+The derived event retained the original correlation ID and used the source message event as its causation ID.
+
+## Duplicate-Safety Verification
+
+For the verified source event:
+
+```text
+ai_run_count = 1
+proposal_count = 1
+```
+
+A subsequent worker execution returned:
+
+```text
+Cadence worker: no pending Team Agent delivery.
+```
+
+This confirms the verified delivery was consumed once and did not produce duplicate run/proposal records.
+
+## Automated Tests
+
+Current verification:
+
+```powershell
+npm run typecheck
+npm test
+```
+
+Result:
+
+```text
+typecheck = passed
+
+tests = 20
+pass = 20
+fail = 0
+cancelled = 0
+skipped = 0
+todo = 0
+```
+
+VS001-05 adds substantive coverage for:
+
+```text
+successful delivery claim/handle/complete
+empty delivery queue
+handler failure -> failed delivery
+exact immutable Discussion version retrieval
+missing immutable version
+MessageCreated.v1 validation
+event/payload project consistency
+deterministic Team Agent proposal generation
+```
+
+Some other module `*.test.ts` files remain placeholders and should not be mistaken for deep coverage.
+
+## VS001-05 Implementation Files
+
+Team Agent:
+
+```text
+apps/api/src/modules/team-agent/team-agent.types.ts
+apps/api/src/modules/team-agent/team-agent.repository.ts
+apps/api/src/modules/team-agent/team-agent.service.ts
+apps/api/src/modules/team-agent/message-created.handler.ts
+apps/api/src/modules/team-agent/team-agent.test.ts
+apps/api/src/modules/team-agent/README.md
+```
+
+Event infrastructure:
+
+```text
+apps/api/src/infrastructure/events/domain-event.ts
+apps/api/src/infrastructure/events/domain-event.handler.ts
+apps/api/src/infrastructure/events/domain-event.repository.ts
+apps/api/src/infrastructure/events/domain-event.processor.ts
+apps/api/src/infrastructure/events/domain-event.processor.test.ts
+```
+
+Database adapters:
+
+```text
+apps/api/src/infrastructure/database/supabase-domain-event.repository.ts
+apps/api/src/infrastructure/database/supabase-discussion.repository.ts
+apps/api/src/infrastructure/database/supabase-team-agent.repository.ts
+```
+
+Worker:
+
+```text
+apps/api/src/worker.ts
+```
+
+Package script:
+
+```text
+apps/api/package.json
+```
+
+Migrations:
+
+```text
+supabase/migrations/20260815200500_domain_event_deliveries.sql
+supabase/migrations/20260815201000_domain_event_delivery_processing.sql
+supabase/migrations/20260815202000_domain_event_subscriptions.sql
+supabase/migrations/20260815203000_team_agent_task_proposals.sql
+```
+
+## Current VS001-05 Limitations
+
+Not yet implemented:
+
+* external LLM provider invocation,
+* production model-provider integration,
+* real prompt execution,
+* prompt-version selection,
+* AI confidence scoring,
+* assignee name resolution,
+* natural-language due-date resolution,
+* proposal listing/review API,
+* proposal editing,
+* proposal confirmation,
+* proposal rejection,
+* `agent.approve` review flow,
+* confirmed-proposal integration with `TasksService`,
+* authoritative Task creation,
+* continuous worker hosting and supervision.
+
+These are deliberate boundaries and must not be represented as implemented capabilities.
 
 ---
 
@@ -2377,65 +3234,97 @@ This remains a critical requirement for the later portion of VS-001.
 * Discussion no-partial-write verification
 * temporary Viewer fixture cleanup
 * six substantive Discussion service unit tests
-* API `npm test` command
-* TypeScript type checking
 * VS001-04 Discussion README documentation
+* VS001-05 per-consumer domain-event subscriptions
+* VS001-05 per-consumer delivery persistence
+* transactional event fan-out
+* atomic delivery claiming with `FOR UPDATE SKIP LOCKED`
+* processing lease and claim-token protection
+* delivery completion/failure RPCs
+* generic `DomainEventRepository`
+* generic `DomainEventHandler`
+* generic `DomainEventProcessor`
+* Supabase domain-event repository
+* expanded shared DomainEvent envelope
+* Discussion immutable message-version query
+* `MessageCreatedV1Handler`
+* Team Agent service/repository task-proposal boundary
+* deterministic development proposal generator
+* Supabase Team Agent repository
+* `ai_runs.source_event_id` idempotency
+* idempotent Team Agent task-proposal persistence RPC
+* pending AI task proposal persistence
+* `AIProposalCreated.v1`
+* correlation and causation continuity across Discussion and Team Agent
+* one-shot `worker:once` composition root
+* live VS001-05 Supabase verification
+* duplicate-safety verification
+* twenty passing automated test entries
+* TypeScript type checking
+* Team Agent README documentation
 * `CHANGELOG.md`
 * `HANDOFF.md`
 
 ## Current Documentation / Source-Control Checkpoint
 
-VS001-04 implementation, live verification, automated tests, and documentation are complete.
+VS001-05 implementation, database deployment, live verification, automated tests, Team Agent README, and `CHANGELOG.md` updates are complete.
 
-Before continuing into Team Agent:
+Before beginning VS001-06:
 
-* ensure `CHANGELOG.md` contains the VS001-04 changes,
-* ensure `HANDOFF.md` reflects the VS001-04 checkpoint,
-* inspect the Git working tree,
-* inspect all untracked files,
-* stage only intended source, migration, test, and documentation files,
-* confirm `.env` and all credentials remain unstaged,
+* ensure `HANDOFF.md` reflects the VS001-05 checkpoint,
+* update `docs/vertical-slices/VS-001.md`,
+* inspect the complete Git working tree,
+* inspect all tracked and untracked files,
+* confirm `apps/api/.env` remains ignored and unstaged,
+* confirm no credentials or temporary test data are present in staged source,
 * inspect the staged diff,
 * run `npm run typecheck`,
 * run `npm test`,
-* commit the VS001-04 checkpoint,
+* run `git diff --cached --check`,
+* create the VS001-05 source-control checkpoint,
 * push `feature/vs-001`.
 
 ## Next Implementation Area
 
-After the VS001-04 checkpoint is safely committed:
+After the VS001-05 checkpoint is safely committed:
 
 ```text
-Team Agent task proposal
+VS001-06 - Human Proposal Review
 ```
 
-within the existing VS-001 vertical slice.
-
-The next implementation must begin at the established event boundary:
+The next flow begins from:
 
 ```text
-MessageCreated.v1
+pending Team Agent task proposal
   ->
-domain-event processing
+authorised human review
   ->
-Team Agent
-  ->
-task proposal
+confirm / edit / reject
 ```
 
-Do not call Team Agent directly from the Discussion message-creation transaction.
-
-Do not allow Team Agent to write directly to authoritative Tasks persistence.
-
-The later confirmation path must continue to use:
+Proposal review must enforce:
 
 ```text
-TeamAgentService.confirmProposal()
-  ->
-TasksService.createTask()
+agent.approve
 ```
 
-with the required RBAC checks in the owning modules.
+server-side using RBAC permission codes rather than hard-coded role names.
+
+Confirmation must not directly insert into Tasks persistence.
+
+The later authoritative task path must continue through:
+
+```text
+TeamAgentService
+  ->
+TasksService
+  ->
+task.create
+  ->
+task.assign when required
+  ->
+authoritative Task
+```
 
 ---
 
@@ -2443,24 +3332,30 @@ with the required RBAC checks in the owning modules.
 
 The following portions of the vertical slice are still outstanding:
 
-* pending domain-event processing
-* Team Agent consumption of `MessageCreated.v1`
-* Team Agent execution
-* Team Agent task-proposal generation
-* proposal provenance through the VS-001 flow
-* human proposal confirmation
-* `agent.approve` enforcement through the VS-001 flow
+* human proposal review API
+* proposal confirmation
+* proposal editing
+* proposal rejection
+* `agent.approve` enforcement through the VS-001 review flow
+* confirmed-proposal integration with `TasksService`
 * authoritative task creation through `TasksService`
 * `task.create` enforcement through the VS-001 flow
 * `task.assign` enforcement where required
 * task domain-event persistence through VS-001
 * complete correlated audit reconstruction across the vertical slice
 * end-to-end VS-001 UI
+* external LLM provider integration
+* prompt execution and prompt-version selection
+* assignee name resolution
+* natural-language due-date resolution
+* AI confidence scoring
+* continuous production worker hosting and supervision
 * automated regression coverage for the manually verified authentication paths
 * automated regression coverage for Project Workspace integration paths
+* database-backed integration coverage for the current event-processing path
 * Discussion message-listing queries
 * Discussion individual-message retrieval
-* Discussion message-history retrieval
+* Discussion HTTP message-history retrieval
 * Discussion editing and deletion
 * Discussion reactions
 * Discussion mentions
@@ -2485,7 +3380,7 @@ The following portions of the vertical slice are still outstanding:
 10. Missing project membership should not expose protected project existence.
 11. Human confirmation does not override permissions.
 12. Team Agent does not bypass module permissions.
-13. AI output is not authoritative until accepted by the owning module.
+13. AI output is not authoritative until accepted through the appropriate human/module boundary.
 14. Security-relevant failures should retain traceable request and correlation IDs.
 15. External error responses should avoid unnecessary internal security details.
 16. Authentication-provider replacement must not require rewriting Cadence project-role logic.
@@ -2501,7 +3396,16 @@ The following portions of the vertical slice are still outstanding:
 26. Discussion message creation must not directly invoke Team Agent.
 27. Downstream Team Agent failure must not roll back or prevent a successfully committed human Discussion message.
 28. Automatic retries of Discussion write commands must not be introduced without an idempotency strategy.
-29. Correlation and causation metadata must remain intact across later asynchronous event processing.
+29. Correlation and causation metadata must remain intact across asynchronous event processing.
+30. Domain-event delivery claim, complete, and fail RPCs are server-side infrastructure functions and must remain restricted to trusted service-role execution.
+31. Per-consumer delivery state must not be exposed as authority to perform another module's write.
+32. Team Agent must retrieve Discussion content through the Discussion module boundary rather than directly reading Discussion persistence.
+33. `ai_runs.source_event_id` must remain protected as the idempotency anchor for event-triggered Team Agent processing.
+34. A pending AI proposal must not be treated as an authoritative Task.
+35. Proposal confirmation must enforce `agent.approve` server-side.
+36. `agent.approve` does not imply `task.create` or `task.assign`; target-module authorization must be re-evaluated.
+37. Team Agent must never insert or update authoritative Tasks persistence directly.
+38. External model inputs/outputs and raw AI-run data must remain server-controlled according to the existing AI provenance/security model.
 
 ---
 
@@ -2536,9 +3440,9 @@ When adding or changing functionality:
 
 # Immediate Next Engineering Step
 
-VS001-04 implementation, live verification, automated testing, and documentation are complete.
+VS001-05 implementation, database deployment, live verification, automated testing, Team Agent README documentation, and `CHANGELOG.md` updates are complete.
 
-The immediate activity is the VS001-04 source-control checkpoint.
+The immediate activity is the VS001-05 documentation and source-control checkpoint.
 
 From the repository root:
 
@@ -2548,34 +3452,48 @@ C:\Users\chngo\cadence
 
 perform:
 
-1. inspect the complete working tree,
-2. inspect all tracked and untracked VS001-04 files,
-3. confirm `20260813000100_post_discussion_message.sql` is present,
-4. confirm `apps/api/.env` is ignored and unstaged,
-5. confirm no credentials or temporary test data are present in source files,
-6. run `npm run typecheck`,
-7. run `npm test`,
-8. stage only intended implementation, migration, test, and documentation files,
-9. inspect `git diff --cached`,
-10. confirm `CHANGELOG.md` and `HANDOFF.md` accurately describe VS001-04,
-11. commit the VS001-04 checkpoint,
-12. push `feature/vs-001`.
+1. save the updated `HANDOFF.md`,
+2. update `docs/vertical-slices/VS-001.md` through VS001-05,
+3. inspect the complete working tree,
+4. inspect all tracked and untracked VS001-05 files,
+5. confirm the four VS001-05 migrations are present,
+6. confirm `apps/api/.env` is ignored and unstaged,
+7. confirm no credentials or temporary test data are present in source files,
+8. run `npm run typecheck` from `apps/api`,
+9. run `npm test` from `apps/api`,
+10. run `git diff --cached --check`,
+11. inspect `git diff --cached`,
+12. confirm `CHANGELOG.md`, `HANDOFF.md`, module README files, and `docs/vertical-slices/VS-001.md` accurately describe VS001-05,
+13. commit the VS001-05 checkpoint,
+14. push `feature/vs-001`.
 
-Only after that checkpoint should development continue into:
+Only after that checkpoint should development begin:
 
 ```text
-MessageCreated.v1
+VS001-06
   ->
-event processing
-  ->
-Team Agent task proposal
+Human Proposal Review
 ```
 
-The next slice must preserve the asynchronous boundary.
+The next implementation must begin from the existing:
 
-Do not modify `DiscussionService.postMessage()` to synchronously call Team Agent.
+```text
+pending AI proposal
+```
 
-Do not allow Team Agent to create authoritative Tasks records directly.
+and must preserve:
+
+```text
+authorised human
+  ->
+agent.approve
+  ->
+confirm / edit / reject
+```
+
+Confirmation must not bypass the Tasks module.
+
+Do not allow Team Agent to insert directly into authoritative Tasks records.
 
 ---
 
@@ -2595,17 +3513,66 @@ could create duplicate messages until an idempotency mechanism is implemented.
 
 Do not introduce automatic retries for this command without addressing idempotency.
 
-## Pending Domain Events
+## Domain Event Delivery and Worker Hosting
 
-`MessageCreated.v1` is persisted with:
+VS001-05 now implements domain-event subscription fan-out and per-consumer delivery processing.
+
+For new matching `MessageCreated.v1` events, the domain event itself normally becomes:
 
 ```text
-status = pending
+status = processed
 ```
 
-VS001-04 does not implement the worker or dispatcher that processes pending domain events.
+after fan-out, while Team Agent consumer state is represented separately in:
 
-The next Team Agent implementation should begin from this event boundary rather than bypassing it.
+```text
+public.domain_event_deliveries
+```
+
+Do not interpret `domain_events.status = processed` as proof that every downstream consumer completed successfully.
+
+The current worker is one-shot:
+
+```powershell
+npm run worker:once
+```
+
+Continuous worker hosting, scheduling, supervision, health monitoring, and retry/backoff policy remain future work.
+
+When diagnosing an event-processing problem, inspect the consumer delivery rather than relying only on the parent domain-event status.
+
+## Team Agent Development Generator
+
+The current Team Agent proposal generator is deterministic:
+
+```text
+model_provider = cadence-development
+model_name = deterministic-task-proposal-v1
+```
+
+It is not a production LLM integration.
+
+`assigned_to`, `due_date`, and `confidence` remain null when not authoritatively resolved.
+
+Do not replace these null values with guessed values without implementing the corresponding resolution rules and provenance.
+
+## Team Agent Internal Discussion Query
+
+The worker currently composes `DiscussionService` to retrieve the exact immutable message version.
+
+`DiscussionService.getMessageVersion()` is treated as a trusted internal module query.
+
+Do not expose this method directly as an HTTP history endpoint without adding the appropriate project-membership and RBAC checks.
+
+## Event Delivery Retry Semantics
+
+Failed deliveries are retryable and expired processing leases may be reclaimed.
+
+A failed Team Agent delivery may therefore be processed more than once at the application level.
+
+Idempotent persistence through `ai_runs.source_event_id` is required to keep repeated processing from producing duplicate AI runs/proposals.
+
+Do not remove the unique source-event constraint without replacing the idempotency strategy.
 
 ## Discussion API Contract Gaps
 
@@ -3049,9 +4016,236 @@ Because message creation is not yet idempotent, inspect the database before retr
 
 ---
 
+# Troubleshooting Team Agent Event Processing
+
+When a Discussion message exists but a Team Agent proposal is missing, diagnose the flow in this order.
+
+### 1. Source Domain Event
+
+Confirm the expected source event exists in:
+
+```text
+public.domain_events
+```
+
+Check:
+
+```text
+event_type = MessageCreated
+event_version = 1
+aggregate_type = message
+project_id
+aggregate_id
+correlation_id
+```
+
+For new VS001-05-era messages, remember that the parent domain-event status reflects fan-out rather than downstream completion.
+
+### 2. Subscription
+
+Confirm an active subscription exists in:
+
+```text
+public.domain_event_subscriptions
+```
+
+for:
+
+```text
+consumer_name = team-agent.message-created.v1
+event_type = MessageCreated
+event_version = 1
+is_active = true
+```
+
+### 3. Consumer Delivery
+
+Inspect:
+
+```text
+public.domain_event_deliveries
+```
+
+for the source event and consumer.
+
+Check:
+
+```text
+status
+processing_attempts
+available_at
+claimed_at
+claim_token
+lease_expires_at
+processed_at
+last_error
+```
+
+If no delivery exists for a post-subscription `MessageCreated.v1`, investigate fan-out rather than the Team Agent handler.
+
+### 4. Worker
+
+From:
+
+```text
+apps/api
+```
+
+run:
+
+```powershell
+npm run worker:once
+```
+
+Expected when a delivery is available:
+
+```text
+Cadence worker: processed one Team Agent delivery.
+```
+
+Expected when none is available:
+
+```text
+Cadence worker: no pending Team Agent delivery.
+```
+
+Do not repeatedly rerun a failing worker without first inspecting `last_error` and delivery state.
+
+### 5. Immutable Message Version
+
+Confirm the event payload references an existing immutable message version.
+
+Check:
+
+```text
+message_id
+version_number
+project_id
+```
+
+against:
+
+```text
+public.messages
+public.message_versions
+```
+
+The application handler should obtain this through the Discussion module boundary.
+
+### 6. Team Agent AI Run
+
+Inspect:
+
+```text
+public.ai_runs
+```
+
+using:
+
+```text
+source_event_id
+```
+
+There should be at most one AI run for a non-null source event because of:
+
+```text
+ai_runs_source_event_uidx
+```
+
+### 7. Pending Proposal
+
+Inspect:
+
+```text
+public.ai_proposals
+```
+
+using the AI run ID.
+
+Current VS001-05 output should use:
+
+```text
+proposal_type = task
+status = pending
+```
+
+### 8. Derived Domain Event
+
+Inspect:
+
+```text
+public.domain_events
+```
+
+for:
+
+```text
+event_type = AIProposalCreated
+event_version = 1
+causation_id = source MessageCreated event ID
+```
+
+Confirm the derived event correlation ID matches the original message-event correlation ID.
+
+### 9. Idempotency
+
+If processing was retried, verify:
+
+```text
+count(ai_runs for source_event_id) = 1
+count(ai_proposals for ai_run_id) = 1
+```
+
+If duplicates ever appear, stop and investigate before adding more retries.
+
+### 10. TypeScript and Tests
+
+From:
+
+```text
+apps/api
+```
+
+run:
+
+```powershell
+npm run typecheck
+npm test
+```
+
+Current expected automated result:
+
+```text
+20 passed
+0 failed
+```
+
+### 11. Database Migration State
+
+Confirm the four VS001-05 migrations are applied to the linked database:
+
+```text
+20260815200500_domain_event_deliveries.sql
+20260815201000_domain_event_delivery_processing.sql
+20260815202000_domain_event_subscriptions.sql
+20260815203000_team_agent_task_proposals.sql
+```
+
+Use:
+
+```powershell
+npx supabase db push --dry-run
+```
+
+from the repository root when checking for unapplied migrations.
+
+A Docker catalogue/cache warning after a successful Supabase push does not by itself mean the database migration failed. Verify the actual database objects if uncertain.
+
+---
+
 # Current Architecture Checkpoint
 
-At the end of VS001-04, the working backend architecture demonstrates:
+At the end of VS001-05, the working backend architecture demonstrates:
 
 ```text
 Supabase Auth
@@ -3101,38 +4295,85 @@ atomic PostgreSQL transaction
      +-- message
      +-- message version 1
      +-- MessageCreated.v1
-  ->
-Standard API Response
+     |
+     +-- fan-out to matching consumer delivery
 ```
 
-This validates several major Cadence architecture requirements:
+For asynchronous Team Agent processing:
+
+```text
+MessageCreated.v1
+  ->
+domain_event_deliveries
+  ->
+claim_domain_event_delivery()
+  ->
+DomainEventProcessor
+  ->
+MessageCreatedV1Handler
+  ->
+DiscussionService.getMessageVersion()
+  ->
+TeamAgentService
+  ->
+create_team_agent_task_proposal()
+     |
+     +-- completed ai_run
+     +-- pending ai_proposal
+     +-- AIProposalCreated.v1
+```
+
+This validates major Cadence architecture requirements:
 
 * authentication remains separate from authorization,
 * authorization is project-scoped,
 * permission codes are the authorization primitive,
 * modules depend on interfaces rather than infrastructure implementations,
 * authoritative state writes remain owned by the responsible module,
+* Discussion and Team Agent are separated by an asynchronous event boundary,
+* consumer processing state is independent per consumer,
+* concurrent delivery claiming is database-safe,
+* stale worker claims cannot complete a newer claim,
+* event-triggered Team Agent persistence is idempotent on the source event,
+* Team Agent reads exact Discussion content through a Discussion-owned query,
+* Team Agent creates only non-authoritative proposal state,
 * material state changes emit domain events,
-* message state, history, and event emission can be committed atomically,
-* request correlation survives into persisted domain events,
-* database functions can provide defence-in-depth security without replacing service-layer authorization,
-* downstream Team Agent processing can remain asynchronous.
+* request/business correlation survives across asynchronous processing,
+* causation records which event directly caused the proposal event,
+* database functions can provide defence-in-depth and concurrency guarantees without replacing application module boundaries,
+* worker hosting can remain separate from the HTTP server.
 
-The next architecture checkpoint must extend this flow from:
+The next architecture checkpoint must extend the flow from:
 
 ```text
-MessageCreated.v1
+pending AI proposal
 ```
 
 into:
 
 ```text
-event processing
+authorised human review
   ->
-Team Agent task proposal
+agent.approve
+  ->
+confirm / edit / reject
 ```
 
-without coupling Team Agent directly into the Discussion write transaction.
+and later, for a confirmed task proposal:
+
+```text
+TeamAgentService
+  ->
+TasksService
+  ->
+task.create
+  ->
+task.assign when required
+  ->
+authoritative Task
+```
+
+without allowing Team Agent to write directly into Tasks persistence.
 
 ---
 
@@ -3143,7 +4384,8 @@ Cadence should remain understandable, maintainable, and transferable to a compet
 A new engineer should be able to determine:
 
 * what the system currently does,
-* how to run it,
+* how to run the HTTP API,
+* how to run the one-shot Team Agent worker,
 * where configuration lives,
 * which module owns each responsibility,
 * how authentication works,
@@ -3151,8 +4393,13 @@ A new engineer should be able to determine:
 * how Project Workspace is assembled,
 * how Discussion message creation works,
 * how Discussion persistence remains atomic,
+* how `MessageCreated.v1` fans out to independent consumers,
+* how event deliveries are claimed, leased, completed, failed, and retried,
+* how Team Agent retrieves the exact immutable Discussion message version,
+* how Team Agent run/proposal persistence remains idempotent,
+* how AI proposal state remains non-authoritative,
 * where current Project Health is stored,
-* how domain-event correlation is preserved,
+* how correlation and causation are preserved,
 * what migrations have been introduced,
 * what has been manually verified,
 * what automated tests exist,
@@ -3166,15 +4413,26 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-complete the VS001-04 source-control checkpoint
+complete the VS001-05 documentation and source-control checkpoint
 ```
 
 followed by:
 
 ```text
-consume MessageCreated.v1 through the event boundary
+VS001-06
   ->
-begin Team Agent task-proposal processing
+Human Proposal Review
 ```
 
+The next implementation begins from a pending Team Agent proposal.
+
 Do not bypass the established module boundaries merely to complete the vertical slice more quickly.
+
+In particular:
+
+```text
+Discussion must not call Team Agent synchronously
+Team Agent must not read Discussion persistence directly
+Team Agent must not write Tasks persistence directly
+human proposal approval must not bypass Tasks permissions
+```

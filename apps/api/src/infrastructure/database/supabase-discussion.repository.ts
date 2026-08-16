@@ -7,6 +7,7 @@ import type {
 import type {
   CreateDiscussionMessageInput,
   DiscussionMessage,
+  DiscussionMessageVersion,
 } from "../../modules/discussion/discussion.types";
 
 import {
@@ -15,11 +16,15 @@ import {
   DiscussionValidationError,
 } from "../../modules/discussion/discussion.errors";
 
+
 type DiscussionMessageRow = {
   id: string;
   project_id: string;
   author_user_id: string | null;
-  author_type: "human" | "agent" | "system";
+  author_type:
+    | "human"
+    | "agent"
+    | "system";
   thread_parent_id: string | null;
   current_version: number;
   content: string;
@@ -27,12 +32,29 @@ type DiscussionMessageRow = {
   edited_at: string | null;
 };
 
+
+type DiscussionMessageVersionRow = {
+  id: string;
+  message_id: string;
+  version_number: number;
+  content: string;
+  editor_user_id: string | null;
+  editor_type:
+    | "human"
+    | "agent"
+    | "system";
+  change_reason: string | null;
+  created_at: string;
+};
+
+
 export class SupabaseDiscussionRepository
   implements DiscussionRepository
 {
   constructor(
     private readonly db: SupabaseClient
   ) {}
+
 
   async createMessage(
     input: CreateDiscussionMessageInput
@@ -82,25 +104,114 @@ export class SupabaseDiscussionRepository
     }
 
     return {
-      id: row.id,
+      id:
+        row.id,
+
       projectId:
         row.project_id,
+
       authorUserId:
         row.author_user_id,
+
       authorType:
         row.author_type,
+
       threadParentId:
         row.thread_parent_id,
+
       currentVersion:
         row.current_version,
+
       content:
         row.content,
+
       createdAt:
         row.created_at,
+
       editedAt:
         row.edited_at,
     };
   }
+
+
+  async getMessageVersion(
+    projectId: string,
+    messageId: string,
+    versionNumber: number
+  ): Promise<DiscussionMessageVersion | null> {
+    const {
+      data,
+      error,
+    } = await this.db
+      .from("message_versions")
+      .select(`
+        id,
+        message_id,
+        version_number,
+        content,
+        editor_user_id,
+        editor_type,
+        change_reason,
+        created_at,
+        messages!inner(project_id)
+      `)
+      .eq(
+        "message_id",
+        messageId
+      )
+      .eq(
+        "version_number",
+        versionNumber
+      )
+      .eq(
+        "messages.project_id",
+        projectId
+      )
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(
+        `Failed to read discussion message version: ${error.message}`
+      );
+    }
+
+    if (!data) {
+      return null;
+    }
+
+    const row =
+      data as unknown as
+        DiscussionMessageVersionRow;
+
+    return {
+      id:
+        row.id,
+
+      messageId:
+        row.message_id,
+
+      projectId,
+
+      versionNumber:
+        row.version_number,
+
+      content:
+        row.content,
+
+      editorUserId:
+        row.editor_user_id,
+
+      editorType:
+        row.editor_type,
+
+      changeReason:
+        row.change_reason,
+
+      createdAt:
+        row.created_at,
+    };
+  }
+
 
   private throwMappedError(
     message: string

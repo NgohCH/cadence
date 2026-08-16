@@ -10,6 +10,7 @@ import type {
 
 import type {
   DiscussionMessage,
+  DiscussionMessageVersion,
 } from "./discussion.types";
 
 import {
@@ -73,5 +74,17 @@ export class DiscussionService {
         context.correlationId,
       causationId: null,
     });
+  }
+
+  async getMessageVersion(
+    projectId: string,
+    messageId: string,
+    versionNumber: number
+  ): Promise<DiscussionMessageVersion | null> {
+    return this.repository.getMessageVersion(
+      projectId,
+      messageId,
+      versionNumber
+    );
   }
 }

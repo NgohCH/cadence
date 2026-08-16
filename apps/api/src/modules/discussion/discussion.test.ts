@@ -24,6 +24,7 @@ import type {
 import type {
   CreateDiscussionMessageInput,
   DiscussionMessage,
+  DiscussionMessageVersion,
 } from "./discussion.types";
 
 import {
@@ -35,6 +36,7 @@ import {
 import {
   DiscussionService,
 } from "./discussion.service";
+
 
 const context: RequestContext = {
   actorUserId:
@@ -51,11 +53,13 @@ const context: RequestContext = {
   identityProvider: "local",
 };
 
+
 const projectId =
   "44444444-4444-4444-8444-444444444444";
 
 const parentMessageId =
   "55555555-5555-4555-8555-555555555555";
+
 
 function createProjectAccess(
   permissions: string[]
@@ -79,6 +83,7 @@ function createProjectAccess(
   };
 }
 
+
 class FakeRbacRepository
   implements RbacRepository
 {
@@ -95,11 +100,16 @@ class FakeRbacRepository
   }
 }
 
+
 class FakeDiscussionRepository
   implements DiscussionRepository
 {
   public calls:
     CreateDiscussionMessageInput[] = [];
+
+  public versions:
+    DiscussionMessageVersion[] = [];
+
 
   async createMessage(
     input: CreateDiscussionMessageInput
@@ -133,7 +143,27 @@ class FakeDiscussionRepository
       editedAt: null,
     };
   }
+
+
+  async getMessageVersion(
+    requestedProjectId: string,
+    messageId: string,
+    versionNumber: number
+  ): Promise<DiscussionMessageVersion | null> {
+    return (
+      this.versions.find(
+        (version) =>
+          version.projectId ===
+            requestedProjectId &&
+          version.messageId ===
+            messageId &&
+          version.versionNumber ===
+            versionNumber
+      ) ?? null
+    );
+  }
 }
+
 
 function createService(
   access:
@@ -166,6 +196,7 @@ function createService(
     repository,
   };
 }
+
 
 test(
   "postMessage creates a message with trimmed content",
@@ -208,6 +239,7 @@ test(
     );
   }
 );
+
 
 test(
   "postMessage preserves actor and correlation metadata",
@@ -257,6 +289,7 @@ test(
   }
 );
 
+
 test(
   "postMessage rejects whitespace-only content",
   async () => {
@@ -285,6 +318,7 @@ test(
     );
   }
 );
+
 
 test(
   "postMessage rejects content longer than 20000 characters",
@@ -315,6 +349,7 @@ test(
   }
 );
 
+
 test(
   "postMessage returns project not found when membership does not exist",
   async () => {
@@ -342,6 +377,7 @@ test(
   }
 );
 
+
 test(
   "postMessage denies an active member without message.create",
   async () => {
@@ -368,6 +404,115 @@ test(
     assert.equal(
       repository.calls.length,
       0
+    );
+  }
+);
+
+
+test(
+  "getMessageVersion returns the exact immutable message version",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createService(
+      createProjectAccess([
+        "message.view",
+      ])
+    );
+
+    const messageId =
+      "99999999-9999-4999-8999-999999999999";
+
+    repository.versions.push({
+      id:
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+
+      messageId,
+
+      projectId,
+
+      versionNumber: 1,
+
+      content:
+        "Daniel, please finalise the syllabus by Friday.",
+
+      editorUserId:
+        context.actorUserId,
+
+      editorType:
+        "human",
+
+      changeReason:
+        null,
+
+      createdAt:
+        "2026-08-15T00:00:00.000Z",
+    });
+
+    const result =
+      await service.getMessageVersion(
+        projectId,
+        messageId,
+        1
+      );
+
+    assert.ok(result);
+
+    assert.equal(
+      result.messageId,
+      messageId
+    );
+
+    assert.equal(
+      result.projectId,
+      projectId
+    );
+
+    assert.equal(
+      result.versionNumber,
+      1
+    );
+
+    assert.equal(
+      result.content,
+      "Daniel, please finalise the syllabus by Friday."
+    );
+
+    assert.equal(
+      result.editorUserId,
+      context.actorUserId
+    );
+
+    assert.equal(
+      result.editorType,
+      "human"
+    );
+  }
+);
+
+
+test(
+  "getMessageVersion returns null when the exact version does not exist",
+  async () => {
+    const {
+      service,
+    } = createService(
+      createProjectAccess([
+        "message.view",
+      ])
+    );
+
+    const result =
+      await service.getMessageVersion(
+        projectId,
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        1
+      );
+
+    assert.equal(
+      result,
+      null
     );
   }
 );

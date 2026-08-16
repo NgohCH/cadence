@@ -18,3 +18,18 @@ export interface DiscussionMessage {
   createdAt: string;
   editedAt: string | null;
 }
+
+export interface DiscussionMessageVersion {
+  id: string;
+  messageId: string;
+  projectId: string;
+  versionNumber: number;
+  content: string;
+  editorUserId: string | null;
+  editorType:
+    | "human"
+    | "agent"
+    | "system";
+  changeReason: string | null;
+  createdAt: string;
+}

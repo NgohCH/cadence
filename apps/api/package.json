@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --env-file=.env --watch --import tsx src/server.ts",
     "start": "node --env-file=.env --import tsx src/server.ts",
+    "worker:once": "node --env-file=.env --import tsx src/worker.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "node --import tsx --test src/**/*.test.ts"
