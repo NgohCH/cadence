@@ -2,12 +2,26 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type {
+  RequestContext,
+} from "../../bootstrap/request-context";
+
+import type {
   DomainEvent,
 } from "../../infrastructure/events/domain-event";
 
 import type {
-  ProjectAccess,
-} from "../rbac/rbac.types";
+  DiscussionRepository,
+} from "../discussion/discussion.repository";
+
+import {
+  DiscussionService,
+} from "../discussion/discussion.service";
+
+import type {
+  CreateDiscussionMessageInput,
+  DiscussionMessage,
+  DiscussionMessageVersion,
+} from "../discussion/discussion.types";
 
 import type {
   RbacRepository,
@@ -18,35 +32,34 @@ import {
 } from "../rbac/rbac.service";
 
 import type {
-  DiscussionRepository,
-} from "../discussion/discussion.repository";
-
-import type {
-  CreateDiscussionMessageInput,
-  DiscussionMessage,
-  DiscussionMessageVersion,
-} from "../discussion/discussion.types";
+  ProjectAccess,
+} from "../rbac/rbac.types";
 
 import {
-  DiscussionService,
-} from "../discussion/discussion.service";
+  TeamAgentPermissionDeniedError,
+  TeamAgentProjectNotFoundError,
+  TeamAgentValidationError,
+} from "./team-agent.errors";
+
+import {
+  MessageCreatedV1Handler,
+} from "./message-created.handler";
 
 import type {
   TeamAgentRepository,
 } from "./team-agent.repository";
 
-import type {
-  CreateTaskProposalInput,
-  TaskProposalProcessingResult,
-} from "./team-agent.types";
-
 import {
   TeamAgentService,
 } from "./team-agent.service";
 
-import {
-  MessageCreatedV1Handler,
-} from "./message-created.handler";
+import type {
+  CreateTaskProposalInput,
+  ReviewTaskProposalInput,
+  TaskProposalPayload,
+  TaskProposalProcessingResult,
+  TaskProposalReviewResult,
+} from "./team-agent.types";
 
 
 const projectId =
@@ -73,8 +86,26 @@ const aiRunId =
 const proposalId =
   "88888888-8888-4888-8888-888888888888";
 
+const reviewerUserId =
+  "99999999-9999-4999-8999-999999999999";
+
+const reviewRequestId =
+  "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+const reviewCorrelationId =
+  "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+const membershipId =
+  "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+const roleId =
+  "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
 const occurredAt =
   "2026-08-15T13:13:38.000Z";
+
+const reviewedAt =
+  "2026-08-16T03:00:00.000Z";
 
 const messageContent =
   "Daniel, please finalise the syllabus by Friday.";
@@ -83,11 +114,17 @@ const messageContent =
 class FakeRbacRepository
   implements RbacRepository
 {
+  constructor(
+    public access:
+      ProjectAccess | null = null
+  ) {}
+
+
   async getProjectAccess(
     _userId: string,
     _projectId: string
   ): Promise<ProjectAccess | null> {
-    return null;
+    return this.access;
   }
 }
 
@@ -100,13 +137,15 @@ class FakeDiscussionRepository
       DiscussionMessageVersion | null
   ) {}
 
+
   async createMessage(
     _input: CreateDiscussionMessageInput
   ): Promise<DiscussionMessage> {
     throw new Error(
-      "createMessage is not used by this test."
+      "createMessage is not used by Team Agent tests."
     );
   }
+
 
   async getMessageVersion(
     requestedProjectId: string,
@@ -116,6 +155,7 @@ class FakeDiscussionRepository
     if (!this.version) {
       return null;
     }
+
 
     if (
       this.version.projectId !==
@@ -128,6 +168,7 @@ class FakeDiscussionRepository
       return null;
     }
 
+
     return this.version;
   }
 }
@@ -139,12 +180,40 @@ class FakeTeamAgentRepository
   public calls:
     CreateTaskProposalInput[] = [];
 
+
+  public reviewCalls:
+    ReviewTaskProposalInput[] = [];
+
+
   public result:
     TaskProposalProcessingResult = {
       aiRunId,
+
       proposalId,
-      created: true,
+
+      created:
+        true,
     };
+
+
+  public reviewResult:
+    TaskProposalReviewResult = {
+      proposalId,
+
+      projectId,
+
+      status:
+        "confirmed",
+
+      reviewedPayload:
+        null,
+
+      reviewedBy:
+        reviewerUserId,
+
+      reviewedAt,
+    };
+
 
   async createTaskProposal(
     input: CreateTaskProposalInput
@@ -154,6 +223,17 @@ class FakeTeamAgentRepository
     );
 
     return this.result;
+  }
+
+
+  async reviewTaskProposal(
+    input: ReviewTaskProposalInput
+  ): Promise<TaskProposalReviewResult> {
+    this.reviewCalls.push(
+      input
+    );
+
+    return this.reviewResult;
   }
 }
 
@@ -168,7 +248,8 @@ DiscussionMessageVersion {
 
     projectId,
 
-    versionNumber: 1,
+    versionNumber:
+      1,
 
     content:
       messageContent,
@@ -196,7 +277,8 @@ DomainEvent {
     eventType:
       "MessageCreated",
 
-    eventVersion: 1,
+    eventVersion:
+      1,
 
     aggregateType:
       "message",
@@ -229,7 +311,8 @@ DomainEvent {
       thread_parent_id:
         null,
 
-      version_number: 1,
+      version_number:
+        1,
     },
   };
 }
@@ -252,11 +335,14 @@ function createHandler(
   const rbacRepository =
     new FakeRbacRepository();
 
+  const rbacService =
+    new RbacService(
+      rbacRepository
+    );
+
   const discussionService =
     new DiscussionService(
-      new RbacService(
-        rbacRepository
-      ),
+      rbacService,
       discussionRepository
     );
 
@@ -265,8 +351,10 @@ function createHandler(
 
   const teamAgentService =
     new TeamAgentService(
+      rbacService,
       teamAgentRepository
     );
+
 
   return {
     handler:
@@ -280,6 +368,116 @@ function createHandler(
 }
 
 
+function createReviewContext():
+RequestContext {
+  return {
+    actorUserId:
+      reviewerUserId,
+
+    projectId,
+
+    correlationId:
+      reviewCorrelationId,
+
+    requestId:
+      reviewRequestId,
+
+    source:
+      "api",
+
+    identityProvider:
+      "test",
+  };
+}
+
+
+function createProjectAccess(
+  permissions:
+    string[] = [
+      "agent.approve",
+    ]
+): ProjectAccess {
+  return {
+    membershipId,
+
+    projectId,
+
+    userId:
+      reviewerUserId,
+
+    roleId,
+
+    roleCode:
+      "TEST_REVIEWER",
+
+    permissions,
+  };
+}
+
+
+function createReviewedPayload():
+TaskProposalPayload {
+  return {
+    title:
+      "  Finalise revised syllabus  ",
+
+    description:
+      "Finalise the revised syllabus after human review.",
+
+    assigned_to:
+      null,
+
+    due_date:
+      null,
+
+    source_message_id:
+      messageId,
+
+    source_message_version_id:
+      messageVersionId,
+  };
+}
+
+
+function createReviewService(
+  access:
+    ProjectAccess | null =
+      createProjectAccess()
+): {
+  service: TeamAgentService;
+  repository: FakeTeamAgentRepository;
+} {
+  const rbacRepository =
+    new FakeRbacRepository(
+      access
+    );
+
+  const repository =
+    new FakeTeamAgentRepository();
+
+  const service =
+    new TeamAgentService(
+      new RbacService(
+        rbacRepository
+      ),
+      repository
+    );
+
+
+  return {
+    service,
+    repository,
+  };
+}
+
+
+/*
+ * VS001-05
+ *
+ * MessageCreated.v1
+ *   ->
+ * deterministic Team Agent proposal
+ */
 test(
   "MessageCreated.v1 creates a deterministic pending task proposal input",
   async () => {
@@ -288,17 +486,21 @@ test(
       teamAgentRepository,
     } = createHandler();
 
+
     await handler.handle(
       createEvent()
     );
+
 
     assert.equal(
       teamAgentRepository.calls.length,
       1
     );
 
+
     const input =
       teamAgentRepository.calls[0];
+
 
     assert.equal(
       input.sourceEventId,
@@ -371,12 +573,14 @@ test(
     );
 
     assert.equal(
-      input.proposalPayload.source_message_id,
+      input.proposalPayload
+        .source_message_id,
       messageId
     );
 
     assert.equal(
-      input.proposalPayload.source_message_version_id,
+      input.proposalPayload
+        .source_message_version_id,
       messageVersionId
     );
 
@@ -415,7 +619,9 @@ test(
     const event =
       createEvent();
 
-    event.eventVersion = 2;
+    event.eventVersion =
+      2;
+
 
     await assert.rejects(
       () =>
@@ -424,6 +630,7 @@ test(
         ),
       /unsupported domain event/
     );
+
 
     assert.equal(
       teamAgentRepository.calls.length,
@@ -444,6 +651,7 @@ test(
     const event =
       createEvent();
 
+
     event.payload = {
       ...(
         event.payload as
@@ -451,8 +659,9 @@ test(
       ),
 
       project_id:
-        "99999999-9999-4999-8999-999999999999",
+        reviewerUserId,
     };
+
 
     await assert.rejects(
       () =>
@@ -461,6 +670,7 @@ test(
         ),
       /project does not match/
     );
+
 
     assert.equal(
       teamAgentRepository.calls.length,
@@ -480,6 +690,7 @@ test(
       null
     );
 
+
     await assert.rejects(
       () =>
         handler.handle(
@@ -488,8 +699,449 @@ test(
       /message version was not found/
     );
 
+
     assert.equal(
       teamAgentRepository.calls.length,
+      0
+    );
+  }
+);
+
+
+/*
+ * VS001-06
+ *
+ * Pending task proposal
+ *   ->
+ * authorised human review
+ *   ->
+ * confirm / edit / reject
+ */
+test(
+  "authorised human can confirm a pending task proposal",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createReviewService();
+
+
+    repository.reviewResult = {
+      proposalId,
+
+      projectId,
+
+      status:
+        "confirmed",
+
+      reviewedPayload:
+        createReviewedPayload(),
+
+      reviewedBy:
+        reviewerUserId,
+
+      reviewedAt,
+    };
+
+
+    const result =
+      await service.reviewTaskProposal(
+        createReviewContext(),
+        projectId,
+        proposalId,
+        "confirm"
+      );
+
+
+    assert.equal(
+      repository.reviewCalls.length,
+      1
+    );
+
+
+    const input =
+      repository.reviewCalls[0];
+
+
+    assert.equal(
+      input.projectId,
+      projectId
+    );
+
+    assert.equal(
+      input.proposalId,
+      proposalId
+    );
+
+    assert.equal(
+      input.reviewerUserId,
+      reviewerUserId
+    );
+
+    assert.equal(
+      input.correlationId,
+      reviewCorrelationId
+    );
+
+    assert.equal(
+      input.action,
+      "confirm"
+    );
+
+    assert.equal(
+      input.reviewedPayload,
+      null
+    );
+
+    assert.equal(
+      result.status,
+      "confirmed"
+    );
+  }
+);
+
+
+test(
+  "authorised human can edit a pending task proposal",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createReviewService();
+
+    const payload =
+      createReviewedPayload();
+
+
+    repository.reviewResult = {
+      proposalId,
+
+      projectId,
+
+      status:
+        "edited",
+
+      reviewedPayload: {
+        ...payload,
+
+        title:
+          payload.title.trim(),
+      },
+
+      reviewedBy:
+        reviewerUserId,
+
+      reviewedAt,
+    };
+
+
+    const result =
+      await service.reviewTaskProposal(
+        createReviewContext(),
+        projectId,
+        proposalId,
+        "edit",
+        payload
+      );
+
+
+    assert.equal(
+      repository.reviewCalls.length,
+      1
+    );
+
+
+    const input =
+      repository.reviewCalls[0];
+
+
+    assert.equal(
+      input.action,
+      "edit"
+    );
+
+    assert.equal(
+      input.reviewerUserId,
+      reviewerUserId
+    );
+
+    assert.equal(
+      input.correlationId,
+      reviewCorrelationId
+    );
+
+    assert.equal(
+      input.reviewedPayload?.title,
+      "Finalise revised syllabus"
+    );
+
+    assert.equal(
+      input.reviewedPayload
+        ?.source_message_id,
+      messageId
+    );
+
+    assert.equal(
+      input.reviewedPayload
+        ?.source_message_version_id,
+      messageVersionId
+    );
+
+    assert.equal(
+      result.status,
+      "edited"
+    );
+  }
+);
+
+
+test(
+  "authorised human can reject a pending task proposal",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createReviewService();
+
+
+    repository.reviewResult = {
+      proposalId,
+
+      projectId,
+
+      status:
+        "rejected",
+
+      reviewedPayload:
+        null,
+
+      reviewedBy:
+        reviewerUserId,
+
+      reviewedAt,
+    };
+
+
+    const result =
+      await service.reviewTaskProposal(
+        createReviewContext(),
+        projectId,
+        proposalId,
+        "reject"
+      );
+
+
+    assert.equal(
+      repository.reviewCalls.length,
+      1
+    );
+
+    assert.equal(
+      repository.reviewCalls[0]
+        .action,
+      "reject"
+    );
+
+    assert.equal(
+      repository.reviewCalls[0]
+        .reviewedPayload,
+      null
+    );
+
+    assert.equal(
+      result.status,
+      "rejected"
+    );
+  }
+);
+
+
+test(
+  "human without agent.approve cannot review a task proposal",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createReviewService(
+      createProjectAccess(
+        [
+          "message.create",
+        ]
+      )
+    );
+
+
+    await assert.rejects(
+      () =>
+        service.reviewTaskProposal(
+          createReviewContext(),
+          projectId,
+          proposalId,
+          "confirm"
+        ),
+      TeamAgentPermissionDeniedError
+    );
+
+
+    assert.equal(
+      repository.reviewCalls.length,
+      0
+    );
+  }
+);
+
+
+test(
+  "non-member cannot review a task proposal",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createReviewService(
+      null
+    );
+
+
+    await assert.rejects(
+      () =>
+        service.reviewTaskProposal(
+          createReviewContext(),
+          projectId,
+          proposalId,
+          "confirm"
+        ),
+      TeamAgentProjectNotFoundError
+    );
+
+
+    assert.equal(
+      repository.reviewCalls.length,
+      0
+    );
+  }
+);
+
+
+test(
+  "edit requires reviewed proposal values",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createReviewService();
+
+
+    await assert.rejects(
+      () =>
+        service.reviewTaskProposal(
+          createReviewContext(),
+          projectId,
+          proposalId,
+          "edit",
+          null
+        ),
+      TeamAgentValidationError
+    );
+
+
+    assert.equal(
+      repository.reviewCalls.length,
+      0
+    );
+  }
+);
+
+
+test(
+  "edit requires a non-empty task title",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createReviewService();
+
+    const payload =
+      createReviewedPayload();
+
+    payload.title =
+      "   ";
+
+
+    await assert.rejects(
+      () =>
+        service.reviewTaskProposal(
+          createReviewContext(),
+          projectId,
+          proposalId,
+          "edit",
+          payload
+        ),
+      TeamAgentValidationError
+    );
+
+
+    assert.equal(
+      repository.reviewCalls.length,
+      0
+    );
+  }
+);
+
+
+test(
+  "confirm does not accept edited proposal values",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createReviewService();
+
+
+    await assert.rejects(
+      () =>
+        service.reviewTaskProposal(
+          createReviewContext(),
+          projectId,
+          proposalId,
+          "confirm",
+          createReviewedPayload()
+        ),
+      TeamAgentValidationError
+    );
+
+
+    assert.equal(
+      repository.reviewCalls.length,
+      0
+    );
+  }
+);
+
+
+test(
+  "reject does not accept edited proposal values",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createReviewService();
+
+
+    await assert.rejects(
+      () =>
+        service.reviewTaskProposal(
+          createReviewContext(),
+          projectId,
+          proposalId,
+          "reject",
+          createReviewedPayload()
+        ),
+      TeamAgentValidationError
+    );
+
+
+    assert.equal(
+      repository.reviewCalls.length,
       0
     );
   }

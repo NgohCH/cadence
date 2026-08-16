@@ -6,6 +6,46 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### VS001-06 — Human Proposal Review
+#### Added
+- Added authenticated project-scoped Team Agent proposal-review endpoint:
+  - `POST /api/v1/projects/{projectId}/task-proposals/{proposalId}/review`.
+- Added `TeamAgentService.reviewTaskProposal()` with server-side `agent.approve` authorization.
+- Added Team Agent review types, repository contract, Supabase adapter, route validation, and typed review errors.
+- Added `reviewed_payload` to `public.ai_proposals` so original AI output remains preserved while final human-reviewed values are stored separately.
+- Added atomic `public.review_team_agent_task_proposal(...)` persistence function.
+- Added confirm, edit, and reject review outcomes.
+- Added reviewer and review-timestamp persistence through `reviewed_by` and `reviewed_at`.
+- Added versioned `AIProposalConfirmed.v1`, `AIProposalEdited.v1`, and `AIProposalRejected.v1` domain events.
+- Added nine VS001-06 Team Agent service tests covering successful and denied review paths and review validation.
+- Added migration `20260816024841_team_agent_human_proposal_review.sql`.
+- Added corrective migration `20260816082249_fix_team_agent_review_column_ambiguity.sql` after live PostgreSQL verification exposed an output-variable/column-name ambiguity.
+#### Architecture
+- Preserved the original AI `payload` as immutable proposal provenance.
+- `reviewed_payload` is populated for confirmed and edited proposals and remains null for rejected proposals.
+- Confirm copies the original AI proposal into `reviewed_payload`; edit stores human-reviewed values separately; reject records no approved payload.
+- Human edits cannot rewrite `source_message_id` or `source_message_version_id`.
+- Review authorization uses the `agent.approve` permission code rather than hard-coded role names.
+- `agent.approve` is checked in both the application service and the database persistence function for defence in depth.
+- Review RPC execution remains restricted to trusted `service_role` access.
+- Team Agent still does not create or modify authoritative Tasks.
+- Confirmed or edited proposals remain non-authoritative until the later TasksService integration revalidates `task.create` and `task.assign` where required.
+#### Verified
+- Verified `npm run typecheck` passes.
+- Verified all 29 automated tests pass.
+- Verified both VS001-06 migrations are synchronized with the linked remote Supabase database.
+- Live-verified confirm: pending proposal became `confirmed`, `reviewed_payload` matched the original AI payload, reviewer/timestamp were recorded, and `AIProposalConfirmed.v1` was emitted.
+- Live-verified edit: original AI payload remained unchanged, human-reviewed title/description were stored separately, source-message provenance remained unchanged, and `AIProposalEdited.v1` was emitted.
+- Live-verified reject: proposal became `rejected`, `reviewed_payload` remained null, reviewer/timestamp were recorded, and `AIProposalRejected.v1` was emitted.
+- Verified the live review flow did not create a new row in `public.tasks`.
+#### Current Limitations
+- Proposal listing is not yet implemented.
+- Confirmed/edited proposals are not yet integrated with `TasksService`.
+- Authoritative Task creation from reviewed proposals is not yet implemented.
+- `task.create` and `task.assign` have not yet been exercised through the reviewed-proposal-to-Task flow.
+- External LLM invocation, prompt-version selection, assignee resolution, and natural-language due-date resolution remain deferred.
+- The Team Agent worker remains one-shot and is not yet hosted as a continuous production worker.
+
 ### VS001-05 — Asynchronous Team Agent Task-Proposal Processing
 
 #### Added
@@ -69,7 +109,6 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 - Prompt-version selection is not yet implemented.
 - User-name resolution is not yet implemented.
 - Natural-language due-date resolution is not yet implemented.
-- Proposal review and confirmation APIs are not yet implemented.
 - Authoritative Task creation is not yet implemented.
 - The VS001-05 worker is one-shot and is not yet hosted as a continuous production worker.
 
@@ -505,6 +544,7 @@ Completed:
 - API-wide `npm test` command.
 - TypeScript type checking.
 - VS001-05 asynchronous Team Agent task-proposal processing.
+- VS001-06 Human Proposal Review.
 - Per-consumer domain-event subscriptions and deliveries.
 - Atomic domain-event delivery claiming.
 - Processing leases and stale-worker claim protection.
@@ -517,7 +557,7 @@ Completed:
 - `AIProposalCreated.v1`.
 - Correlation and causation tracing across the asynchronous flow.
 - One-shot Team Agent worker.
-- Twenty passing automated tests.
+- Twenty-nine passing automated tests.
 - Live VS001-05 Supabase verification.
 
 In progress:
@@ -556,7 +596,6 @@ Next:
 - Natural-language due-date resolution is not yet implemented.
 - AI confidence scoring is not yet implemented.
 - Proposal listing and review APIs are not yet implemented.
-- Proposal confirmation, editing, and rejection are not yet implemented.
 - Confirmed proposals are not yet integrated with `TasksService`.
 - Authoritative Task creation from confirmed proposals is not yet implemented.
 - The Team Agent worker is currently one-shot; continuous production worker hosting and supervision are not yet implemented.

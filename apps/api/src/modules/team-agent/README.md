@@ -1178,171 +1178,279 @@ pass
 Current automated test result:
 
 ```text
-tests 20
-pass 20
+tests 29
+pass 29
 fail 0
 cancelled 0
 skipped 0
 todo 0
 ```
 
-Coverage added during VS001-05 includes:
+Coverage through VS001-06 includes:
 
-- successful event-delivery processing
-- empty delivery queue
-- handler failure
-- immutable Discussion message-version retrieval
-- valid `MessageCreated.v1` processing
-- unsupported event-version rejection
-- inconsistent project rejection
-- missing immutable message-version rejection
-- deterministic task-proposal generation
+- successful event-delivery processing;
+- empty delivery queue;
+- handler failure;
+- immutable Discussion message-version retrieval;
+- valid `MessageCreated.v1` processing;
+- unsupported event-version rejection;
+- inconsistent project rejection;
+- missing immutable message-version rejection;
+- deterministic task-proposal generation;
+- authorised proposal confirm;
+- authorised proposal edit;
+- authorised proposal reject;
+- denial without `agent.approve`;
+- non-member rejection;
+- edit validation;
+- empty-title validation;
+- confirm/reject payload validation.
+
+---
+
+# VS001-06 - Human Proposal Review
+
+VS001-06 implements the Team Agent-owned human review boundary for pending task proposals.
+
+Implemented flow:
+
+```text
+pending task proposal
+  ->
+authenticated human
+  ->
+active project membership
+  ->
+agent.approve
+  ->
+confirm / edit / reject
+```
+
+Endpoint:
+
+```text
+POST /api/v1/projects/{projectId}/task-proposals/{proposalId}/review
+```
+
+The authenticated reviewer comes from `RequestContext.actorUserId`.
+
+Role names are not hard-coded into review logic.
+
+---
+
+## Review Persistence
+
+VS001-06 adds:
+
+```text
+ai_proposals.reviewed_payload
+```
+
+The original AI proposal remains in:
+
+```text
+payload
+```
+
+and is not overwritten during human review.
+
+State model:
+
+```text
+pending   -> reviewed_payload = null
+confirmed -> reviewed_payload = original AI payload
+edited    -> reviewed_payload = human-reviewed values
+rejected  -> reviewed_payload = null
+```
+
+Every terminal review outcome records:
+
+```text
+reviewed_by
+reviewed_at
+```
+
+---
+
+## Confirm
+
+Confirm accepts the original AI proposal as-is:
+
+```text
+pending -> confirmed
+```
+
+The original `payload` remains preserved and is copied into `reviewed_payload`.
+
+Event:
+
+```text
+AIProposalConfirmed.v1
+```
+
+---
+
+## Edit
+
+Edit stores final human-reviewed values separately:
+
+```text
+pending -> edited
+```
+
+The original AI `payload` remains unchanged.
+
+Human review cannot rewrite:
+
+```text
+source_message_id
+source_message_version_id
+```
+
+Event:
+
+```text
+AIProposalEdited.v1
+```
+
+---
+
+## Reject
+
+Reject records a terminal human decision without an approved reviewed payload:
+
+```text
+pending -> rejected
+reviewed_payload = null
+```
+
+Event:
+
+```text
+AIProposalRejected.v1
+```
+
+---
+
+## Defence in Depth
+
+The review path checks:
+
+```text
+agent.approve
+```
+
+at both:
+
+```text
+TeamAgentService
+and
+public.review_team_agent_task_proposal(...)
+```
+
+The PostgreSQL function is `SECURITY DEFINER` with a fixed search path and remains executable only by trusted `service_role` access.
+
+The function locks the proposal row during review so concurrent reviewers cannot both successfully transition the same pending proposal.
+
+---
+
+## Migrations
+
+```text
+20260816024841_team_agent_human_proposal_review.sql
+20260816082249_fix_team_agent_review_column_ambiguity.sql
+```
+
+The corrective migration was required after live testing exposed a PostgreSQL ambiguity between a `RETURNS TABLE` output variable and an unqualified proposal-table column reference.
+
+The failed call rolled back cleanly; no partial review state was persisted.
+
+Both migrations are synchronized with the linked remote Supabase database.
+
+---
+
+## Live Verification
+
+Confirm verified:
+
+```text
+proposal = 2312c92f-43aa-4584-ade7-532a49c3eb08
+status = confirmed
+AIProposalConfirmed.v1 emitted
+```
+
+Edit verified:
+
+```text
+proposal = def8f97f-adf7-444a-a1dd-919b3467464b
+status = edited
+original AI payload preserved
+human-reviewed payload stored separately
+source-message provenance unchanged
+AIProposalEdited.v1 emitted
+```
+
+Reject verified:
+
+```text
+proposal = 90b6a7b3-2e57-436e-af74-8821482cdb65
+status = rejected
+reviewed_payload = null
+AIProposalRejected.v1 emitted
+```
+
+No live review created a new authoritative Task.
 
 ---
 
 # Current Limitations
 
-VS001-05 does not yet implement:
+The Team Agent path still does not implement:
 
-- external LLM invocation
-- production model-provider integration
-- real prompt execution
-- prompt-version selection
-- AI confidence scoring
-- assignee name resolution
-- natural-language due-date resolution
-- proposal-listing API
-- proposal-review API
-- proposal editing
-- proposal confirmation
-- proposal rejection
-- TasksService integration for confirmed proposals
-- authoritative Task creation
-- continuous worker hosting
-- production worker scheduling
-- production worker supervision
+- proposal-listing API;
+- confirmed/edited proposal integration with `TasksService`;
+- authoritative Task creation;
+- `task.create` enforcement through the reviewed-proposal-to-Task path;
+- `task.assign` enforcement through that path when required;
+- external LLM invocation;
+- production model-provider integration;
+- real prompt execution;
+- prompt-version selection;
+- AI confidence scoring;
+- assignee name resolution;
+- natural-language due-date resolution;
+- continuous worker hosting;
+- production worker scheduling and supervision.
 
-These are deliberate boundaries, not implicit capabilities.
+These remain deliberate boundaries rather than implicit capabilities.
 
 ---
 
-# Next Boundary - Human Proposal Review
+# Next Boundary - Authoritative Task Creation
 
-The next checkpoint begins with:
+The next path must remain:
 
 ```text
-pending task proposal
+confirmed / edited proposal
   ->
-authorised human review
-  ->
-confirm / edit / reject
-```
-
-Confirmation must require:
-
-```text
-agent.approve
-```
-
-The permission must be checked server-side through the RBAC module.
-
-Role names must not be hard-coded into proposal approval logic.
-
----
-
-## Human Confirmation
-
-Human approval of a proposal does not automatically grant permission to create or assign a Task.
-
-These remain separate permissions:
-
-```text
-agent.approve
-task.create
-task.assign
-```
-
-Conceptually:
-
-```text
-agent.approve
-  !=
-task.create
-
-agent.approve
-  !=
-task.assign
-```
-
-When a confirmed proposal becomes an authoritative Task, the required path is:
-
-```text
 TeamAgentService
   ->
 TasksService
   ->
-task.create permission check
+task.create
   ->
-task.assign permission check when required
+task.assign when required
   ->
 Tasks-owned persistence
-```
-
-Team Agent must never write directly to:
-
-```text
-public.tasks
-```
-
----
-
-## Human Review Outcomes
-
-Future proposal review should support:
-
-```text
-confirm
-edit
-reject
-```
-
-### Confirm
-
-```text
-pending proposal
   ->
-confirmed
-  ->
-TasksService
-  ->
-authoritative Task
+TaskCreated.v1
 ```
 
-### Edit
+Team Agent must never insert or update `public.tasks` directly.
 
-Human changes should preserve:
+Human `agent.approve` authorization does not imply `task.create` or `task.assign`.
 
-```text
-original AI proposal
-AI provenance
-human reviewer
-review timestamp
-final reviewed values
-```
-
-The AI-generated source must remain traceable after human modification.
-
-### Reject
-
-```text
-pending proposal
-  ->
-rejected
-  ->
-no Task created
-```
-
-A rejected proposal should remain available for provenance and audit purposes.
+The Tasks module remains authoritative for task creation, assignment permission checks, task persistence, task provenance, and task domain events.
 
 ---
 

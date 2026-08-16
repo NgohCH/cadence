@@ -112,6 +112,7 @@ const discussionService =
 
 const teamAgentService =
   new TeamAgentService(
+    rbacService,
     teamAgentRepository
   );
 

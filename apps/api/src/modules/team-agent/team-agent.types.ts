@@ -30,6 +30,48 @@ export interface TaskProposalPayload {
 
   source_message_version_id: string;
 }
+export type TaskProposalReviewAction =
+  | "confirm"
+  | "edit"
+  | "reject";
+
+
+export type TaskProposalReviewStatus =
+  | "confirmed"
+  | "edited"
+  | "rejected";
+
+
+export interface ReviewTaskProposalInput {
+  projectId: string;
+
+  proposalId: string;
+
+  reviewerUserId: string;
+
+  action: TaskProposalReviewAction;
+
+  reviewedPayload:
+    TaskProposalPayload | null;
+
+  correlationId: string;
+}
+
+
+export interface TaskProposalReviewResult {
+  proposalId: string;
+
+  projectId: string;
+
+  status: TaskProposalReviewStatus;
+
+  reviewedPayload:
+    TaskProposalPayload | null;
+
+  reviewedBy: string;
+
+  reviewedAt: string;
+}
 
 
 export interface CreateTaskProposalInput {

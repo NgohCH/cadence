@@ -1,4 +1,12 @@
 import type {
+  RequestContext,
+} from "../../bootstrap/request-context";
+
+import {
+  RbacService,
+} from "../rbac/rbac.service";
+
+import type {
   TeamAgentRepository,
 } from "./team-agent.repository";
 
@@ -7,14 +15,26 @@ import type {
   ProcessMessageForTaskProposalInput,
   TaskProposalPayload,
   TaskProposalProcessingResult,
+  TaskProposalReviewAction,
+  TaskProposalReviewResult,
 } from "./team-agent.types";
+
+import {
+  TeamAgentPermissionDeniedError,
+  TeamAgentProjectNotFoundError,
+  TeamAgentValidationError,
+} from "./team-agent.errors";
 
 
 export class TeamAgentService {
   constructor(
+    private readonly rbacService:
+      RbacService,
+
     private readonly repository:
       TeamAgentRepository
   ) {}
+
 
   async processMessageForTaskProposal(
     input: ProcessMessageForTaskProposalInput
@@ -27,11 +47,13 @@ export class TeamAgentService {
         )
         .trim();
 
+
     if (content.length === 0) {
       throw new Error(
         "Team Agent cannot process an empty message."
       );
     }
+
 
     const proposalPayload:
       TaskProposalPayload = {
@@ -63,6 +85,7 @@ export class TeamAgentService {
         source_message_version_id:
           input.messageVersionId,
       };
+
 
     const persistenceInput:
       CreateTaskProposalInput = {
@@ -122,9 +145,146 @@ export class TeamAgentService {
         },
       };
 
+
     return this.repository.createTaskProposal(
       persistenceInput
     );
+  }
+
+
+  async reviewTaskProposal(
+    context: RequestContext,
+    projectId: string,
+    proposalId: string,
+    action: TaskProposalReviewAction,
+    reviewedPayload:
+      TaskProposalPayload | null = null
+  ): Promise<TaskProposalReviewResult> {
+    /*
+     * Human proposal review is project-scoped.
+     *
+     * Resolve project access first so a caller outside the project
+     * receives the same project-not-found behaviour used by other
+     * Cadence project-scoped services.
+     */
+    const access =
+      await this.rbacService
+        .getProjectAccess(
+          context.actorUserId,
+          projectId
+        );
+
+
+    if (!access) {
+      throw new TeamAgentProjectNotFoundError();
+    }
+
+
+    /*
+     * Authorisation is permission-based rather than role-based.
+     *
+     * Roles may change over time without changing this module.
+     */
+    if (
+      !access.permissions.includes(
+        "agent.approve"
+      )
+    ) {
+      throw new TeamAgentPermissionDeniedError();
+    }
+
+
+    /*
+     * Runtime validation remains necessary even though TypeScript
+     * restricts callers at compile time. HTTP input is untrusted.
+     */
+    if (
+      action !== "confirm" &&
+      action !== "edit" &&
+      action !== "reject"
+    ) {
+      throw new TeamAgentValidationError(
+        "Review action must be confirm, edit, or reject."
+      );
+    }
+
+
+    if (action === "edit") {
+      if (!reviewedPayload) {
+        throw new TeamAgentValidationError(
+          "Edited proposal values are required."
+        );
+      }
+
+
+      const title =
+        reviewedPayload.title.trim();
+
+
+      if (title.length === 0) {
+        throw new TeamAgentValidationError(
+          "Task title is required."
+        );
+      }
+
+
+      return this.repository
+        .reviewTaskProposal({
+          projectId,
+
+          proposalId,
+
+          reviewerUserId:
+            context.actorUserId,
+
+          action,
+
+          reviewedPayload: {
+            ...reviewedPayload,
+
+            title,
+          },
+
+          correlationId:
+            context.correlationId,
+        });
+    }
+
+
+    /*
+     * Confirm and reject never accept replacement proposal values.
+     *
+     * For confirm, the persistence operation copies the immutable
+     * original AI payload into reviewed_payload.
+     *
+     * For reject, reviewed_payload remains null.
+     */
+    if (reviewedPayload !== null) {
+      throw new TeamAgentValidationError(
+        `${action === "confirm"
+          ? "Confirmed"
+          : "Rejected"} proposals must not include edited values.`
+      );
+    }
+
+
+    return this.repository
+      .reviewTaskProposal({
+        projectId,
+
+        proposalId,
+
+        reviewerUserId:
+          context.actorUserId,
+
+        action,
+
+        reviewedPayload:
+          null,
+
+        correlationId:
+          context.correlationId,
+      });
   }
 
 
@@ -134,12 +294,14 @@ export class TeamAgentService {
     const maximumLength =
       160;
 
+
     if (
       content.length <=
       maximumLength
     ) {
       return content;
     }
+
 
     return (
       content.slice(

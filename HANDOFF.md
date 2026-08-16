@@ -28,11 +28,11 @@ Status:
 
 Current checkpoint:
 
-**VS001-05 Asynchronous Team Agent Task-Proposal Processing implementation, live verification, automated tests, and documentation complete. Source-control checkpoint in progress.**
+**VS001-06 Human Proposal Review implementation, remote database deployment, automated tests, and live confirm/edit/reject verification complete. Documentation and source-control checkpoint in progress.**
 
-Next implementation area after the VS001-05 source-control checkpoint:
+Next implementation area after the VS001-06 source-control checkpoint:
 
-**VS001-06 Human Proposal Review, beginning from a non-authoritative pending Team Agent proposal and preserving the Team Agent-to-Tasks module boundary.**
+**VS001-07 authoritative Task creation from a confirmed/edited proposal through TasksService, with independent `task.create`/`task.assign` authorization and no direct Team Agent writes to Tasks.**
 
 ---
 
@@ -3265,56 +3265,319 @@ This remains a critical requirement for the later portion of VS-001.
 * `CHANGELOG.md`
 * `HANDOFF.md`
 
-## Current Documentation / Source-Control Checkpoint
+# VS001-06 Human Proposal Review
 
-VS001-05 implementation, database deployment, live verification, automated tests, Team Agent README, and `CHANGELOG.md` updates are complete.
+Status:
 
-Before beginning VS001-06:
+**Implementation, remote database deployment, automated verification, and live confirm/edit/reject verification complete. Documentation and source-control checkpoint in progress.**
 
-* ensure `HANDOFF.md` reflects the VS001-05 checkpoint,
-* update `docs/vertical-slices/VS-001.md`,
-* inspect the complete Git working tree,
-* inspect all tracked and untracked files,
-* confirm `apps/api/.env` remains ignored and unstaged,
-* confirm no credentials or temporary test data are present in staged source,
-* inspect the staged diff,
-* run `npm run typecheck`,
-* run `npm test`,
-* run `git diff --cached --check`,
-* create the VS001-05 source-control checkpoint,
-* push `feature/vs-001`.
+VS001-06 implements the human-review boundary for Team Agent task proposals while keeping proposals non-authoritative with respect to Tasks.
 
-## Next Implementation Area
-
-After the VS001-05 checkpoint is safely committed:
-
-```text
-VS001-06 - Human Proposal Review
-```
-
-The next flow begins from:
+Verified flow:
 
 ```text
 pending Team Agent task proposal
   ->
-authorised human review
+authenticated project member
+  ->
+agent.approve
   ->
 confirm / edit / reject
+  ->
+reviewed proposal state
 ```
 
-Proposal review must enforce:
+No VS001-06 review operation creates or modifies an authoritative Task.
+
+## API
+
+Authenticated endpoint:
 
 ```text
+POST /api/v1/projects/{projectId}/task-proposals/{proposalId}/review
+```
+
+Supported actions:
+
+```text
+confirm
+edit
+reject
+```
+
+The authoritative reviewer identity comes from:
+
+```text
+RequestContext.actorUserId
+```
+
+## Authorization
+
+Application authorization:
+
+```text
+TeamAgentService.reviewTaskProposal()
+  ->
+RbacService.getProjectAccess()
+  ->
+active project membership
+  ->
 agent.approve
 ```
 
-server-side using RBAC permission codes rather than hard-coded role names.
+The database persistence function revalidates the same `agent.approve` permission immediately before persistence.
 
-Confirmation must not directly insert into Tasks persistence.
+Permission codes remain the authorization primitive. Role names are not hard-coded into review logic.
 
-The later authoritative task path must continue through:
+## Proposal Review State
+
+VS001-06 adds:
 
 ```text
+public.ai_proposals.reviewed_payload
+```
+
+The original AI proposal remains in:
+
+```text
+payload
+```
+
+State rules:
+
+```text
+pending
+  reviewed_payload = null
+
+confirmed
+  reviewed_payload = original AI payload
+
+edited
+  reviewed_payload = final human-reviewed payload
+
+rejected
+  reviewed_payload = null
+```
+
+All terminal review outcomes record:
+
+```text
+reviewed_by
+reviewed_at
+```
+
+## Provenance
+
+Human edit may change task proposal values such as title and description but may not rewrite:
+
+```text
+source_message_id
+source_message_version_id
+```
+
+This preserves the Discussion -> AI proposal lineage after human modification.
+
+## Atomic Review Persistence
+
+Primary function:
+
+```text
+public.review_team_agent_task_proposal(...)
+```
+
+The function:
+
+* validates stable references and review action,
+* revalidates `agent.approve`,
+* locks the proposal using `FOR UPDATE`,
+* accepts only `pending` proposals,
+* records the review outcome,
+* preserves original AI payload,
+* records reviewer and timestamp,
+* emits the corresponding review domain event,
+* performs no Tasks persistence.
+
+The function remains restricted to trusted service-role execution.
+
+## VS001-06 Migrations
+
+```text
+supabase/migrations/20260816024841_team_agent_human_proposal_review.sql
+supabase/migrations/20260816082249_fix_team_agent_review_column_ambiguity.sql
+```
+
+Both are synchronized with the linked remote Supabase database.
+
+### Corrective migration
+
+The first live confirm request reached the database successfully but exposed a PostgreSQL naming ambiguity:
+
+```text
+column reference "project_id" is ambiguous
+```
+
+Cause:
+
+`RETURNS TABLE` created a PL/pgSQL output variable named `project_id`, while the proposal query used an unqualified column with the same name.
+
+The failed transaction rolled back; the proposal remained pending with no partial reviewer state.
+
+The corrective migration qualifies proposal-table column references explicitly and preserves the intended review behaviour.
+
+## Review Domain Events
+
+VS001-06 adds:
+
+```text
+AIProposalConfirmed.v1
+AIProposalEdited.v1
+AIProposalRejected.v1
+```
+
+Review events use:
+
+```text
+aggregate_type = ai_proposal
+aggregate_id = proposal ID
+actor_type = human
+actor_id = authenticated reviewer
+```
+
+and preserve the request correlation ID.
+
+## Live Confirm Verification
+
+Proposal:
+
+```text
+2312c92f-43aa-4584-ade7-532a49c3eb08
+```
+
+Verified:
+
+```text
+pending -> confirmed
+reviewed_payload = original AI payload
+reviewed_by = afec9f7c-eb66-46b9-9668-cb57b26394b5
+reviewed_at populated
+AIProposalConfirmed.v1 emitted
+```
+
+## Live Edit Verification
+
+Proposal:
+
+```text
+def8f97f-adf7-444a-a1dd-919b3467464b
+```
+
+Verified:
+
+```text
+pending -> edited
+original payload unchanged
+reviewed title = Finalise revised syllabus for faculty review
+reviewed description stored separately
+source_message_id unchanged
+source_message_version_id unchanged
+AIProposalEdited.v1 emitted
+```
+
+## Live Reject Verification
+
+Proposal:
+
+```text
+90b6a7b3-2e57-436e-af74-8821482cdb65
+```
+
+Verified:
+
+```text
+pending -> rejected
+reviewed_payload = null
+reviewer/timestamp recorded
+AIProposalRejected.v1 emitted
+```
+
+## Tasks Boundary Verification
+
+The live review flow did not create a new `public.tasks` row.
+
+The only inspected Task in the test project predates VS001-06 review activity.
+
+Required boundary remains:
+
+```text
+Team Agent
+  ->
+human-reviewed proposal
+  ->
+later TasksService integration
+```
+
+and never:
+
+```text
+Team Agent -> public.tasks
+```
+
+## Automated Verification
+
+Latest gate:
+
+```text
+npm run typecheck -> pass
+npm test          -> 29 tests / 29 pass / 0 fail
+git diff --check  -> clean
+```
+
+VS001-06 tests cover confirm, edit, reject, permission denial, non-membership, missing edit payload, empty title, and invalid confirm/reject payload usage.
+
+## VS001-06 Implementation Files
+
+```text
+apps/api/src/infrastructure/database/supabase-team-agent.repository.ts
+apps/api/src/modules/team-agent/team-agent.errors.ts
+apps/api/src/modules/team-agent/team-agent.repository.ts
+apps/api/src/modules/team-agent/team-agent.routes.ts
+apps/api/src/modules/team-agent/team-agent.service.ts
+apps/api/src/modules/team-agent/team-agent.test.ts
+apps/api/src/modules/team-agent/team-agent.types.ts
+apps/api/src/server.ts
+apps/api/src/worker.ts
+supabase/migrations/20260816024841_team_agent_human_proposal_review.sql
+supabase/migrations/20260816082249_fix_team_agent_review_column_ambiguity.sql
+```
+
+## Current Documentation / Source-Control Checkpoint
+
+VS001-06 implementation, remote migration deployment, automated tests, and live confirm/edit/reject verification are complete.
+
+Before beginning VS001-07:
+
+* update `CHANGELOG.md`, `HANDOFF.md`, Team Agent README, and `docs/vertical-slices/VS-001.md` through VS001-06;
+* inspect all tracked and untracked VS001-06 files;
+* confirm `apps/api/.env` remains ignored and unstaged;
+* confirm no Supabase keys, user JWTs, passwords, or temporary credentials are present in source or staged diffs;
+* inspect the complete staged diff;
+* run `npm run typecheck`;
+* run `npm test`;
+* run `git diff --cached --check`;
+* create the VS001-06 source-control checkpoint;
+* push `feature/vs-001`.
+
+## Next Implementation Area
+
+```text
+VS001-07 - Authoritative Task Creation from Reviewed Proposal
+```
+
+The next path must continue through:
+
+```text
+confirmed / edited proposal
+  ->
 TeamAgentService
   ->
 TasksService
@@ -3323,8 +3586,12 @@ task.create
   ->
 task.assign when required
   ->
-authoritative Task
+Tasks-owned persistence
+  ->
+TaskCreated.v1
 ```
+
+`agent.approve` must not be treated as authority for Task creation or assignment.
 
 ---
 
@@ -3332,11 +3599,6 @@ authoritative Task
 
 The following portions of the vertical slice are still outstanding:
 
-* human proposal review API
-* proposal confirmation
-* proposal editing
-* proposal rejection
-* `agent.approve` enforcement through the VS-001 review flow
 * confirmed-proposal integration with `TasksService`
 * authoritative task creation through `TasksService`
 * `task.create` enforcement through the VS-001 flow
@@ -3406,6 +3668,8 @@ The following portions of the vertical slice are still outstanding:
 36. `agent.approve` does not imply `task.create` or `task.assign`; target-module authorization must be re-evaluated.
 37. Team Agent must never insert or update authoritative Tasks persistence directly.
 38. External model inputs/outputs and raw AI-run data must remain server-controlled according to the existing AI provenance/security model.
+39. `public.review_team_agent_task_proposal(...)` must remain unavailable to `public`, `anon`, and `authenticated` roles and executable only through trusted service-role access.
+40. Human edit must not rewrite source-message provenance stored on the AI proposal.
 
 ---
 
@@ -3440,9 +3704,9 @@ When adding or changing functionality:
 
 # Immediate Next Engineering Step
 
-VS001-05 implementation, database deployment, live verification, automated testing, Team Agent README documentation, and `CHANGELOG.md` updates are complete.
+VS001-06 implementation, database deployment, automated testing, live confirm/edit/reject verification, and documentation are complete.
 
-The immediate activity is the VS001-05 documentation and source-control checkpoint.
+The immediate activity is the VS001-06 source-control checkpoint.
 
 From the repository root:
 
@@ -3452,48 +3716,41 @@ C:\Users\chngo\cadence
 
 perform:
 
-1. save the updated `HANDOFF.md`,
-2. update `docs/vertical-slices/VS-001.md` through VS001-05,
-3. inspect the complete working tree,
-4. inspect all tracked and untracked VS001-05 files,
-5. confirm the four VS001-05 migrations are present,
-6. confirm `apps/api/.env` is ignored and unstaged,
-7. confirm no credentials or temporary test data are present in source files,
-8. run `npm run typecheck` from `apps/api`,
-9. run `npm test` from `apps/api`,
-10. run `git diff --cached --check`,
-11. inspect `git diff --cached`,
-12. confirm `CHANGELOG.md`, `HANDOFF.md`, module README files, and `docs/vertical-slices/VS-001.md` accurately describe VS001-05,
-13. commit the VS001-05 checkpoint,
-14. push `feature/vs-001`.
+1. inspect the complete working tree;
+2. confirm both VS001-06 migrations are present;
+3. confirm `apps/api/.env` remains ignored and unstaged;
+4. confirm no Supabase keys, bearer tokens, passwords, or temporary credentials are present in source files;
+5. run `npm run typecheck` from `apps/api`;
+6. run `npm test` from `apps/api`;
+7. stage only the intended VS001-06 code, migrations, and documentation;
+8. run `git diff --cached --check`;
+9. inspect `git diff --cached` and `git status`;
+10. commit the VS001-06 checkpoint;
+11. push `feature/vs-001`.
 
 Only after that checkpoint should development begin:
 
 ```text
-VS001-06
+VS001-07
   ->
-Human Proposal Review
+Authoritative Task Creation from Reviewed Proposal
 ```
 
-The next implementation must begin from the existing:
+The next implementation must preserve:
 
 ```text
-pending AI proposal
+confirmed / edited proposal
+  ->
+TasksService
+  ->
+task.create
+  ->
+task.assign when required
+  ->
+authoritative Task
 ```
 
-and must preserve:
-
-```text
-authorised human
-  ->
-agent.approve
-  ->
-confirm / edit / reject
-```
-
-Confirmation must not bypass the Tasks module.
-
-Do not allow Team Agent to insert directly into authoritative Tasks records.
+Do not allow Team Agent to insert or update authoritative Tasks records directly.
 
 ---
 
