@@ -3,6 +3,10 @@ import {
 } from "@supabase/supabase-js";
 
 import {
+  SupabaseAuditRepository,
+} from "./infrastructure/database/supabase-audit.repository";
+
+import {
   SupabaseDiscussionRepository,
 } from "./infrastructure/database/supabase-discussion.repository";
 
@@ -21,6 +25,14 @@ import {
 import {
   DomainEventProcessor,
 } from "./infrastructure/events/domain-event.processor";
+
+import {
+  AuditDomainEventHandler,
+} from "./modules/audit/audit-domain-event.handler";
+
+import {
+  AuditService,
+} from "./modules/audit/audit.service";
 
 import {
   DiscussionService,
@@ -74,6 +86,11 @@ const databaseClient =
   );
 
 
+const auditRepository =
+  new SupabaseAuditRepository(
+    databaseClient
+  );
+
 const domainEventRepository =
   new SupabaseDomainEventRepository(
     databaseClient
@@ -99,6 +116,11 @@ const teamAgentRepository =
  * Application services
  */
 
+const auditService =
+  new AuditService(
+    auditRepository
+  );
+
 const rbacService =
   new RbacService(
     rbacRepository
@@ -121,6 +143,11 @@ const teamAgentService =
  * Event handlers
  */
 
+const auditDomainEventHandler =
+  new AuditDomainEventHandler(
+    auditService
+  );
+
 const messageCreatedHandler =
   new MessageCreatedV1Handler(
     discussionService,
@@ -139,22 +166,52 @@ const processor =
 
 
 async function main(): Promise<void> {
-  const processed =
+  /*
+   * Audit and Team Agent are independent domain-event consumers.
+   *
+   * Each invocation processes at most one pending delivery for each
+   * consumer. Repeated worker invocations drain additional work.
+   *
+   * Audit is attempted first so the committed business action can be
+   * recorded independently even if a downstream Team Agent operation
+   * later fails.
+   */
+  const auditProcessed =
+    await processor.processNext(
+      auditDomainEventHandler
+    );
+
+
+  const teamAgentProcessed =
     await processor.processNext(
       messageCreatedHandler
     );
 
-  if (!processed) {
+
+  if (
+    !auditProcessed &&
+    !teamAgentProcessed
+  ) {
     console.log(
-      "Cadence worker: no pending Team Agent delivery."
+      "Cadence worker: no pending domain-event deliveries."
     );
 
     return;
   }
 
-  console.log(
-    "Cadence worker: processed one Team Agent delivery."
-  );
+
+  if (auditProcessed) {
+    console.log(
+      "Cadence worker: processed one Audit delivery."
+    );
+  }
+
+
+  if (teamAgentProcessed) {
+    console.log(
+      "Cadence worker: processed one Team Agent delivery."
+    );
+  }
 }
 
 

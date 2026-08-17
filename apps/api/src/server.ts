@@ -5,6 +5,7 @@ import { success } from "./bootstrap/api-response";
 
 import { SupabaseAuthProvider } from "./infrastructure/auth/supabase-auth-provider";
 
+import { SupabaseAuditRepository } from "./infrastructure/database/supabase-audit.repository";
 import { SupabaseIdentityRepository } from "./infrastructure/database/supabase-identity.repository";
 import { SupabaseRbacRepository } from "./infrastructure/database/supabase-rbac.repository";
 import { SupabaseProjectsRepository } from "./infrastructure/database/supabase-projects.repository";
@@ -20,6 +21,14 @@ import {
 import {
   requestTraceMiddleware,
 } from "./middleware/request-trace.middleware";
+
+import {
+  AuditQueryService,
+} from "./modules/audit/audit-query.service";
+
+import {
+  createAuditRouter,
+} from "./modules/audit/audit.routes";
 
 import {
   IdentityService,
@@ -141,6 +150,12 @@ const databaseClient =
   );
 
 
+const auditRepository =
+  new SupabaseAuditRepository(
+    databaseClient
+  );
+
+
 const identityRepository =
   new SupabaseIdentityRepository(
     databaseClient
@@ -196,6 +211,13 @@ const identityService =
 const rbacService =
   new RbacService(
     rbacRepository
+  );
+
+
+const auditQueryService =
+  new AuditQueryService(
+    rbacService,
+    auditRepository
   );
 
 
@@ -310,6 +332,10 @@ app.use(
 
   createTasksRouter(
     tasksService
+  ),
+
+  createAuditRouter(
+    auditQueryService
   ),
 
   createTeamAgentRouter(

@@ -28,11 +28,20 @@ Status:
 
 Current checkpoint:
 
-**VS001-08 My Tasks Read Model implementation, remote database deployment, automated tests, and live end-to-end verification complete. Documentation and source-control checkpoint in progress.**
+**VS001-09 Complete Audit Reconstruction implementation, both Audit migrations, direct database reconstruction, authenticated Audit API reconstruction, and post-hardening happy-path verification are complete. Documentation and source-control checkpoint are in progress.**
 
-Next implementation area after the VS001-08 source-control checkpoint:
+Latest reported automated implementation gate before the final documentation/source-control pass:
 
-**Complete the VS001-08 source-control checkpoint, then continue the remaining VS-001 acceptance work: complete audit reconstruction and one-correlation-ID verification/correction.**
+```text
+npm run typecheck = passed
+npm test = 61 passed, 0 failed
+```
+
+A final post-documentation/post-hardening typecheck and test run is still required before commit.
+
+Next implementation area after the VS001-09 source-control checkpoint:
+
+**Complete the VS001-09 final verification, staged security review, commit, and push. Then continue final VS-001 UI integration where required.**
 
 ---
 
@@ -92,7 +101,7 @@ The following principles apply throughout development.
 9. Material state changes produce traceable domain events.
 10. AI-generated state requires provenance.
 11. Request IDs identify individual HTTP requests.
-12. Correlation IDs trace a complete business journey.
+12. Correlation IDs identify truthful request or processing contexts; a complete business journey may span multiple correlation IDs and is reconstructed through durable provenance, aggregate identity, causation, Audit projection, and correlation metadata.
 13. Causation IDs identify which event directly caused another event.
 14. Retryable commands must support idempotency where required.
 15. Security controls should be designed into modules rather than added later.
@@ -202,6 +211,12 @@ Authenticated My Tasks endpoint:
 GET /api/v1/me/tasks
 ```
 
+Authenticated Task Audit endpoint:
+
+```text
+GET /api/v1/projects/{projectId}/tasks/{taskId}/audit
+```
+
 ---
 
 # API Development Commands
@@ -248,7 +263,19 @@ Current worker script:
 node --env-file=.env --import tsx src/worker.ts
 ```
 
-The current worker processes at most one available `team-agent.message-created.v1` delivery and exits.
+The current one-shot worker processes Audit and Team Agent consumers independently.
+
+Per invocation it attempts:
+
+```text
+one Audit domain-event delivery
++
+one Team Agent MessageCreated.v1 delivery
+```
+
+and then exits.
+
+It does not run a permanent polling loop.
 
 Type checking:
 
@@ -268,12 +295,14 @@ Build:
 npm run build
 ```
 
-Current verification:
+Latest reported automated implementation verification:
 
 ```text
 npm run typecheck = passed
-npm test = 53 passed, 0 failed
+npm test = 61 passed, 0 failed
 ```
+
+This 61/61 gate was reached during VS001-09 implementation. Run the gate again after the current documentation and route-hardening changes before committing.
 
 ---
 
@@ -432,7 +461,21 @@ Identifies one HTTP request.
 
 ### Correlation ID
 
-Identifies the complete business journey across requests, services, and domain events.
+Identifies one truthful request or processing context.
+
+Correlation may continue across asynchronous processing that belongs to the same originating context, but separate human HTTP interactions may legitimately begin different correlations.
+
+A complete business journey is reconstructed using:
+
+```text
+durable provenance
++ aggregate identity
++ causation
++ Audit projection
++ one or more truthful correlation IDs
+```
+
+Do not rewrite later request correlations merely to make a multi-request workflow appear to use one correlation ID.
 
 ### Causation ID
 
@@ -1883,6 +1926,7 @@ SupabaseDiscussionRepository
 SupabaseTeamAgentRepository
 SupabaseTeamAgentMaterializationRepository
 SupabaseTasksRepository
+SupabaseAuditRepository
 
 IdentityService
 RbacService
@@ -1891,6 +1935,7 @@ DiscussionService
 TeamAgentService
 TeamAgentTaskMaterializationService
 TasksService
+AuditQueryService
 
 authentication middleware
 
@@ -1898,6 +1943,7 @@ identity router
 projects router
 discussion router
 tasks router
+audit router
 team-agent review router
 team-agent task-materialization router
 ```
@@ -1910,7 +1956,7 @@ Protected API routes are mounted under:
 /api/v1
 ```
 
-Authentication middleware executes before protected Identity, Projects, Discussion, Tasks, Team Agent review, and Task-materialization route handlers.
+Authentication middleware executes before protected Identity, Projects, Discussion, Tasks, Audit, Team Agent review, and Task-materialization route handlers.
 
 The current protected Discussion endpoint is:
 
@@ -1922,6 +1968,12 @@ The current protected My Tasks endpoint is:
 
 ```text
 GET /api/v1/me/tasks
+```
+
+The current protected Task Audit endpoint is:
+
+```text
+GET /api/v1/projects/{projectId}/tasks/{taskId}/audit
 ```
 
 Server composition remains explicit in `src/server.ts`.
@@ -1942,23 +1994,35 @@ Asynchronous Team Agent processing uses a separate composition root:
 apps/api/src/worker.ts
 ```
 
-The one-shot worker composes:
+The one-shot worker composes independent Audit and Team Agent consumers around the shared domain-event delivery infrastructure.
+
+Conceptually:
 
 ```text
 SupabaseDomainEventRepository
   ->
 DomainEventProcessor
   ->
-MessageCreatedV1Handler
+AuditDomainEventHandler
+  ->
+AuditService
+  ->
+SupabaseAuditRepository
 
+SupabaseDomainEventRepository
+  ->
+DomainEventProcessor
+  ->
+MessageCreatedV1Handler
+  ->
 DiscussionService
   ->
-SupabaseDiscussionRepository
-
 TeamAgentService
-  ->
-SupabaseTeamAgentRepository
 ```
+
+Audit projection and Team Agent processing use independent per-consumer delivery records.
+
+The worker attempts Audit processing before Team Agent processing in each invocation. A failure or retry state for one consumer must not be treated as the processing state of the other consumer.
 
 `DiscussionService` currently requires `RbacService` in its constructor even though the trusted internal `getMessageVersion()` path does not perform an RBAC check. The worker therefore composes the existing Discussion service rather than bypassing the module boundary and reading Discussion tables directly.
 
@@ -2364,7 +2428,7 @@ Automatic retries of state-changing Discussion commands should not be introduced
 
 Status:
 
-**Implementation, live verification, automated tests, and documentation complete. Source-control checkpoint in progress.**
+**Implementation, live verification, automated tests, documentation, and source-control checkpoint complete.**
 
 VS001-05 implements the first asynchronous downstream consumer in Cadence.
 
@@ -3283,7 +3347,7 @@ This boundary was live-verified in VS001-07.
 * one-shot `worker:once` composition root
 * live VS001-05 Supabase verification
 * duplicate-safety verification
-* 53 passing automated test entries
+* 61 passing automated test entries at the latest reported VS001-09 implementation gate
 * TypeScript type checking
 * Team Agent README documentation
 * `CHANGELOG.md`
@@ -3302,6 +3366,18 @@ This boundary was live-verified in VS001-07.
 * unauthenticated My Tasks `401` verification
 * live assigned open Task visibility for Alice
 * live fresh Discussion -> proposal -> human assignment -> authoritative Task -> My Tasks verification
+* VS001-09 independent Audit domain-event consumer `audit.domain-events.v1`
+* idempotent projection of six material VS-001 event types into `public.audit_events`
+* historical Audit backfill
+* 20 supported domain events -> 20 Audit projections -> 0 missing
+* service-role-only `public.project_domain_event_to_audit(uuid)`
+* service-role-only `public.get_task_audit_journey(...)`
+* authenticated Task Audit endpoint
+* `audit.view` application authorization
+* `audit.view` database revalidation
+* complete Task business-journey reconstruction
+* live 4-event / 2-correlation reconstruction verification
+* separation of current Audit HTTP request correlation from historical journey correlations
 
 # VS001-06 Human Proposal Review
 
@@ -3770,13 +3846,25 @@ correlation = b67f55ed-24f9-40dc-b11f-318c7771cd02
 causation = 329ed710-5278-430d-901b-8ea757b05a2e
 ```
 
-## Correlation Watch Item
+## Correlation Boundary Resolved by VS001-09
 
 VS001-07 correctly continues the human-review correlation into `TaskCreated.v1`.
 
-The fresh Discussion request used a different correlation ID from the later human-review request, so one-correlation-ID continuity across the complete multi-request journey is not yet proven.
+The fresh Discussion request used a different correlation ID from the later human-review request. VS001-09 established that this is truthful behaviour rather than a defect.
 
-Final audit reconstruction must address this explicitly.
+Cadence now distinguishes:
+
+```text
+request correlation
+    = one technical request / processing context
+
+business journey
+    = a logical workflow reconstructed from durable evidence
+```
+
+The complete Discussion-to-Task journey may therefore span multiple correlation IDs.
+
+VS001-09 reconstructs the journey through provenance, aggregate identity, causation, and Audit projection without rewriting the original correlations.
 
 ## Automated Verification
 
@@ -3810,7 +3898,13 @@ supabase/migrations/20260816123000_authoritative_task_creation.sql
 
 Status:
 
-**Implementation, remote database deployment, automated verification, and live end-to-end verification complete. Documentation and source-control checkpoint in progress.**
+**Implementation, remote database deployment, automated verification, live end-to-end verification, documentation, and source-control checkpoint complete.**
+
+VS001-08 checkpoint commit:
+
+```text
+85a05e9 feat(tasks): add my tasks read model
+```
 
 VS001-08 implements the authenticated current-actionable-task read model required by the vertical slice.
 
@@ -4112,12 +4206,452 @@ supabase/migrations/20260817101500_my_tasks_read_model.sql
 
 ---
 
+# VS001-09 Complete Audit Reconstruction
+
+Status:
+
+**Implementation, both remote migrations, direct database reconstruction, authenticated API reconstruction, and post-hardening happy-path verification complete. Documentation and source-control checkpoint in progress.**
+
+VS001-09 completes the backend Audit portion of the vertical slice.
+
+The verified business journey is:
+
+```text
+Discussion
+  ->
+MessageCreated.v1
+  ->
+AIProposalCreated.v1
+  ->
+human proposal review
+  ->
+AIProposalEdited.v1 / AIProposalConfirmed.v1
+  ->
+TaskCreated.v1
+  ->
+Audit reconstruction
+```
+
+## Audit Ownership
+
+Audit owns:
+
+```text
+audit projection
+audit reconstruction
+audit-facing views
+```
+
+Audit does not own authoritative:
+
+```text
+Discussion state
+AI proposal state
+Task state
+project membership
+RBAC state
+```
+
+Business modules continue to create authoritative state and versioned domain events.
+
+Audit consumes those records.
+
+The dependency direction is:
+
+```text
+business module
+  ->
+domain event
+  ->
+independent Audit delivery
+  ->
+Audit projection
+  ->
+audit_events
+```
+
+Business modules must not call Audit directly.
+
+## Audit Projection Consumer
+
+Consumer:
+
+```text
+audit.domain-events.v1
+```
+
+Supported v1 events:
+
+```text
+MessageCreated
+AIProposalCreated
+AIProposalConfirmed
+AIProposalEdited
+AIProposalRejected
+TaskCreated
+```
+
+Projection function:
+
+```text
+public.project_domain_event_to_audit(uuid)
+```
+
+The function is restricted to:
+
+```text
+service_role
+```
+
+Projection uses:
+
+```text
+audit_events.event_id = domain event ID
+```
+
+as the idempotency key.
+
+Because `audit_events.event_id` is unique, duplicate delivery does not create duplicate Audit records.
+
+## Audit Projection Migration
+
+Migration:
+
+```text
+supabase/migrations/20260817120000_audit_domain_event_projection.sql
+```
+
+The migration:
+
+* creates the projection function;
+* registers the Audit consumer subscriptions;
+* projects the six supported VS-001 event types;
+* retains actor, project, entity, correlation, causation, state, and event metadata;
+* preserves the original domain-event occurrence time;
+* backfills existing supported domain events;
+* keeps RPC execution restricted to trusted server-side service-role access.
+
+The migration is synchronized with the linked remote Supabase database.
+
+## Historical Backfill
+
+New subscriptions do not automatically replay domain events that already existed before registration.
+
+VS001-09 therefore performs an explicit supported-event backfill.
+
+Live verification:
+
+```text
+supported domain events = 20
+projected Audit events  = 20
+missing projections     = 0
+```
+
+Six active `audit.domain-events.v1` subscriptions were also verified.
+
+## Correlation Model
+
+VS001-09 resolves the earlier one-correlation-ID question.
+
+The verified workflow contains two truthful historical request correlations.
+
+First context:
+
+```text
+MessageCreated.v1
+  correlation = b1e9c88c-0b50-44fa-9392-d8ca11395a00
+        |
+        v
+AIProposalCreated.v1
+  correlation = b1e9c88c-0b50-44fa-9392-d8ca11395a00
+```
+
+Later human-review context:
+
+```text
+AIProposalEdited.v1
+  correlation = ea7ff31c-ad52-405c-9d1f-b2cc2f73b512
+        |
+        v
+TaskCreated.v1
+  correlation = ea7ff31c-ad52-405c-9d1f-b2cc2f73b512
+```
+
+This is expected.
+
+Do not force the later review request to reuse the earlier Discussion request correlation.
+
+The correct rule is:
+
+```text
+One business journey
+    !=
+One HTTP correlation
+```
+
+Instead:
+
+```text
+One business journey
+    =
+durable provenance
++ aggregate identity
++ causation
++ Audit projection
++ one or more truthful request correlations
+```
+
+## Reconstruction Path
+
+For a Task created from a Team Agent proposal:
+
+```text
+Task
+  ->
+source_links
+  ->
+AI Proposal
+  ->
+AI Run
+  ->
+source_event_id
+  ->
+MessageCreated.v1
+```
+
+Proposal lifecycle events are connected using:
+
+```text
+aggregate_type = ai_proposal
+aggregate_id = proposal ID
+```
+
+`TaskCreated.v1` preserves causation to the successful proposal-review event.
+
+This provides a durable cross-request reconstruction path.
+
+## Reconstruction RPC
+
+Migration:
+
+```text
+supabase/migrations/20260817140000_audit_task_journey_reconstruction.sql
+```
+
+Function:
+
+```text
+public.get_task_audit_journey(
+  p_project_id uuid,
+  p_task_id uuid,
+  p_requesting_user_id uuid
+)
+```
+
+The function:
+
+* validates required references;
+* revalidates `audit.view`;
+* finds Task-to-proposal provenance;
+* resolves the AI run;
+* resolves the originating `MessageCreated.v1`;
+* includes the AI proposal lifecycle;
+* includes authoritative `TaskCreated.v1`;
+* joins corresponding Audit projections;
+* returns the journey chronologically.
+
+The RPC is restricted to:
+
+```text
+service_role
+```
+
+The migration is synchronized with the linked remote Supabase database.
+
+## Audit API
+
+Endpoint:
+
+```text
+GET /api/v1/projects/{projectId}/tasks/{taskId}/audit
+```
+
+Required permission:
+
+```text
+audit.view
+```
+
+Application flow:
+
+```text
+authenticated RequestContext
+  ->
+AuditQueryService
+  ->
+RbacService.getProjectAccess()
+  ->
+audit.view
+  ->
+SupabaseAuditRepository
+  ->
+get_task_audit_journey(...)
+```
+
+The database rechecks `audit.view` for defence in depth.
+
+The route validates project and Task UUIDs and maps expected Audit errors into the standard API error envelope.
+
+## Live Verified Journey
+
+Project:
+
+```text
+ff571613-672d-4424-813c-5114bdca53a4
+```
+
+Task:
+
+```text
+c132b53e-e9b9-4389-81bc-6d4011bf1e2f
+```
+
+Reconstructed events:
+
+```text
+1. MessageCreated.v1
+2. AIProposalCreated.v1
+3. AIProposalEdited.v1
+4. TaskCreated.v1
+```
+
+Direct database verification returned:
+
+```text
+event_count       = 4
+correlation_count = 2
+```
+
+All four domain events joined to their corresponding Audit records.
+
+## Audit API Verification
+
+A live authenticated Audit request deliberately supplied:
+
+```text
+X-Correlation-ID =
+aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+```
+
+The response returned:
+
+```text
+success = true
+journey.events.Count = 4
+journey.correlation_count = 2
+```
+
+Historical journey correlations:
+
+```text
+b1e9c88c-0b50-44fa-9392-d8ca11395a00
+ea7ff31c-ad52-405c-9d1f-b2cc2f73b512
+```
+
+Current request correlation:
+
+```text
+aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+```
+
+Verification:
+
+```text
+journey.correlation_ids -contains meta.correlation_id
+=
+False
+```
+
+This proves the Audit inspection request is not confused with the historical business workflow being inspected.
+
+## Automated Tests
+
+VS001-09 adds coverage for:
+
+```text
+supported Audit domain-event projection
+idempotent existing projection
+unsupported event rejection
+unsupported version rejection
+missing project provenance
+multi-correlation journey reconstruction
+inaccessible project handling
+audit.view authorization
+missing Task journey handling
+```
+
+Latest reported automated implementation gate:
+
+```text
+npm run typecheck -> pass
+npm test          -> 61 tests / 61 pass / 0 fail
+```
+
+Because Audit route hardening and documentation changes followed that reported gate, rerun typecheck and all tests before commit.
+
+## VS001-09 Implementation Files
+
+```text
+apps/api/src/modules/audit/audit.repository.ts
+apps/api/src/modules/audit/audit.service.ts
+apps/api/src/modules/audit/audit.types.ts
+apps/api/src/modules/audit/audit.errors.ts
+apps/api/src/modules/audit/audit.test.ts
+apps/api/src/modules/audit/audit-domain-event.handler.ts
+apps/api/src/modules/audit/audit-query.repository.ts
+apps/api/src/modules/audit/audit-query.service.ts
+apps/api/src/modules/audit/audit-query.test.ts
+apps/api/src/modules/audit/audit.routes.ts
+apps/api/src/modules/audit/README.md
+apps/api/src/infrastructure/database/supabase-audit.repository.ts
+apps/api/src/worker.ts
+apps/api/src/server.ts
+supabase/migrations/20260817120000_audit_domain_event_projection.sql
+supabase/migrations/20260817140000_audit_task_journey_reconstruction.sql
+```
+
+## VS001-09 Definition of Done
+
+```text
+[x] Audit consumer exists
+[x] six material VS-001 event types subscribed
+[x] idempotent Audit projection exists
+[x] Audit backfill exists
+[x] 20 supported events -> 20 Audit rows -> 0 missing
+[x] Audit worker integration exists
+[x] Task journey reconstruction RPC exists
+[x] audit.view checked application-side
+[x] audit.view revalidated database-side
+[x] Task Audit HTTP endpoint exists
+[x] complete four-event Task journey reconstructed
+[x] two truthful historical correlations preserved
+[x] current Audit request correlation kept separate
+[x] direct database reconstruction live-verified
+[x] authenticated Audit API reconstruction live-verified
+[x] post-hardening Audit happy path live-verified
+[x] Audit README updated
+[ ] final post-documentation/post-hardening typecheck rerun
+[ ] final post-documentation/post-hardening test rerun
+[ ] final staged diff and secret scan
+[ ] VS001-09 commit and push
+```
+
+---
+
 # Not Yet Implemented in VS-001
 
-The following portions of the vertical slice remain outstanding:
+The following work remains outstanding or deliberately deferred:
 
-* complete correlated audit reconstruction across the vertical slice
-* verification or correction of one-correlation-ID continuity across the complete multi-request workflow
 * end-to-end VS-001 UI where required
 * external LLM provider integration
 * prompt execution and prompt-version selection
@@ -4132,10 +4666,15 @@ The following portions of the vertical slice remain outstanding:
 * Discussion command idempotency
 * `mention_user_ids` handling
 * `file_ids` handling
+* general Task listing and Task-history APIs beyond the narrow My Tasks read model
 
-Authoritative Task creation from reviewed proposals is now implemented and must not be listed as deferred work.
+Authoritative Task creation from reviewed proposals is implemented and must not be listed as deferred work.
 
-Authenticated My Tasks visibility is now implemented and must not be listed as deferred work.
+Authenticated My Tasks visibility is implemented and must not be listed as deferred work.
+
+Complete Audit reconstruction is implemented and must not be listed as deferred work.
+
+The one-correlation-ID question is resolved: a complete business journey may truthfully span multiple request correlations and is reconstructed through durable provenance, aggregate identity, causation, and Audit projection.
 
 ---
 
@@ -4184,6 +4723,11 @@ Authenticated My Tasks visibility is now implemented and must not be listed as d
 41. `GET /api/v1/me/tasks` must derive the target user exclusively from `RequestContext.actorUserId`; client-supplied user IDs must not control My Tasks visibility.
 42. `public.list_my_tasks(...)` must remain unavailable to `public`, `anon`, and `authenticated` roles and executable only through trusted service-role access.
 43. My Tasks visibility must continue to require current `task.view` project permission rather than treating assignment alone as authorization.
+44. `public.project_domain_event_to_audit(...)` must remain unavailable to `public`, `anon`, and `authenticated` roles and executable only through trusted service-role access.
+45. `public.get_task_audit_journey(...)` must remain unavailable to `public`, `anon`, and `authenticated` roles and executable only through trusted service-role access.
+46. Task Audit reads must require current `audit.view` project permission.
+47. Audit reconstruction must preserve truthful historical correlation IDs rather than rewriting separate request contexts into one artificial correlation.
+48. The current Audit inspection request correlation must remain distinct from the historical journey correlations returned in Audit data.
 
 ---
 
@@ -4218,9 +4762,9 @@ When adding or changing functionality:
 
 # Immediate Next Engineering Step
 
-VS001-08 implementation, database deployment, automated testing, and live end-to-end verification are complete.
+VS001-09 implementation, both remote database migrations, Audit backfill, direct reconstruction, authenticated Audit API reconstruction, and post-hardening happy-path verification are complete.
 
-The immediate activity is the VS001-08 documentation and source-control checkpoint.
+The immediate activity is the **VS001-09 final documentation and source-control checkpoint**.
 
 From the repository root:
 
@@ -4230,31 +4774,40 @@ C:\Users\chngo\cadence
 
 perform:
 
-1. complete the VS001-08 documentation updates;
+1. replace the updated Audit `README.md`, `docs/vertical-slices/VS-001.md`, `CHANGELOG.md`, and `HANDOFF.md`;
 2. run `npm run typecheck` and `npm test` from `apps/api`;
-3. run `git diff --check`;
-4. inspect the complete working tree;
-5. confirm `apps/api/.env` remains ignored and unstaged;
-6. scan the staged diff for Supabase keys, bearer tokens, passwords, and temporary credentials;
-7. stage only intended VS001-08 code, migration, tests, and documentation;
-8. run `git diff --cached --check`;
-9. inspect `git diff --cached` and `git status`;
-10. commit the VS001-08 checkpoint;
-11. push `feature/vs-001`.
+3. confirm the final automated result is 61 tests, 61 pass, 0 fail;
+4. return to the repository root and run `git diff --check`;
+5. run `npx supabase migration list` and confirm both Audit migrations are synchronized;
+6. inspect the complete working tree;
+7. confirm `apps/api/.env` remains ignored and unstaged;
+8. stage only intended VS001-09 code, migrations, tests, and documentation;
+9. run `git diff --cached --check`;
+10. scan the staged diff for Supabase secrets, JWTs, bearer tokens, passwords, and temporary credentials;
+11. inspect `git diff --cached --stat`, `git diff --cached --name-only`, and the staged diff;
+12. commit the VS001-09 checkpoint;
+13. push `feature/vs-001`;
+14. confirm the branch is clean and synchronized with origin.
 
-After that checkpoint, continue the remaining VS-001 acceptance work:
+After the VS001-09 checkpoint, remaining VS-001 work is concentrated on:
 
 ```text
-complete audit reconstruction
+final end-to-end UI integration where required
   ->
-one-correlation-ID verification/correction
-  ->
-final vertical-slice completion
+final vertical-slice acceptance
 ```
 
-Do not weaken the established Team Agent -> TasksService -> Tasks-owned persistence boundary.
+Do not reintroduce the old one-correlation-ID requirement.
 
-Do not broaden `GET /me/tasks` into a general Task-history API as part of the audit work.
+Do not weaken:
+
+```text
+Discussion -> asynchronous domain events
+Team Agent -> TasksService -> Tasks-owned persistence
+Audit -> domain-event consumer / read reconstruction
+```
+
+Do not broaden `GET /me/tasks` into a general Task-history API as part of final UI work.
 
 ---
 
@@ -4276,7 +4829,7 @@ Do not introduce automatic retries for this command without addressing idempoten
 
 ## Domain Event Delivery and Worker Hosting
 
-VS001-05 now implements domain-event subscription fan-out and per-consumer delivery processing.
+VS001-05 introduced domain-event subscription fan-out and per-consumer delivery processing. VS001-09 adds Audit as another independent consumer.
 
 For new matching `MessageCreated.v1` events, the domain event itself normally becomes:
 
@@ -4297,6 +4850,8 @@ The current worker is one-shot:
 ```powershell
 npm run worker:once
 ```
+
+Each invocation attempts at most one Audit delivery and one Team Agent delivery before exiting.
 
 Continuous worker hosting, scheduling, supervision, health monitoring, and retry/backoff policy remain future work.
 
@@ -4974,10 +5529,10 @@ npm run typecheck
 npm test
 ```
 
-Current expected automated result:
+Current expected automated result after the final VS001-09 gate:
 
 ```text
-53 passed
+61 passed
 0 failed
 ```
 
@@ -5086,10 +5641,10 @@ npm run typecheck
 npm test
 ```
 
-Current expected result:
+Current expected result after the final VS001-09 gate:
 
 ```text
-53 passed
+61 passed
 0 failed
 ```
 
@@ -5217,10 +5772,244 @@ npm run typecheck
 npm test
 ```
 
-Current expected result:
+Current expected result after the final VS001-09 gate:
 
 ```text
-53 passed
+61 passed
+0 failed
+```
+
+---
+
+# Troubleshooting Audit Reconstruction
+
+For failures involving:
+
+```text
+GET /api/v1/projects/{projectId}/tasks/{taskId}/audit
+```
+
+diagnose the flow in this order.
+
+### 1. Authentication
+
+Verify:
+
+```text
+GET /api/v1/me
+```
+
+with the same bearer token.
+
+An expired Supabase access token can produce:
+
+```text
+401 UNAUTHENTICATED
+```
+
+before Audit authorization is reached.
+
+### 2. Request UUIDs
+
+Confirm both:
+
+```text
+projectId
+taskId
+```
+
+are valid UUIDs.
+
+The Audit route rejects invalid UUIDs with the standard validation error envelope.
+
+### 3. Project Membership and `audit.view`
+
+Confirm the authenticated Cadence user has:
+
+```text
+active project membership
++
+audit.view
+```
+
+No active membership should be treated as a protected-resource not-found condition.
+
+An active member without `audit.view` must be denied.
+
+### 4. Audit Migrations
+
+Confirm both migrations are applied:
+
+```text
+20260817120000_audit_domain_event_projection.sql
+20260817140000_audit_task_journey_reconstruction.sql
+```
+
+Use:
+
+```powershell
+npx supabase migration list
+```
+
+from the repository root.
+
+### 5. Audit Subscriptions
+
+Confirm active `audit.domain-events.v1` subscriptions exist for the six supported v1 event types.
+
+### 6. Audit Projection
+
+For the journey's domain events, confirm corresponding rows exist in:
+
+```text
+public.audit_events
+```
+
+using:
+
+```text
+audit_events.event_id = domain_events.id
+```
+
+The projection is idempotent.
+
+A missing Audit row for a supported event indicates a projection/backfill/consumer problem.
+
+### 7. Task Provenance
+
+Confirm the Task has:
+
+```text
+public.source_links
+```
+
+with:
+
+```text
+entity_type = task
+source_type = ai_proposal
+```
+
+The `source_id` should identify the proposal that produced the Task.
+
+### 8. Proposal and AI Run
+
+Confirm the proposal exists in:
+
+```text
+public.ai_proposals
+```
+
+and has an:
+
+```text
+ai_run_id
+```
+
+Resolve that run in:
+
+```text
+public.ai_runs
+```
+
+and inspect:
+
+```text
+source_event_id
+```
+
+The source event should lead back to the originating `MessageCreated.v1`.
+
+### 9. Proposal Aggregate Events
+
+Inspect:
+
+```text
+public.domain_events
+```
+
+for:
+
+```text
+aggregate_type = ai_proposal
+aggregate_id = proposal ID
+```
+
+The normal successful reviewed path should include proposal creation and either confirmation or edit before Task creation.
+
+### 10. Task Event Causation
+
+Confirm `TaskCreated.v1` exists for the authoritative Task.
+
+Its:
+
+```text
+causation_id
+```
+
+should reference the successful proposal-review event.
+
+### 11. Correlation Expectations
+
+Do not expect all journey rows to have the same correlation ID.
+
+For the verified VS001-09 journey:
+
+```text
+MessageCreated.v1
+AIProposalCreated.v1
+```
+
+share one correlation, while:
+
+```text
+AIProposalEdited.v1
+TaskCreated.v1
+```
+
+share a later human-request correlation.
+
+This is expected.
+
+### 12. Request Correlation vs Historical Correlation
+
+The Audit API response `meta.correlation_id` represents the current inspection request.
+
+`data.journey.correlation_ids` represents historical business contexts.
+
+These values do not need to match.
+
+### 13. Direct RPC Verification
+
+When application behavior is uncertain, use the trusted SQL environment to verify:
+
+```text
+public.get_task_audit_journey(...)
+```
+
+with the correct project, Task, and requesting Cadence user IDs.
+
+Do not expose the RPC directly to browser clients.
+
+### 14. TypeScript and Tests
+
+From:
+
+```text
+apps/api
+```
+
+run:
+
+```powershell
+npm run typecheck
+npm test
+```
+
+Expected final VS001-09 gate:
+
+```text
+61 passed
 0 failed
 ```
 
@@ -5336,7 +6125,47 @@ list_my_tasks()
 assigned open/in_progress Tasks with current task.view
 ```
 
-This validates the major architecture requirements through authoritative Task creation:
+Audit projection path:
+
+```text
+material domain event
+  ->
+audit.domain-events.v1 delivery
+  ->
+DomainEventProcessor
+  ->
+AuditDomainEventHandler
+  ->
+AuditService
+  ->
+project_domain_event_to_audit()
+  ->
+append-only audit_events
+```
+
+Task Audit reconstruction path:
+
+```text
+authenticated user
+  ->
+GET /api/v1/projects/{projectId}/tasks/{taskId}/audit
+  ->
+AuditQueryService
+  ->
+active project membership
+  ->
+audit.view
+  ->
+SupabaseAuditRepository
+  ->
+get_task_audit_journey()
+  ->
+Task provenance + AI proposal aggregate + causation + Audit projection
+  ->
+chronological business journey
+```
+
+This validates the major backend architecture requirements through complete Audit reconstruction:
 
 * authentication remains separate from authorization;
 * authorization is project-scoped and permission-code based;
@@ -5349,12 +6178,18 @@ This validates the major architecture requirements through authoritative Task cr
 * Tasks owns Task creation, assignment authorization, persistence, provenance, idempotency, and Task events;
 * material writes emit versioned domain events;
 * proposal materialization is retry-safe;
-* review-to-Task correlation and causation are preserved;
-* authenticated My Tasks visibility is self-scoped and re-evaluates current `task.view`.
+* authenticated My Tasks visibility is self-scoped and re-evaluates current `task.view`;
+* Audit consumes events independently rather than becoming authoritative business storage;
+* Audit projection is idempotent;
+* Audit reconstruction requires current `audit.view`;
+* Audit reconstructs a complete journey across multiple truthful request correlations;
+* the current Audit inspection request correlation remains distinct from historical journey correlations.
 
-Task visibility is now complete for VS-001.
+Task visibility and backend Audit reconstruction are complete for VS-001.
 
-Remaining VS-001 architecture work is concentrated on complete audit reconstruction, including the unresolved one-correlation-ID question across multiple human HTTP requests.
+The correlation-model question is resolved.
+
+Remaining VS-001 architecture work is concentrated on final end-to-end UI integration where required and the final slice acceptance checkpoint.
 
 ---
 
@@ -5366,7 +6201,7 @@ A new engineer should be able to determine:
 
 * what the system currently does,
 * how to run the HTTP API,
-* how to run the one-shot Team Agent worker,
+* how to run the one-shot domain-event worker,
 * where configuration lives,
 * which module owns each responsibility,
 * how authentication works,
@@ -5383,10 +6218,16 @@ A new engineer should be able to determine:
 * how `task.create` and `task.assign` remain independent from `agent.approve`,
 * how Task materialization remains idempotent,
 * how proposal-to-Task provenance and result linkage are stored,
-* how `TaskCreated.v1` correlation and causation are derived from the review event,
+* how `TaskCreated.v1` causation is derived from the review event,
 * how authenticated My Tasks visibility is scoped and authorized,
+* how Audit domain-event projection works,
+* how Audit backfill handles pre-subscription events,
+* how Audit projection remains idempotent,
+* how `audit.view` protects Task Audit reads,
+* how Task audit reconstruction traverses provenance and aggregate identity,
+* why a complete business journey may contain multiple truthful correlation IDs,
+* why the current Audit inspection request correlation is separate from historical journey correlations,
 * where current Project Health is stored,
-* how correlation and causation are preserved,
 * what migrations have been introduced,
 * what has been manually verified,
 * what automated tests exist,
@@ -5400,22 +6241,26 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-complete the VS001-08 documentation and source-control checkpoint
+complete VS001-09 documentation
+  ->
+rerun final typecheck and 61-test gate
+  ->
+verify both Audit migrations are synchronized
+  ->
+run staged diff and secret checks
+  ->
+commit and push VS001-09
 ```
 
-followed by the remaining VS-001 acceptance work:
+After that:
 
 ```text
-complete audit reconstruction
+final end-to-end UI integration where required
   ->
-one-correlation-ID verification/correction
-  ->
-final VS-001 completion
+final VS-001 acceptance
 ```
 
-The next implementation should build on the now-verified authoritative Task and My Tasks boundaries.
-
-Do not bypass the established module boundaries merely to complete the vertical slice more quickly.
+Do not bypass established module boundaries merely to complete the vertical slice more quickly.
 
 In particular:
 
@@ -5424,4 +6269,8 @@ Discussion must not call Team Agent synchronously
 Team Agent must not read Discussion persistence directly
 Team Agent must not write Tasks persistence directly
 human proposal approval must not bypass Tasks permissions
+Audit must not become authoritative business state
+Audit reconstruction must not falsify request correlation history
 ```
+
+Cadence was conceptualized and prepared by Ngoh Chee Hung.
