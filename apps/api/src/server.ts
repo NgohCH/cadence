@@ -9,6 +9,8 @@ import { SupabaseRbacRepository } from "./infrastructure/database/supabase-rbac.
 import { SupabaseProjectsRepository } from "./infrastructure/database/supabase-projects.repository";
 import { SupabaseDiscussionRepository } from "./infrastructure/database/supabase-discussion.repository";
 import { SupabaseTeamAgentRepository } from "./infrastructure/database/supabase-team-agent.repository";
+import { SupabaseTasksRepository } from "./infrastructure/database/supabase-tasks.repository";
+import { SupabaseTeamAgentMaterializationRepository } from "./infrastructure/database/supabase-team-agent-materialization.repository";
 
 import { createAuthenticateMiddleware } from "./middleware/authenticate";
 import { requestTraceMiddleware } from "./middleware/request-trace.middleware";
@@ -24,8 +26,13 @@ import { createProjectsRouter } from "./modules/projects/projects.routes";
 import { DiscussionService } from "./modules/discussion/discussion.service";
 import { createDiscussionRouter } from "./modules/discussion/discussion.routes";
 
+import { TasksService } from "./modules/tasks/tasks.service";
+
 import { TeamAgentService } from "./modules/team-agent/team-agent.service";
 import { createTeamAgentRouter } from "./modules/team-agent/team-agent.routes";
+
+import { TeamAgentTaskMaterializationService } from "./modules/team-agent/team-agent-task-materialization.service";
+import { createTeamAgentTaskMaterializationRouter } from "./modules/team-agent/team-agent-task-materialization.routes";
 
 
 const app =
@@ -125,6 +132,18 @@ const teamAgentRepository =
   );
 
 
+const tasksRepository =
+  new SupabaseTasksRepository(
+    databaseClient
+  );
+
+
+const teamAgentMaterializationRepository =
+  new SupabaseTeamAgentMaterializationRepository(
+    databaseClient
+  );
+
+
 /*
  * Application services
  */
@@ -155,10 +174,25 @@ const discussionService =
   );
 
 
+const tasksService =
+  new TasksService(
+    rbacService,
+    tasksRepository
+  );
+
+
 const teamAgentService =
   new TeamAgentService(
     rbacService,
     teamAgentRepository
+  );
+
+
+const teamAgentTaskMaterializationService =
+  new TeamAgentTaskMaterializationService(
+    rbacService,
+    teamAgentMaterializationRepository,
+    tasksService
   );
 
 
@@ -236,6 +270,10 @@ app.use(
 
   createTeamAgentRouter(
     teamAgentService
+  ),
+
+  createTeamAgentTaskMaterializationRouter(
+    teamAgentTaskMaterializationService
   )
 );
 

@@ -28,11 +28,11 @@ Status:
 
 Current checkpoint:
 
-**VS001-06 Human Proposal Review implementation, remote database deployment, automated tests, and live confirm/edit/reject verification complete. Documentation and source-control checkpoint in progress.**
+**VS001-07 Authoritative Task Creation implementation, remote database deployment, automated tests, and live end-to-end verification complete. Documentation and source-control checkpoint in progress.**
 
-Next implementation area after the VS001-06 source-control checkpoint:
+Next implementation area after the VS001-07 source-control checkpoint:
 
-**VS001-07 authoritative Task creation from a confirmed/edited proposal through TasksService, with independent `task.create`/`task.assign` authorization and no direct Team Agent writes to Tasks.**
+**Complete the VS001-07 source-control checkpoint, then continue the remaining VS-001 acceptance work: `GET /me/tasks` visibility and complete audit/correlation reconstruction.**
 
 ---
 
@@ -266,7 +266,7 @@ Current verification:
 
 ```text
 npm run typecheck = passed
-npm test = 20 passed, 0 failed
+npm test = 51 passed, 0 failed
 ```
 
 ---
@@ -1874,17 +1874,25 @@ SupabaseIdentityRepository
 SupabaseRbacRepository
 SupabaseProjectsRepository
 SupabaseDiscussionRepository
+SupabaseTeamAgentRepository
+SupabaseTeamAgentMaterializationRepository
+SupabaseTasksRepository
 
 IdentityService
 RbacService
 ProjectsService
 DiscussionService
+TeamAgentService
+TeamAgentTaskMaterializationService
+TasksService
 
 authentication middleware
 
 identity router
 projects router
 discussion router
+team-agent review router
+team-agent task-materialization router
 ```
 
 A shared server-side Supabase database client is used for backend database repositories.
@@ -1895,7 +1903,7 @@ Protected API routes are mounted under:
 /api/v1
 ```
 
-Authentication middleware executes before protected Identity, Projects, and Discussion route handlers.
+Authentication middleware executes before protected Identity, Projects, Discussion, Team Agent review, and Task-materialization route handlers.
 
 The current protected Discussion endpoint is:
 
@@ -3128,14 +3136,12 @@ These are deliberate boundaries and must not be represented as implemented capab
 
 # Module Boundary
 
-For AI-proposed task confirmation, the established boundary remains:
+For reviewed Team Agent task proposals, the established boundary is now implemented as:
 
 ```text
-TeamAgentService.confirmProposal()
+TeamAgentTaskMaterializationService
   ->
-validate proposal
-  ->
-check agent.approve
+load confirmed/edited reviewed proposal
   ->
 TasksService.createTask()
   ->
@@ -3143,9 +3149,11 @@ check task.create
   ->
 check task.assign when required
   ->
-persist authoritative task
+TasksRepository
   ->
-emit TaskCreated.v1
+Tasks-owned persistence
+  ->
+TaskCreated.v1
 ```
 
 Team Agent must never write directly to Tasks persistence.
@@ -3156,10 +3164,13 @@ Tasks owns:
 * task state,
 * assignment authorization,
 * persistence,
-* provenance,
-* task domain events.
+* proposal-to-Task provenance,
+* task domain events,
+* task-creation idempotency.
 
-This remains a critical requirement for the later portion of VS-001.
+`agent.approve` remains separate from `task.create` and `task.assign`.
+
+This boundary was live-verified in VS001-07.
 
 ---
 
@@ -3259,17 +3270,23 @@ This remains a critical requirement for the later portion of VS-001.
 * one-shot `worker:once` composition root
 * live VS001-05 Supabase verification
 * duplicate-safety verification
-* twenty passing automated test entries
+* 51 passing automated test entries
 * TypeScript type checking
 * Team Agent README documentation
 * `CHANGELOG.md`
 * `HANDOFF.md`
+* VS001-06 human proposal review with confirm/edit/reject and `agent.approve` enforcement
+* VS001-07 authoritative Task creation through `TasksService`
+* independent `task.create` / conditional `task.assign` enforcement
+* Tasks-owned proposal idempotency and provenance
+* `TaskCreated.v1` with review-event correlation and causation
+* live fresh Discussion -> proposal -> human review -> authoritative Task verification
 
 # VS001-06 Human Proposal Review
 
 Status:
 
-**Implementation, remote database deployment, automated verification, and live confirm/edit/reject verification complete. Documentation and source-control checkpoint in progress.**
+**Implementation, remote database deployment, automated verification, live confirm/edit/reject verification, documentation, and source-control checkpoint complete.**
 
 VS001-06 implements the human-review boundary for Team Agent task proposals while keeping proposals non-authoritative with respect to Tasks.
 
@@ -3550,35 +3567,34 @@ supabase/migrations/20260816024841_team_agent_human_proposal_review.sql
 supabase/migrations/20260816082249_fix_team_agent_review_column_ambiguity.sql
 ```
 
-## Current Documentation / Source-Control Checkpoint
+## VS001-06 Source-Control Checkpoint
 
-VS001-06 implementation, remote migration deployment, automated tests, and live confirm/edit/reject verification are complete.
+VS001-06 was committed and pushed before VS001-07 began.
 
-Before beginning VS001-07:
-
-* update `CHANGELOG.md`, `HANDOFF.md`, Team Agent README, and `docs/vertical-slices/VS-001.md` through VS001-06;
-* inspect all tracked and untracked VS001-06 files;
-* confirm `apps/api/.env` remains ignored and unstaged;
-* confirm no Supabase keys, user JWTs, passwords, or temporary credentials are present in source or staged diffs;
-* inspect the complete staged diff;
-* run `npm run typecheck`;
-* run `npm test`;
-* run `git diff --cached --check`;
-* create the VS001-06 source-control checkpoint;
-* push `feature/vs-001`.
-
-## Next Implementation Area
+Checkpoint commit:
 
 ```text
-VS001-07 - Authoritative Task Creation from Reviewed Proposal
+3cdf5ef feat(team-agent): add human proposal review
 ```
 
-The next path must continue through:
+VS001-07 subsequently implemented the reviewed-proposal-to-authoritative-Task continuation described below.
+
+---
+
+# VS001-07 Authoritative Task Creation
+
+Status:
+
+**Implementation, remote database deployment, automated verification, and live end-to-end verification complete. Documentation and source-control checkpoint in progress.**
+
+VS001-07 completes the reviewed-proposal-to-authoritative-Task boundary.
+
+Verified flow:
 
 ```text
 confirmed / edited proposal
   ->
-TeamAgentService
+TeamAgentTaskMaterializationService
   ->
 TasksService
   ->
@@ -3586,45 +3602,211 @@ task.create
   ->
 task.assign when required
   ->
-Tasks-owned persistence
+SupabaseTasksRepository
+  ->
+public.create_authoritative_task(...)
+  ->
+authoritative Task
   ->
 TaskCreated.v1
 ```
 
-`agent.approve` must not be treated as authority for Task creation or assignment.
+## API
+
+```text
+POST /api/v1/projects/{projectId}/task-proposals/{proposalId}/task
+```
+
+First creation returns HTTP `201` with `created = true`.
+
+Idempotent retry returns HTTP `200` with `created = false` and the same Task.
+
+## Authorization
+
+`TasksService` independently enforces `task.create` and, when an assignee is supplied, `task.assign`.
+
+`agent.approve` does not imply either Tasks permission.
+
+The Tasks-owned database function repeats the permission checks for defence in depth.
+
+## Module Ownership
+
+The required dependency direction is:
+
+```text
+Team Agent
+  ->
+TasksService
+  ->
+TasksRepository
+  ->
+SupabaseTasksRepository
+  ->
+Tasks-owned persistence
+```
+
+A source scan confirmed that the Team Agent module does not reference `TasksRepository`, `SupabaseTasksRepository`, or `public.tasks`.
+
+## Reviewed Values
+
+Only `confirmed` and `edited` proposals may materialize.
+
+Authoritative Task candidate values come from `ai_proposals.reviewed_payload`.
+
+Pending, rejected, and expired proposals are rejected.
+
+## Database Migration
+
+```text
+supabase/migrations/20260816123000_authoritative_task_creation.sql
+```
+
+The migration adds `public.create_authoritative_task(...)` and Tasks-specific proposal-to-Task idempotency protection.
+
+The RPC is restricted to trusted `service_role` execution.
+
+## Idempotency and Provenance
+
+One AI proposal may create at most one authoritative Task.
+
+Tasks records proposal provenance through `public.source_links`.
+
+Team Agent records the resulting authoritative entity through `ai_proposals.result_entity_type` and `result_entity_id` only after TasksService succeeds.
+
+Retries return the existing Task and do not emit a duplicate `TaskCreated.v1`.
+
+## Live Verification
+
+Confirmed proposal:
+
+```text
+2312c92f-43aa-4584-ade7-532a49c3eb08
+```
+
+created Task:
+
+```text
+8e7e70dd-d650-4c7d-a605-ff6ad2a68eae
+```
+
+Retry returned the same Task with `created = false` and one `TaskCreated.v1` total.
+
+Edited proposal:
+
+```text
+def8f97f-adf7-444a-a1dd-919b3467464b
+```
+
+created Task:
+
+```text
+4b4ed424-c4f7-4aab-bbad-138e0b609ab4
+```
+
+using the final human-reviewed title and description.
+
+A transaction-scoped negative test with `task.create = true` and `task.assign = false` returned `TASK_ASSIGN_PERMISSION_DENIED` and produced zero Task, source-link, or TaskCreated writes.
+
+Fresh end-to-end API verification used:
+
+```text
+Discussion message = 591a4b9f-26f6-46f1-b9cf-13f943f77999
+proposal           = fce47383-11c0-4be0-863e-8a0277fb6bc4
+Task               = 3169f627-3fcc-4141-a3b7-c6f93cbd84b0
+```
+
+First materialization returned:
+
+```text
+HTTP 201
+created = true
+```
+
+Final database lineage verified:
+
+```text
+result_entity_type = task
+result_entity_id = authoritative Task ID
+source_type = ai_proposal
+source_link_count = 1
+TaskCreated.v1 count = 1
+```
+
+Review event:
+
+```text
+AIProposalConfirmed.v1
+329ed710-5278-430d-901b-8ea757b05a2e
+correlation = b67f55ed-24f9-40dc-b11f-318c7771cd02
+```
+
+Task event:
+
+```text
+TaskCreated.v1
+3a44204f-3b20-4548-9b9e-20dcc0692b53
+correlation = b67f55ed-24f9-40dc-b11f-318c7771cd02
+causation = 329ed710-5278-430d-901b-8ea757b05a2e
+```
+
+## Correlation Watch Item
+
+VS001-07 correctly continues the human-review correlation into `TaskCreated.v1`.
+
+The fresh Discussion request used a different correlation ID from the later human-review request, so one-correlation-ID continuity across the complete multi-request journey is not yet proven.
+
+Final audit reconstruction must address this explicitly.
+
+## Automated Verification
+
+```text
+npm run typecheck -> pass
+npm test          -> 51 tests / 51 pass / 0 fail
+```
+
+## Implementation Files
+
+```text
+apps/api/src/modules/tasks/tasks.types.ts
+apps/api/src/modules/tasks/tasks.errors.ts
+apps/api/src/modules/tasks/tasks.repository.ts
+apps/api/src/modules/tasks/tasks.service.ts
+apps/api/src/modules/tasks/tasks.test.ts
+apps/api/src/infrastructure/database/supabase-tasks.repository.ts
+apps/api/src/modules/team-agent/team-agent-materialization.repository.ts
+apps/api/src/modules/team-agent/team-agent-task-materialization.service.ts
+apps/api/src/modules/team-agent/team-agent-task-materialization.routes.ts
+apps/api/src/modules/team-agent/team-agent-task-materialization.test.ts
+apps/api/src/infrastructure/database/supabase-team-agent-materialization.repository.ts
+apps/api/src/server.ts
+supabase/migrations/20260816123000_authoritative_task_creation.sql
+```
 
 ---
 
 # Not Yet Implemented in VS-001
 
-The following portions of the vertical slice are still outstanding:
+The following portions of the vertical slice remain outstanding:
 
-* confirmed-proposal integration with `TasksService`
-* authoritative task creation through `TasksService`
-* `task.create` enforcement through the VS-001 flow
-* `task.assign` enforcement where required
-* task domain-event persistence through VS-001
+* `GET /me/tasks` visibility
 * complete correlated audit reconstruction across the vertical slice
-* end-to-end VS-001 UI
+* verification or correction of one-correlation-ID continuity across the complete multi-request workflow
+* end-to-end VS-001 UI where required
 * external LLM provider integration
 * prompt execution and prompt-version selection
 * assignee name resolution
 * natural-language due-date resolution
 * AI confidence scoring
 * continuous production worker hosting and supervision
-* automated regression coverage for the manually verified authentication paths
+* automated regression coverage for manually verified authentication paths
 * automated regression coverage for Project Workspace integration paths
-* database-backed integration coverage for the current event-processing path
-* Discussion message-listing queries
-* Discussion individual-message retrieval
-* Discussion HTTP message-history retrieval
-* Discussion editing and deletion
-* Discussion reactions
-* Discussion mentions
-* Discussion file-link handling
+* broader database-backed integration coverage
+* Discussion listing/history/editing/deletion/reactions/mentions/file-link handling
 * Discussion command idempotency
 * `mention_user_ids` handling
 * `file_ids` handling
+
+Authoritative Task creation from reviewed proposals is now implemented and must not be listed as deferred work.
 
 ---
 
@@ -3704,9 +3886,9 @@ When adding or changing functionality:
 
 # Immediate Next Engineering Step
 
-VS001-06 implementation, database deployment, automated testing, live confirm/edit/reject verification, and documentation are complete.
+VS001-07 implementation, database deployment, automated testing, and live end-to-end verification are complete.
 
-The immediate activity is the VS001-06 source-control checkpoint.
+The immediate activity is the VS001-07 source-control checkpoint.
 
 From the repository root:
 
@@ -3716,41 +3898,31 @@ C:\Users\chngo\cadence
 
 perform:
 
-1. inspect the complete working tree;
-2. confirm both VS001-06 migrations are present;
-3. confirm `apps/api/.env` remains ignored and unstaged;
-4. confirm no Supabase keys, bearer tokens, passwords, or temporary credentials are present in source files;
-5. run `npm run typecheck` from `apps/api`;
-6. run `npm test` from `apps/api`;
-7. stage only the intended VS001-06 code, migrations, and documentation;
+1. update `docs/vertical-slices/VS-001.md`, `CHANGELOG.md`, `HANDOFF.md`, and relevant module READMEs;
+2. run `npm run typecheck` and `npm test` from `apps/api`;
+3. run `git diff --check`;
+4. inspect the complete working tree;
+5. confirm `apps/api/.env` remains ignored and unstaged;
+6. scan the staged diff for Supabase keys, bearer tokens, passwords, and temporary credentials;
+7. stage only intended VS001-07 code, migration, tests, and documentation;
 8. run `git diff --cached --check`;
 9. inspect `git diff --cached` and `git status`;
-10. commit the VS001-06 checkpoint;
+10. commit the VS001-07 checkpoint;
 11. push `feature/vs-001`.
 
-Only after that checkpoint should development begin:
+After that checkpoint, continue the remaining VS-001 acceptance work:
 
 ```text
-VS001-07
+GET /me/tasks visibility
   ->
-Authoritative Task Creation from Reviewed Proposal
+complete audit reconstruction
+  ->
+one-correlation-ID verification/correction
+  ->
+final vertical-slice completion
 ```
 
-The next implementation must preserve:
-
-```text
-confirmed / edited proposal
-  ->
-TasksService
-  ->
-task.create
-  ->
-task.assign when required
-  ->
-authoritative Task
-```
-
-Do not allow Team Agent to insert or update authoritative Tasks records directly.
+Do not weaken the established Team Agent -> TasksService -> Tasks-owned persistence boundary.
 
 ---
 
@@ -4473,7 +4645,7 @@ npm test
 Current expected automated result:
 
 ```text
-20 passed
+51 passed
 0 failed
 ```
 
@@ -4500,9 +4672,100 @@ A Docker catalogue/cache warning after a successful Supabase push does not by it
 
 ---
 
+# Troubleshooting Reviewed Proposal -> Task Materialization
+
+For failures involving:
+
+```text
+POST /api/v1/projects/{projectId}/task-proposals/{proposalId}/task
+```
+
+check the following in order.
+
+### 1. Authentication
+
+Verify `GET /api/v1/me` with the same bearer token.
+
+### 2. Project Membership
+
+Confirm the actor has an active membership in the requested project.
+
+### 3. Proposal State
+
+Confirm the proposal exists in the same project and has status `confirmed` or `edited`.
+
+Confirm `reviewed_payload`, the review event ID, and the review correlation ID are present.
+
+### 4. Tasks Permissions
+
+Confirm the actor has `task.create`.
+
+If `assigned_to` is non-null, also confirm `task.assign`.
+
+If an assignee is present, confirm that user is an active member of the same project.
+
+### 5. Tasks Persistence Migration
+
+Confirm migration:
+
+```text
+20260816123000_authoritative_task_creation.sql
+```
+
+is applied and `public.create_authoritative_task(...)` exists.
+
+### 6. Idempotency / Provenance
+
+Inspect `public.source_links` for:
+
+```text
+entity_type = task
+source_type = ai_proposal
+source_id = proposal ID
+```
+
+A retry should return the existing Task with `created = false`.
+
+### 7. Task Event
+
+For first-time materialization, verify exactly one `TaskCreated.v1` exists for the Task.
+
+Its correlation ID should match the human review event correlation, and its causation ID should equal the human review event ID.
+
+### 8. Proposal Result Link
+
+After a successful API materialization, verify:
+
+```text
+ai_proposals.result_entity_type = task
+ai_proposals.result_entity_id = Task ID
+```
+
+### 9. Architecture Boundary
+
+If troubleshooting leads toward direct Team Agent writes to `public.tasks`, stop. The correct path is always through `TasksService`.
+
+### 10. TypeScript and Tests
+
+From `apps/api` run:
+
+```powershell
+npm run typecheck
+npm test
+```
+
+Current expected result:
+
+```text
+51 passed
+0 failed
+```
+
+---
+
 # Current Architecture Checkpoint
 
-At the end of VS001-05, the working backend architecture demonstrates:
+The working VS-001 backend now demonstrates:
 
 ```text
 Supabase Auth
@@ -4520,19 +4783,7 @@ Permission Code
 Application Service
 ```
 
-For the Project Workspace read path:
-
-```text
-ProjectsService
-  ->
-ProjectWorkspaceReadRepository
-  ->
-Supabase/PostgreSQL
-  ->
-Standard API Response
-```
-
-For the Discussion write path:
+Discussion write path:
 
 ```text
 Discussion route
@@ -4543,27 +4794,17 @@ message.create
   ->
 DiscussionRepository
   ->
-SupabaseDiscussionRepository
-  ->
 post_discussion_message()
   ->
-atomic PostgreSQL transaction
-     |
-     +-- message
-     +-- message version 1
-     +-- MessageCreated.v1
-     |
-     +-- fan-out to matching consumer delivery
+message + immutable version + MessageCreated.v1
 ```
 
-For asynchronous Team Agent processing:
+Asynchronous Team Agent proposal path:
 
 ```text
 MessageCreated.v1
   ->
 domain_event_deliveries
-  ->
-claim_domain_event_delivery()
   ->
 DomainEventProcessor
   ->
@@ -4573,53 +4814,31 @@ DiscussionService.getMessageVersion()
   ->
 TeamAgentService
   ->
-create_team_agent_task_proposal()
-     |
-     +-- completed ai_run
-     +-- pending ai_proposal
-     +-- AIProposalCreated.v1
+ai_run + pending ai_proposal + AIProposalCreated.v1
 ```
 
-This validates major Cadence architecture requirements:
-
-* authentication remains separate from authorization,
-* authorization is project-scoped,
-* permission codes are the authorization primitive,
-* modules depend on interfaces rather than infrastructure implementations,
-* authoritative state writes remain owned by the responsible module,
-* Discussion and Team Agent are separated by an asynchronous event boundary,
-* consumer processing state is independent per consumer,
-* concurrent delivery claiming is database-safe,
-* stale worker claims cannot complete a newer claim,
-* event-triggered Team Agent persistence is idempotent on the source event,
-* Team Agent reads exact Discussion content through a Discussion-owned query,
-* Team Agent creates only non-authoritative proposal state,
-* material state changes emit domain events,
-* request/business correlation survives across asynchronous processing,
-* causation records which event directly caused the proposal event,
-* database functions can provide defence-in-depth and concurrency guarantees without replacing application module boundaries,
-* worker hosting can remain separate from the HTTP server.
-
-The next architecture checkpoint must extend the flow from:
+Human review path:
 
 ```text
-pending AI proposal
-```
-
-into:
-
-```text
-authorised human review
+pending ai_proposal
+  ->
+TeamAgentService.reviewTaskProposal()
   ->
 agent.approve
   ->
 confirm / edit / reject
+  ->
+reviewed_payload
+  ->
+AIProposalConfirmed.v1 / AIProposalEdited.v1 / AIProposalRejected.v1
 ```
 
-and later, for a confirmed task proposal:
+Authoritative Task path:
 
 ```text
-TeamAgentService
+confirmed / edited proposal
+  ->
+TeamAgentTaskMaterializationService
   ->
 TasksService
   ->
@@ -4627,10 +4846,31 @@ task.create
   ->
 task.assign when required
   ->
-authoritative Task
+SupabaseTasksRepository
+  ->
+create_authoritative_task()
+     |
+     +-- authoritative Task
+     +-- source_links provenance
+     +-- TaskCreated.v1
 ```
 
-without allowing Team Agent to write directly into Tasks persistence.
+This validates the major architecture requirements through authoritative Task creation:
+
+* authentication remains separate from authorization;
+* authorization is project-scoped and permission-code based;
+* modules depend on explicit service/repository boundaries;
+* Discussion and Team Agent remain asynchronously separated;
+* Team Agent retrieves exact Discussion content through the Discussion module;
+* AI proposal state remains non-authoritative until human review and Tasks authorization;
+* `agent.approve` does not imply `task.create` or `task.assign`;
+* Team Agent never writes directly to Tasks persistence;
+* Tasks owns Task creation, assignment authorization, persistence, provenance, idempotency, and Task events;
+* material writes emit versioned domain events;
+* proposal materialization is retry-safe;
+* review-to-Task correlation and causation are preserved.
+
+Remaining VS-001 architecture work is concentrated on task visibility and complete audit reconstruction, including the unresolved one-correlation-ID question across multiple human HTTP requests.
 
 ---
 
@@ -4655,6 +4895,11 @@ A new engineer should be able to determine:
 * how Team Agent retrieves the exact immutable Discussion message version,
 * how Team Agent run/proposal persistence remains idempotent,
 * how AI proposal state remains non-authoritative,
+* how reviewed proposals are materialized through `TasksService`,
+* how `task.create` and `task.assign` remain independent from `agent.approve`,
+* how Task materialization remains idempotent,
+* how proposal-to-Task provenance and result linkage are stored,
+* how `TaskCreated.v1` correlation and causation are derived from the review event,
 * where current Project Health is stored,
 * how correlation and causation are preserved,
 * what migrations have been introduced,
@@ -4670,18 +4915,20 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-complete the VS001-05 documentation and source-control checkpoint
+complete the VS001-07 documentation and source-control checkpoint
 ```
 
-followed by:
+followed by the remaining VS-001 acceptance work:
 
 ```text
-VS001-06
+GET /me/tasks visibility
   ->
-Human Proposal Review
+complete audit reconstruction
+  ->
+one-correlation-ID verification/correction
 ```
 
-The next implementation begins from a pending Team Agent proposal.
+The next implementation should build on the now-verified authoritative Task boundary.
 
 Do not bypass the established module boundaries merely to complete the vertical slice more quickly.
 

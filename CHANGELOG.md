@@ -5,8 +5,63 @@ All notable changes to Cadence will be documented in this file.
 Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
+### VS001-07 - Authoritative Task Creation
 
-### VS001-06 — Human Proposal Review
+#### Added
+
+- Added the authoritative Tasks application boundary through `TasksService`.
+- Added Tasks domain types, errors, repository contract, service, and automated tests.
+- Added `SupabaseTasksRepository`.
+- Added atomic `public.create_authoritative_task(...)`.
+- Added migration `20260816123000_authoritative_task_creation.sql`.
+- Added Tasks-specific AI-proposal idempotency protection.
+- Added proposal-to-Task provenance through `public.source_links`.
+- Added `TaskCreated.v1`.
+- Added Team Agent reviewed-proposal materialization repository and service.
+- Added authenticated materialization endpoint: `POST /api/v1/projects/{projectId}/task-proposals/{proposalId}/task`.
+- Added proposal result linkage through `result_entity_type` and `result_entity_id`.
+- Added materialization automated tests.
+- Expanded the API suite to 51 passing tests.
+
+#### Architecture
+
+- Preserved the mandatory `Team Agent -> TasksService -> TasksRepository` dependency direction.
+- Team Agent has no direct dependency on `TasksRepository`, `SupabaseTasksRepository`, or `public.tasks`.
+- `agent.approve` remains separate from `task.create` and `task.assign`.
+- `TasksService` independently enforces `task.create` and `task.assign` when required.
+- Tasks persistence revalidates authorization for defence in depth.
+- Authoritative Task values come from `reviewed_payload`.
+- The authenticated human remains the authoritative Task creator; the AI proposal remains provenance.
+- Task creation is idempotent by reviewed AI proposal.
+- `TaskCreated.v1` continues the human-review event correlation and uses the human-review event as causation.
+- Team Agent records the resulting Task ID only after `TasksService` has created or returned the authoritative Task.
+
+#### Verified
+
+- Verified `npm run typecheck` passes.
+- Verified all 51 automated tests pass.
+- Verified migration `20260816123000_authoritative_task_creation.sql` is synchronized with the linked remote Supabase database.
+- Live-verified confirmed proposal -> authoritative Task.
+- Live-verified edited proposal -> authoritative Task using human-reviewed values.
+- Live-verified retry returns the same Task with `created = false` and emits no duplicate `TaskCreated.v1`.
+- Live-verified `task.assign` denial with `task.create = true` and `task.assign = false`.
+- Verified denied assignment produced zero Task, provenance, and `TaskCreated.v1` writes.
+- Live-verified API retry returns HTTP `200` with the existing Task.
+- Live-verified fresh Discussion -> Team Agent proposal -> human confirm -> authoritative Task through the API.
+- Fresh first-time materialization returned HTTP `201` with `created = true`.
+- Verified proposal result linkage, source provenance, event correlation, and event causation.
+- Verified Team Agent source contains no direct Tasks persistence dependency.
+
+#### Current Limitations
+
+- `GET /me/tasks` visibility remains outstanding for VS-001.
+- Complete audit reconstruction remains outstanding.
+- The complete multi-request workflow has not yet been proven to use one correlation ID from the initial Discussion command through human review and Task creation.
+- External LLM invocation, assignee-name resolution, and natural-language due-date resolution remain deferred.
+- The Team Agent worker remains one-shot rather than continuously hosted.
+
+
+### VS001-06 —Human Proposal Review
 #### Added
 - Added authenticated project-scoped Team Agent proposal-review endpoint:
   - `POST /api/v1/projects/{projectId}/task-proposals/{proposalId}/review`.
@@ -46,7 +101,7 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 - External LLM invocation, prompt-version selection, assignee resolution, and natural-language due-date resolution remain deferred.
 - The Team Agent worker remains one-shot and is not yet hosted as a continuous production worker.
 
-### VS001-05 — Asynchronous Team Agent Task-Proposal Processing
+### VS001-05 —Asynchronous Team Agent Task-Proposal Processing
 
 #### Added
 
@@ -495,111 +550,43 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 Completed:
 
 - VS001-01 walking skeleton.
-- Express + TypeScript API.
-- Health endpoint.
-- Request and correlation IDs.
-- `RequestContext`.
-- Standard API response envelope.
-- Shared `DomainEvent` type.
-- Module ownership documentation.
-- Supabase authentication provider.
-- Supabase JWT verification.
-- Cadence identity repository.
-- Cadence identity service.
-- Authentication middleware.
-- Authenticated `RequestContext`.
-- `GET /api/v1/me`.
-- Active-user authentication verification.
-- Invalid-token verification.
-- Missing-token verification.
-- Unprovisioned-user verification.
-- Disabled-user verification.
-- Supabase-to-Cadence identity linkage verification.
-- Local API environment configuration.
-- Git protection of local secrets.
+- VS001-02 authentication and identity.
 - VS001-03 Project Workspace read model.
-- Project-scoped API membership enforcement.
-- Project-scoped API RBAC enforcement.
-- `project.view` permission enforcement.
-- `GET /api/v1/projects/{projectId}/summary`.
-- Project Health integration into the workspace read model.
-- Project Health baseline backfill for existing projects.
-- Project Workspace `200 OK` happy-path verification.
-- Cross-project `404 NOT_FOUND` isolation verification.
-- Same-project `403 PERMISSION_DENIED` verification.
-- Request and correlation tracing on Project Workspace responses.
 - VS001-04 Discussion message creation.
-- `POST /api/v1/projects/{projectId}/messages`.
-- `message.create` permission enforcement.
-- Discussion repository abstraction.
-- Supabase Discussion persistence adapter.
-- Atomic Message + Message Version + `MessageCreated.v1` persistence.
-- Discussion correlation-ID propagation.
-- Discussion content validation.
-- Discussion thread-parent validation.
-- Discussion `400 VALIDATION_ERROR` verification.
-- Discussion `403 PERMISSION_DENIED` verification.
-- Discussion rollback/no-partial-write verification.
-- Six Discussion service unit tests.
-- API-wide `npm test` command.
-- TypeScript type checking.
 - VS001-05 asynchronous Team Agent task-proposal processing.
-- VS001-06 Human Proposal Review.
-- Per-consumer domain-event subscriptions and deliveries.
-- Atomic domain-event delivery claiming.
-- Processing leases and stale-worker claim protection.
-- Generic `DomainEventProcessor`.
-- `MessageCreated.v1` Team Agent consumer.
-- Exact immutable Discussion message-version retrieval.
-- Deterministic development task-proposal generation.
-- Idempotent AI run persistence using `source_event_id`.
-- Pending AI task-proposal persistence.
-- `AIProposalCreated.v1`.
-- Correlation and causation tracing across the asynchronous flow.
-- One-shot Team Agent worker.
-- Twenty-nine passing automated tests.
-- Live VS001-05 Supabase verification.
+- VS001-06 human proposal review.
+- VS001-07 authoritative Task creation from reviewed proposals.
+- `TasksService` ownership of authoritative Task creation.
+- Independent `task.create` and conditional `task.assign` enforcement.
+- Tasks-owned proposal idempotency and provenance.
+- `TaskCreated.v1` creation with review-event correlation and causation.
+- Live confirmed-proposal, edited-proposal, retry, assignment-denial, and fresh HTTP end-to-end verification.
+- 51 passing automated API tests and TypeScript type checking.
 
 In progress:
 
-- Complete VS001-05 engineering handoff documentation.
-- Update VS-001 vertical-slice documentation.
-- Inspect the complete VS001-05 Git diff.
-- Confirm no secrets or local environment files are staged.
-- Create the VS001-05 source-control checkpoint.
-- Push the VS001-05 checkpoint to `feature/vs-001`.
+- `GET /me/tasks` visibility for the VS-001 acceptance path.
+- Complete correlated audit reconstruction.
+- Verification or correction of one-correlation-ID continuity across the complete multi-request journey.
+- Final VS-001 UI integration where required.
 
 Next:
 
-- Begin VS001-06 human proposal review.
-- Add authorised review of pending Team Agent proposals.
-- Support confirm, edit, and reject outcomes.
-- Enforce `agent.approve` server-side.
-- Preserve the Tasks module boundary for eventual authoritative Task creation.
+- Complete the VS001-07 documentation and source-control checkpoint.
+- Continue the remaining VS-001 acceptance work without weakening the established Team Agent -> TasksService boundary.
 
 ### Known Limitations / Deferred Work
 
-- Discussion message listing is not yet implemented.
-- Individual Discussion message retrieval is not yet implemented.
-- Discussion message-history retrieval is not yet implemented.
-- Discussion editing and deletion are not yet implemented.
-- Discussion reactions are not yet implemented.
-- Discussion mentions are not yet implemented.
-- Discussion file-link handling is not yet implemented.
-- `mention_user_ids` and `file_ids` from the broader API contract are not yet implemented by VS001-04.
-- Discussion command idempotency is not yet implemented.
-- Automatic retries of state-changing Discussion commands should not be introduced until idempotency is implemented.
-- Discussion-specific audit processing is not yet implemented.
-- External LLM invocation is not yet implemented.
-- Prompt-version selection is not yet implemented.
-- Assignee name resolution is not yet implemented.
-- Natural-language due-date resolution is not yet implemented.
-- AI confidence scoring is not yet implemented.
-- Proposal listing and review APIs are not yet implemented.
-- Confirmed proposals are not yet integrated with `TasksService`.
-- Authoritative Task creation from confirmed proposals is not yet implemented.
-- The Team Agent worker is currently one-shot; continuous production worker hosting and supervision are not yet implemented.
-- Several module `*.test.ts` files remain empty placeholders; Node counts those files as successful test entries even though they contain no substantive assertions.
+- Discussion message listing, individual retrieval, history retrieval, editing, deletion, reactions, mentions, and file-link handling remain deferred.
+- `mention_user_ids` and `file_ids` from the broader API contract remain unimplemented.
+- Discussion command idempotency remains unimplemented; automatic retries of message creation should not be introduced without an idempotency strategy.
+- External LLM invocation and production model-provider integration remain deferred.
+- Prompt-version selection, assignee-name resolution, natural-language due-date resolution, and AI confidence scoring remain deferred.
+- `GET /me/tasks` visibility remains outstanding for the VS-001 acceptance path.
+- Complete audit reconstruction remains outstanding.
+- A single correlation ID has not yet been proven across the complete multi-request Discussion -> review -> Task journey.
+- The Team Agent worker remains one-shot; continuous production worker hosting and supervision remain future work.
+- Some older module test files remain lighter-weight than the newer Discussion, Team Agent, and Tasks coverage; database-backed integration automation remains future work.
 
 ---
 

@@ -588,6 +588,7 @@ The current Supabase implementation is:
 
 ```text
 apps/api/src/infrastructure/database/supabase-team-agent.repository.ts
+apps/api/src/infrastructure/database/supabase-team-agent-materialization.repository.ts
 ```
 
 ---
@@ -1403,37 +1404,16 @@ No live review created a new authoritative Task.
 
 ---
 
-# Current Limitations
+# VS001-07 Reviewed Proposal Materialization
 
-The Team Agent path still does not implement:
+VS001-07 now implements the reviewed-proposal-to-Task continuation.
 
-- proposal-listing API;
-- confirmed/edited proposal integration with `TasksService`;
-- authoritative Task creation;
-- `task.create` enforcement through the reviewed-proposal-to-Task path;
-- `task.assign` enforcement through that path when required;
-- external LLM invocation;
-- production model-provider integration;
-- real prompt execution;
-- prompt-version selection;
-- AI confidence scoring;
-- assignee name resolution;
-- natural-language due-date resolution;
-- continuous worker hosting;
-- production worker scheduling and supervision.
-
-These remain deliberate boundaries rather than implicit capabilities.
-
----
-
-# Next Boundary - Authoritative Task Creation
-
-The next path must remain:
+The active boundary is:
 
 ```text
 confirmed / edited proposal
   ->
-TeamAgentService
+TeamAgentTaskMaterializationService
   ->
 TasksService
   ->
@@ -1446,14 +1426,245 @@ Tasks-owned persistence
 TaskCreated.v1
 ```
 
-Team Agent must never insert or update `public.tasks` directly.
-
-Human `agent.approve` authorization does not imply `task.create` or `task.assign`.
-
-The Tasks module remains authoritative for task creation, assignment permission checks, task persistence, task provenance, and task domain events.
+Team Agent never inserts or updates `public.tasks` directly.
 
 ---
 
+## Materialization API
+
+Authenticated endpoint:
+
+```text
+POST /api/v1/projects/{projectId}/task-proposals/{proposalId}/task
+```
+
+First-time materialization returns:
+
+```text
+HTTP 201
+created = true
+```
+
+An idempotent retry returns:
+
+```text
+HTTP 200
+created = false
+```
+
+with the same authoritative Task.
+
+---
+
+## Materialization Eligibility
+
+Only proposals in:
+
+```text
+confirmed
+edited
+```
+
+states are eligible.
+
+The authoritative candidate values come from:
+
+```text
+reviewed_payload
+```
+
+not directly from the original AI `payload`.
+
+The following states are rejected:
+
+```text
+pending
+rejected
+expired
+```
+
+The materialization path also requires review provenance:
+
+```text
+review event ID
+review correlation ID
+```
+
+---
+
+## Tasks Boundary
+
+Team Agent depends on:
+
+```text
+TasksService
+```
+
+for authoritative Task creation.
+
+It does not depend on:
+
+```text
+TasksRepository
+SupabaseTasksRepository
+public.tasks
+```
+
+A source scan after VS001-07 implementation confirmed no prohibited direct Tasks persistence dependency exists in the Team Agent module.
+
+`agent.approve` remains separate from:
+
+```text
+task.create
+task.assign
+```
+
+The Tasks module independently evaluates those permissions.
+
+---
+
+## Team Agent Materialization Persistence
+
+Team Agent owns only its proposal/result bookkeeping.
+
+The materialization repository may:
+
+- read the reviewed proposal;
+- read its review-event provenance;
+- record `result_entity_type`;
+- record `result_entity_id`.
+
+It may not create or modify authoritative Task state.
+
+After `TasksService` successfully creates or returns the authoritative Task, Team Agent records:
+
+```text
+result_entity_type = task
+result_entity_id = Task ID
+```
+
+If result-link persistence fails after Task creation, the operation can be retried safely because Tasks creation is idempotent by proposal source.
+
+---
+
+## Correlation and Causation
+
+Materialization passes the human-review correlation and review-event ID into `TasksService`.
+
+The resulting:
+
+```text
+TaskCreated.v1
+```
+
+therefore uses:
+
+```text
+correlation_id = human review correlation
+causation_id = human review event ID
+```
+
+Verified live lineage:
+
+```text
+AIProposalConfirmed.v1
+event_id =
+329ed710-5278-430d-901b-8ea757b05a2e
+
+correlation_id =
+b67f55ed-24f9-40dc-b11f-318c7771cd02
+        |
+        v
+TaskCreated.v1
+event_id =
+3a44204f-3b20-4548-9b9e-20dcc0692b53
+
+correlation_id =
+b67f55ed-24f9-40dc-b11f-318c7771cd02
+
+causation_id =
+329ed710-5278-430d-901b-8ea757b05a2e
+```
+
+The fresh Discussion request used a different correlation ID from the later human-review request.
+
+Therefore one-correlation-ID continuity across the complete multi-request journey remains a final VS-001 audit item.
+
+---
+
+## Live VS001-07 Verification
+
+Confirmed proposal:
+
+```text
+2312c92f-43aa-4584-ade7-532a49c3eb08
+```
+
+materialized to:
+
+```text
+8e7e70dd-d650-4c7d-a605-ff6ad2a68eae
+```
+
+and API retry returned the same Task with `created = false`.
+
+Edited proposal:
+
+```text
+def8f97f-adf7-444a-a1dd-919b3467464b
+```
+
+materialized to:
+
+```text
+4b4ed424-c4f7-4aab-bbad-138e0b609ab4
+```
+
+using final human-reviewed values.
+
+Fresh Discussion/proposal verification:
+
+```text
+message =
+591a4b9f-26f6-46f1-b9cf-13f943f77999
+
+proposal =
+fce47383-11c0-4be0-863e-8a0277fb6bc4
+
+Task =
+3169f627-3fcc-4141-a3b7-c6f93cbd84b0
+```
+
+First materialization returned HTTP `201` with `created = true`.
+
+Final database verification confirmed proposal result linkage, one source link, one `TaskCreated.v1`, review correlation continuity, and review-event causation.
+
+---
+
+# Current Limitations
+
+The Team Agent path still does not implement:
+
+- proposal-listing API;
+- external LLM invocation;
+- production model-provider integration;
+- real prompt execution;
+- prompt-version selection;
+- AI confidence scoring;
+- assignee name resolution;
+- natural-language due-date resolution;
+- continuous worker hosting;
+- production worker scheduling and supervision.
+
+Authoritative Task creation from confirmed/edited proposals is implemented and must not be listed as deferred work.
+
+The broader VS-001 flow still requires:
+
+- `GET /me/tasks` visibility;
+- complete audit reconstruction;
+- verification or correction of one-correlation-ID continuity across the complete multi-request journey.
+
+---
 # Future AI Integration
 
 The deterministic generator is a development architecture probe.
@@ -1560,6 +1771,10 @@ apps/api/src/modules/team-agent/team-agent.repository.ts
 apps/api/src/modules/team-agent/team-agent.service.ts
 apps/api/src/modules/team-agent/message-created.handler.ts
 apps/api/src/modules/team-agent/team-agent.test.ts
+apps/api/src/modules/team-agent/team-agent-materialization.repository.ts
+apps/api/src/modules/team-agent/team-agent-task-materialization.service.ts
+apps/api/src/modules/team-agent/team-agent-task-materialization.routes.ts
+apps/api/src/modules/team-agent/team-agent-task-materialization.test.ts
 apps/api/src/modules/team-agent/README.md
 ```
 
@@ -1579,6 +1794,7 @@ apps/api/src/infrastructure/events/domain-event.processor.test.ts
 apps/api/src/infrastructure/database/supabase-domain-event.repository.ts
 apps/api/src/infrastructure/database/supabase-discussion.repository.ts
 apps/api/src/infrastructure/database/supabase-team-agent.repository.ts
+apps/api/src/infrastructure/database/supabase-team-agent-materialization.repository.ts
 ```
 
 ## Worker
@@ -1594,6 +1810,9 @@ supabase/migrations/20260815200500_domain_event_deliveries.sql
 supabase/migrations/20260815201000_domain_event_delivery_processing.sql
 supabase/migrations/20260815202000_domain_event_subscriptions.sql
 supabase/migrations/20260815203000_team_agent_task_proposals.sql
+supabase/migrations/20260816024841_team_agent_human_proposal_review.sql
+supabase/migrations/20260816082249_fix_team_agent_review_column_ambiguity.sql
+supabase/migrations/20260816123000_authoritative_task_creation.sql
 ```
 
 ---
@@ -1636,6 +1855,39 @@ human confirmation remains required
 
 ---
 
+# VS001-07 Summary
+
+VS001-07 proves:
+
+```text
+human-reviewed proposal
+  ->
+Team Agent materialization service
+  ->
+TasksService
+  ->
+independent Tasks authorization
+  ->
+authoritative Task
+  ->
+TaskCreated.v1
+```
+
+The checkpoint also proves:
+
+```text
+Team Agent does not write Tasks directly
+reviewed_payload supplies final candidate values
+task.create remains independent from agent.approve
+task.assign is checked independently when required
+Tasks owns Task idempotency and provenance
+retry returns the same authoritative Task
+review correlation and causation reach TaskCreated.v1
+```
+
+The remaining VS-001 work is task visibility and complete audit reconstruction.
+
+---
 ## Attribution
 
 Cadence was conceptualized and prepared by Ngoh Chee Hung.
