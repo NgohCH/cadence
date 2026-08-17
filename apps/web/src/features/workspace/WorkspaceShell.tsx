@@ -2,9 +2,14 @@ import type {
   CadenceUser,
 } from '../../types/identity'
 
+import type {
+  ProjectSummaryResponse,
+} from '../../types/projects'
+
 
 interface WorkspaceShellProps {
   user: CadenceUser
+  project: ProjectSummaryResponse
   signingOut: boolean
   onSignOut: () => Promise<void>
 }
@@ -12,9 +17,19 @@ interface WorkspaceShellProps {
 
 export function WorkspaceShell({
   user,
+  project,
   signingOut,
   onSignOut,
 }: WorkspaceShellProps) {
+  const lifecycleLabel =
+    project.project.lifecycle_status
+      .replaceAll('_', ' ')
+
+  const healthLabel =
+    project.project.health_status
+      .replaceAll('_', ' ')
+
+
   return (
     <div className="app">
       <header className="topbar">
@@ -42,14 +57,10 @@ export function WorkspaceShell({
           <button
             className="signout-button"
             type="button"
-            disabled={
-              signingOut
-            }
-            onClick={
-              () => {
-                void onSignOut()
-              }
-            }
+            disabled={signingOut}
+            onClick={() => {
+              void onSignOut()
+            }}
           >
             {signingOut
               ? 'Signing out...'
@@ -85,11 +96,13 @@ export function WorkspaceShell({
               </p>
 
               <h1>
-                VS-001 Pilot Project
+                {project.project.name}
               </h1>
 
               <p className="muted">
-                Discussion-to-task workflow
+                {project.project.description ??
+                  project.project.goal ??
+                  'Cadence project workspace'}
               </p>
             </div>
           </section>
@@ -102,8 +115,12 @@ export function WorkspaceShell({
 
               <strong className="status">
                 <span className="status-dot" />
-                Active
+                {lifecycleLabel}
               </strong>
+
+              <small className="muted">
+                Health: {healthLabel}
+              </small>
             </article>
 
             <article className="summary-card">
@@ -112,8 +129,12 @@ export function WorkspaceShell({
               </span>
 
               <strong className="summary-number">
-                0
+                {project.my_tasks.pending}
               </strong>
+
+              <small className="muted">
+                {project.my_tasks.overdue} overdue
+              </small>
             </article>
 
             <article className="summary-card">
@@ -121,15 +142,83 @@ export function WorkspaceShell({
                 Alerts
               </span>
 
-              <strong>
-                No active alerts
+              <strong className="summary-number">
+                {project.alerts.length}
               </strong>
+
+              <small className="muted">
+                {project.blockers} blockers
+              </small>
             </article>
           </section>
 
-          <section className="alert-banner">
-            No critical project issues or deadlines
-            currently require attention.
+          {project.alerts.length > 0 ? (
+            <section className="project-alerts">
+              {project.alerts.map(
+                (alert) => (
+                  <div
+                    className={`alert-banner alert-${alert.severity}`}
+                    key={alert.id}
+                  >
+                    <strong>
+                      {alert.title}
+                    </strong>
+
+                    <span>
+                      {alert.message}
+                    </span>
+                  </div>
+                ),
+              )}
+            </section>
+          ) : (
+            <section className="alert-banner">
+              No active project alerts.
+            </section>
+          )}
+
+          <section className="project-detail-grid">
+            <article className="summary-card">
+              <span className="summary-label">
+                Progress
+              </span>
+
+              <strong>
+                {project.project.progress_percent}%
+              </strong>
+
+              <div className="progress-track">
+                <div
+                  className="progress-value"
+                  style={{
+                    width:
+                      `${project.project.progress_percent}%`,
+                  }}
+                />
+              </div>
+            </article>
+
+            <article className="summary-card">
+              <span className="summary-label">
+                Next milestone
+              </span>
+
+              {project.next_milestone ? (
+                <>
+                  <strong>
+                    {project.next_milestone.title}
+                  </strong>
+
+                  <small className="muted">
+                    {project.next_milestone.target_date}
+                  </small>
+                </>
+              ) : (
+                <strong>
+                  No upcoming milestone
+                </strong>
+              )}
+            </article>
           </section>
 
           <section className="workspace-grid">

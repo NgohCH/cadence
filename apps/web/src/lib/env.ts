@@ -25,3 +25,8 @@ export function getBrowserEnvironment(): BrowserEnvironment {
     ),
   }
 }
+export function getConfiguredProjectId(): string {
+  return readRequiredEnvironmentVariable(
+    'VITE_PROJECT_ID',
+  )
+}

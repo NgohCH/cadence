@@ -9,8 +9,8 @@ import {
 } from './features/auth/useAuth'
 
 import {
-  WorkspaceShell,
-} from './features/workspace/WorkspaceShell'
+  ProjectWorkspace,
+} from './features/workspace/ProjectWorkspace'
 
 
 function App() {
@@ -44,7 +44,7 @@ function App() {
     auth.user
   ) {
     return (
-      <WorkspaceShell
+      <ProjectWorkspace
         user={
           auth.user
         }
