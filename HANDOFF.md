@@ -28,11 +28,11 @@ Status:
 
 Current checkpoint:
 
-**VS001-07 Authoritative Task Creation implementation, remote database deployment, automated tests, and live end-to-end verification complete. Documentation and source-control checkpoint in progress.**
+**VS001-08 My Tasks Read Model implementation, remote database deployment, automated tests, and live end-to-end verification complete. Documentation and source-control checkpoint in progress.**
 
-Next implementation area after the VS001-07 source-control checkpoint:
+Next implementation area after the VS001-08 source-control checkpoint:
 
-**Complete the VS001-07 source-control checkpoint, then continue the remaining VS-001 acceptance work: `GET /me/tasks` visibility and complete audit/correlation reconstruction.**
+**Complete the VS001-08 source-control checkpoint, then continue the remaining VS-001 acceptance work: complete audit reconstruction and one-correlation-ID verification/correction.**
 
 ---
 
@@ -196,6 +196,12 @@ Project Workspace endpoint:
 GET /api/v1/projects/{projectId}/summary
 ```
 
+Authenticated My Tasks endpoint:
+
+```text
+GET /api/v1/me/tasks
+```
+
 ---
 
 # API Development Commands
@@ -266,7 +272,7 @@ Current verification:
 
 ```text
 npm run typecheck = passed
-npm test = 51 passed, 0 failed
+npm test = 53 passed, 0 failed
 ```
 
 ---
@@ -1891,6 +1897,7 @@ authentication middleware
 identity router
 projects router
 discussion router
+tasks router
 team-agent review router
 team-agent task-materialization router
 ```
@@ -1903,12 +1910,18 @@ Protected API routes are mounted under:
 /api/v1
 ```
 
-Authentication middleware executes before protected Identity, Projects, Discussion, Team Agent review, and Task-materialization route handlers.
+Authentication middleware executes before protected Identity, Projects, Discussion, Tasks, Team Agent review, and Task-materialization route handlers.
 
 The current protected Discussion endpoint is:
 
 ```text
 POST /api/v1/projects/{projectId}/messages
+```
+
+The current protected My Tasks endpoint is:
+
+```text
+GET /api/v1/me/tasks
 ```
 
 Server composition remains explicit in `src/server.ts`.
@@ -3270,7 +3283,7 @@ This boundary was live-verified in VS001-07.
 * one-shot `worker:once` composition root
 * live VS001-05 Supabase verification
 * duplicate-safety verification
-* 51 passing automated test entries
+* 53 passing automated test entries
 * TypeScript type checking
 * Team Agent README documentation
 * `CHANGELOG.md`
@@ -3281,6 +3294,14 @@ This boundary was live-verified in VS001-07.
 * Tasks-owned proposal idempotency and provenance
 * `TaskCreated.v1` with review-event correlation and causation
 * live fresh Discussion -> proposal -> human review -> authoritative Task verification
+* VS001-08 authenticated `GET /api/v1/me/tasks`
+* Tasks-owned My Tasks read-model contract through `TasksService.listMyTasks()`
+* `task.view` enforcement for My Tasks visibility
+* service-role-only `public.list_my_tasks(uuid)`
+* My Tasks migration `20260817101500_my_tasks_read_model.sql`
+* unauthenticated My Tasks `401` verification
+* live assigned open Task visibility for Alice
+* live fresh Discussion -> proposal -> human assignment -> authoritative Task -> My Tasks verification
 
 # VS001-06 Human Proposal Review
 
@@ -3585,7 +3606,7 @@ VS001-07 subsequently implemented the reviewed-proposal-to-authoritative-Task co
 
 Status:
 
-**Implementation, remote database deployment, automated verification, and live end-to-end verification complete. Documentation and source-control checkpoint in progress.**
+**Implementation, remote database deployment, automated verification, live end-to-end verification, documentation, and source-control checkpoint complete.**
 
 VS001-07 completes the reviewed-proposal-to-authoritative-Task boundary.
 
@@ -3782,13 +3803,319 @@ apps/api/src/server.ts
 supabase/migrations/20260816123000_authoritative_task_creation.sql
 ```
 
+
+---
+
+# VS001-08 My Tasks Read Model
+
+Status:
+
+**Implementation, remote database deployment, automated verification, and live end-to-end verification complete. Documentation and source-control checkpoint in progress.**
+
+VS001-08 implements the authenticated current-actionable-task read model required by the vertical slice.
+
+## API
+
+```text
+GET /api/v1/me/tasks
+```
+
+The endpoint is authenticated.
+
+The client cannot supply another user ID.
+
+The authoritative target identity comes from:
+
+```text
+RequestContext.actorUserId
+```
+
+The standard success envelope includes:
+
+```text
+correlation_id
+request_id
+next_cursor = null
+```
+
+## Read Contract
+
+The endpoint returns Tasks where:
+
+```text
+assigned_to = authenticated Cadence user
+status IN (open, in_progress)
+```
+
+and where the user's current project access includes:
+
+```text
+task.view
+```
+
+This is intentionally a narrow current-actionable-task read model rather than a general Task-history API.
+
+Completed and cancelled Tasks are outside the current My Tasks read model.
+
+## Architecture
+
+The dependency direction is:
+
+```text
+Tasks route
+  ->
+TasksService.listMyTasks()
+  ->
+TasksRepository.listMyTasks()
+  ->
+SupabaseTasksRepository.listMyTasks()
+  ->
+public.list_my_tasks(...)
+```
+
+The Tasks module owns the read model.
+
+Team Agent is not involved in Task retrieval.
+
+The existing authoritative creation boundary remains unchanged:
+
+```text
+Team Agent
+  ->
+TasksService
+  ->
+Tasks-owned persistence
+```
+
+## Authorization
+
+My Tasks visibility requires current:
+
+```text
+task.view
+```
+
+for the Task's project.
+
+Assignment alone is not treated as sufficient authorization.
+
+The database read function uses the existing project-permission helper, which in turn requires active project membership, an active user, and the current role permission.
+
+The application does not accept a client-supplied user identity for My Tasks.
+
+## Database Migration
+
+```text
+supabase/migrations/20260817101500_my_tasks_read_model.sql
+```
+
+The migration adds:
+
+```text
+public.list_my_tasks(uuid)
+```
+
+The function:
+
+* restricts results to the supplied authenticated Cadence user;
+* returns only `open` and `in_progress` Tasks;
+* requires current `task.view` project permission;
+* orders due Tasks first with null due dates last;
+* uses deterministic creation-time and Task-ID tie-breaking.
+
+Current ordering is:
+
+```text
+due_date ASC NULLS LAST
+created_at DESC
+id ASC
+```
+
+The RPC is revoked from:
+
+```text
+public
+anon
+authenticated
+```
+
+and granted only to:
+
+```text
+service_role
+```
+
+Browser clients must not call this server-side read function directly.
+
+## Live Verification
+
+Authenticated test identity:
+
+```text
+Alice Test
+afec9f7c-eb66-46b9-9668-cb57b26394b5
+```
+
+Anonymous access was verified:
+
+```text
+GET /api/v1/me/tasks
+  ->
+401
+```
+
+Authenticated My Tasks initially returned Alice's existing open assigned Task.
+
+The three previously verified VS001-07 authoritative Tasks were inspected and found to be:
+
+```text
+status = open
+assigned_to = null
+```
+
+They correctly did not appear in Alice's My Tasks response.
+
+A fresh complete vertical-slice verification then used:
+
+```text
+Discussion message =
+b6494274-379e-4347-9109-ae843cba9b9a
+
+Team Agent proposal =
+f82e2320-45d8-42b8-9dd2-e7280d857c51
+
+authoritative Task =
+c132b53e-e9b9-4389-81bc-6d4011bf1e2f
+```
+
+The deterministic Team Agent initially generated:
+
+```text
+status = pending
+assigned_to = null
+```
+
+Alice's verified project permissions for this acceptance path were:
+
+```text
+agent.approve = true
+task.create   = true
+task.assign   = true
+task.view     = true
+```
+
+Human review used:
+
+```text
+action = edit
+assigned_to = afec9f7c-eb66-46b9-9668-cb57b26394b5
+```
+
+and completed as:
+
+```text
+status = edited
+```
+
+Authoritative materialization through the established Tasks boundary returned:
+
+```text
+created = true
+status = open
+assigned_to = Alice
+```
+
+The resulting Task was:
+
+```text
+c132b53e-e9b9-4389-81bc-6d4011bf1e2f
+```
+
+The exact Task was then returned by:
+
+```text
+GET /api/v1/me/tasks
+```
+
+Final assertions:
+
+```text
+exact Task visible = true
+assigned_to matches authenticated Alice = true
+```
+
+This proves:
+
+```text
+Discussion
+  ->
+MessageCreated.v1
+  ->
+Team Agent task proposal
+  ->
+human review and assignment
+  ->
+TasksService
+  ->
+authoritative Task
+  ->
+GET /me/tasks
+```
+
+## Automated Verification
+
+Latest gate:
+
+```text
+npm run typecheck -> pass
+npm test          -> 53 tests / 53 pass / 0 fail
+```
+
+New Tasks coverage verifies:
+
+```text
+My Tasks uses authenticated actor identity
+empty visible-task result is handled correctly
+```
+
+## VS001-08 Implementation Files
+
+```text
+apps/api/src/modules/tasks/tasks.repository.ts
+apps/api/src/modules/tasks/tasks.service.ts
+apps/api/src/modules/tasks/tasks.routes.ts
+apps/api/src/modules/tasks/tasks.test.ts
+apps/api/src/infrastructure/database/supabase-tasks.repository.ts
+apps/api/src/server.ts
+supabase/migrations/20260817101500_my_tasks_read_model.sql
+```
+
+## VS001-08 Definition of Done
+
+```text
+[x] authenticated GET /api/v1/me/tasks exists
+[x] caller cannot supply another user identity
+[x] RequestContext.actorUserId scopes My Tasks
+[x] only open/in_progress Tasks are part of the read model
+[x] task.view is enforced by the server-side read model
+[x] database read function is service_role only
+[x] deterministic ordering is defined
+[x] remote migration is synchronized
+[x] unauthenticated request returns 401
+[x] authenticated assigned Task visibility is live-verified
+[x] unassigned Tasks are excluded
+[x] fresh reviewed proposal can assign authenticated user
+[x] fresh authoritative Task is visible through My Tasks
+[x] TypeScript typecheck passes
+[x] all 53 automated tests pass
+```
+
 ---
 
 # Not Yet Implemented in VS-001
 
 The following portions of the vertical slice remain outstanding:
 
-* `GET /me/tasks` visibility
 * complete correlated audit reconstruction across the vertical slice
 * verification or correction of one-correlation-ID continuity across the complete multi-request workflow
 * end-to-end VS-001 UI where required
@@ -3807,6 +4134,8 @@ The following portions of the vertical slice remain outstanding:
 * `file_ids` handling
 
 Authoritative Task creation from reviewed proposals is now implemented and must not be listed as deferred work.
+
+Authenticated My Tasks visibility is now implemented and must not be listed as deferred work.
 
 ---
 
@@ -3852,6 +4181,9 @@ Authoritative Task creation from reviewed proposals is now implemented and must 
 38. External model inputs/outputs and raw AI-run data must remain server-controlled according to the existing AI provenance/security model.
 39. `public.review_team_agent_task_proposal(...)` must remain unavailable to `public`, `anon`, and `authenticated` roles and executable only through trusted service-role access.
 40. Human edit must not rewrite source-message provenance stored on the AI proposal.
+41. `GET /api/v1/me/tasks` must derive the target user exclusively from `RequestContext.actorUserId`; client-supplied user IDs must not control My Tasks visibility.
+42. `public.list_my_tasks(...)` must remain unavailable to `public`, `anon`, and `authenticated` roles and executable only through trusted service-role access.
+43. My Tasks visibility must continue to require current `task.view` project permission rather than treating assignment alone as authorization.
 
 ---
 
@@ -3886,9 +4218,9 @@ When adding or changing functionality:
 
 # Immediate Next Engineering Step
 
-VS001-07 implementation, database deployment, automated testing, and live end-to-end verification are complete.
+VS001-08 implementation, database deployment, automated testing, and live end-to-end verification are complete.
 
-The immediate activity is the VS001-07 source-control checkpoint.
+The immediate activity is the VS001-08 documentation and source-control checkpoint.
 
 From the repository root:
 
@@ -3898,23 +4230,21 @@ C:\Users\chngo\cadence
 
 perform:
 
-1. update `docs/vertical-slices/VS-001.md`, `CHANGELOG.md`, `HANDOFF.md`, and relevant module READMEs;
+1. complete the VS001-08 documentation updates;
 2. run `npm run typecheck` and `npm test` from `apps/api`;
 3. run `git diff --check`;
 4. inspect the complete working tree;
 5. confirm `apps/api/.env` remains ignored and unstaged;
 6. scan the staged diff for Supabase keys, bearer tokens, passwords, and temporary credentials;
-7. stage only intended VS001-07 code, migration, tests, and documentation;
+7. stage only intended VS001-08 code, migration, tests, and documentation;
 8. run `git diff --cached --check`;
 9. inspect `git diff --cached` and `git status`;
-10. commit the VS001-07 checkpoint;
+10. commit the VS001-08 checkpoint;
 11. push `feature/vs-001`.
 
 After that checkpoint, continue the remaining VS-001 acceptance work:
 
 ```text
-GET /me/tasks visibility
-  ->
 complete audit reconstruction
   ->
 one-correlation-ID verification/correction
@@ -3923,6 +4253,8 @@ final vertical-slice completion
 ```
 
 Do not weaken the established Team Agent -> TasksService -> Tasks-owned persistence boundary.
+
+Do not broaden `GET /me/tasks` into a general Task-history API as part of the audit work.
 
 ---
 
@@ -4645,7 +4977,7 @@ npm test
 Current expected automated result:
 
 ```text
-51 passed
+53 passed
 0 failed
 ```
 
@@ -4757,7 +5089,138 @@ npm test
 Current expected result:
 
 ```text
-51 passed
+53 passed
+0 failed
+```
+
+
+---
+
+# Troubleshooting My Tasks
+
+For failures involving:
+
+```text
+GET /api/v1/me/tasks
+```
+
+check the following in order.
+
+### 1. Authentication
+
+Verify:
+
+```text
+GET /api/v1/me
+```
+
+with the same bearer token.
+
+If `/me` fails, resolve authentication before investigating Tasks visibility.
+
+### 2. Cadence Identity
+
+Confirm the authenticated user resolves to an active Cadence user.
+
+The My Tasks target identity must come from:
+
+```text
+RequestContext.actorUserId
+```
+
+The client must not control the target user ID.
+
+### 3. Assignment
+
+Confirm the expected Task contains:
+
+```text
+assigned_to = authenticated Cadence user ID
+```
+
+Unassigned Tasks do not appear.
+
+### 4. Task Status
+
+Confirm:
+
+```text
+status = open
+```
+
+or:
+
+```text
+status = in_progress
+```
+
+Completed and cancelled Tasks are outside the current My Tasks read model.
+
+### 5. Project Membership and Permission
+
+Confirm the authenticated user has active membership in the Task project and the current role includes:
+
+```text
+task.view
+```
+
+Assignment alone is not sufficient authorization.
+
+### 6. Database Migration
+
+Confirm:
+
+```text
+20260817101500_my_tasks_read_model.sql
+```
+
+is applied.
+
+Confirm:
+
+```text
+public.list_my_tasks(uuid)
+```
+
+exists.
+
+### 7. RPC Security
+
+The function must remain executable through trusted server-side service-role access only.
+
+Do not expose it directly to browser clients merely to troubleshoot a read failure.
+
+### 8. Ordering
+
+Current ordering is:
+
+```text
+due_date ASC NULLS LAST
+created_at DESC
+id ASC
+```
+
+Do not treat a different position in the returned list as a missing Task until the complete result has been inspected.
+
+### 9. TypeScript and Tests
+
+From:
+
+```text
+apps/api
+```
+
+run:
+
+```powershell
+npm run typecheck
+npm test
+```
+
+Current expected result:
+
+```text
+53 passed
 0 failed
 ```
 
@@ -4855,6 +5318,24 @@ create_authoritative_task()
      +-- TaskCreated.v1
 ```
 
+My Tasks read path:
+
+```text
+authenticated user
+  ->
+GET /api/v1/me/tasks
+  ->
+RequestContext.actorUserId
+  ->
+TasksService.listMyTasks()
+  ->
+SupabaseTasksRepository
+  ->
+list_my_tasks()
+  ->
+assigned open/in_progress Tasks with current task.view
+```
+
 This validates the major architecture requirements through authoritative Task creation:
 
 * authentication remains separate from authorization;
@@ -4868,9 +5349,12 @@ This validates the major architecture requirements through authoritative Task cr
 * Tasks owns Task creation, assignment authorization, persistence, provenance, idempotency, and Task events;
 * material writes emit versioned domain events;
 * proposal materialization is retry-safe;
-* review-to-Task correlation and causation are preserved.
+* review-to-Task correlation and causation are preserved;
+* authenticated My Tasks visibility is self-scoped and re-evaluates current `task.view`.
 
-Remaining VS-001 architecture work is concentrated on task visibility and complete audit reconstruction, including the unresolved one-correlation-ID question across multiple human HTTP requests.
+Task visibility is now complete for VS-001.
+
+Remaining VS-001 architecture work is concentrated on complete audit reconstruction, including the unresolved one-correlation-ID question across multiple human HTTP requests.
 
 ---
 
@@ -4900,6 +5384,7 @@ A new engineer should be able to determine:
 * how Task materialization remains idempotent,
 * how proposal-to-Task provenance and result linkage are stored,
 * how `TaskCreated.v1` correlation and causation are derived from the review event,
+* how authenticated My Tasks visibility is scoped and authorized,
 * where current Project Health is stored,
 * how correlation and causation are preserved,
 * what migrations have been introduced,
@@ -4915,20 +5400,20 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-complete the VS001-07 documentation and source-control checkpoint
+complete the VS001-08 documentation and source-control checkpoint
 ```
 
 followed by the remaining VS-001 acceptance work:
 
 ```text
-GET /me/tasks visibility
-  ->
 complete audit reconstruction
   ->
 one-correlation-ID verification/correction
+  ->
+final VS-001 completion
 ```
 
-The next implementation should build on the now-verified authoritative Task boundary.
+The next implementation should build on the now-verified authoritative Task and My Tasks boundaries.
 
 Do not bypass the established module boundaries merely to complete the vertical slice more quickly.
 

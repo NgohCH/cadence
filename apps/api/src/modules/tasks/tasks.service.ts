@@ -18,6 +18,7 @@ import type {
 
 import type {
   CreateTaskInput,
+  Task,
   TaskCreationResult,
   TaskPriority,
 } from "./tasks.types";
@@ -253,6 +254,24 @@ export class TasksService {
   }
 
 
+    async listMyTasks(
+      context: RequestContext
+    ): Promise<Task[]> {
+      /*
+      * /me/tasks is self-scoped.
+      *
+      * The caller does not supply a user ID. The authenticated
+      * RequestContext is the sole identity source.
+      *
+      * Repository persistence/query logic additionally limits
+      * visibility to projects where this user currently holds
+      * task.view.
+      */
+      return this.repository
+        .listMyTasks(
+          context.actorUserId
+        );
+    }
   private isTaskPriority(
     value: string
   ): value is TaskPriority {

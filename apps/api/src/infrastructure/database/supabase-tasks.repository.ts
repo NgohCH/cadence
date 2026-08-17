@@ -13,6 +13,7 @@ import type {
 
 import type {
   PersistTaskInput,
+  Task,
   TaskCreationResult,
   TaskCreatorType,
   TaskPriority,
@@ -20,7 +21,7 @@ import type {
 } from "../../modules/tasks/tasks.types";
 
 
-type AuthoritativeTaskRow = {
+type TaskRow = {
   task_id: string;
 
   project_id: string;
@@ -47,9 +48,13 @@ type AuthoritativeTaskRow = {
   created_at: string;
 
   updated_at: string;
-
-  created: boolean;
 };
+
+
+type AuthoritativeTaskRow =
+  TaskRow & {
+    created: boolean;
+  };
 
 
 export class SupabaseTasksRepository
@@ -129,49 +134,95 @@ export class SupabaseTasksRepository
 
 
     return {
-      task: {
-        id:
-          row.task_id,
-
-        projectId:
-          row.project_id,
-
-        title:
-          row.title,
-
-        description:
-          row.description,
-
-        assignedTo:
-          row.assigned_to,
-
-        status:
-          row.status,
-
-        priority:
-          row.priority,
-
-        dueDate:
-          row.due_date,
-
-        completedAt:
-          row.completed_at,
-
-        createdBy:
-          row.created_by,
-
-        createdByType:
-          row.created_by_type,
-
-        createdAt:
-          row.created_at,
-
-        updatedAt:
-          row.updated_at,
-      },
+      task:
+        this.mapTaskRow(
+          row
+        ),
 
       created:
         row.created,
+    };
+  }
+
+
+  async listMyTasks(
+    userId: string
+  ): Promise<Task[]> {
+    const {
+      data,
+      error,
+    } = await this.db.rpc(
+      "list_my_tasks",
+      {
+        p_user_id:
+          userId,
+      }
+    );
+
+
+    if (error) {
+      throw new Error(
+        `Failed to list My Tasks: ${error.message}`
+      );
+    }
+
+
+    const rows =
+      (data ?? []) as
+        TaskRow[];
+
+
+    return rows.map(
+      (row) =>
+        this.mapTaskRow(
+          row
+        )
+    );
+  }
+
+
+  private mapTaskRow(
+    row: TaskRow
+  ): Task {
+    return {
+      id:
+        row.task_id,
+
+      projectId:
+        row.project_id,
+
+      title:
+        row.title,
+
+      description:
+        row.description,
+
+      assignedTo:
+        row.assigned_to,
+
+      status:
+        row.status,
+
+      priority:
+        row.priority,
+
+      dueDate:
+        row.due_date,
+
+      completedAt:
+        row.completed_at,
+
+      createdBy:
+        row.created_by,
+
+      createdByType:
+        row.created_by_type,
+
+      createdAt:
+        row.created_at,
+
+      updatedAt:
+        row.updated_at,
     };
   }
 

@@ -2,7 +2,7 @@
 
 ## Ownership
 
-The Tasks module owns authoritative task state.
+The Tasks module owns authoritative task state and Task read models.
 
 This includes:
 
@@ -12,7 +12,8 @@ This includes:
 - task creation validation;
 - task creation idempotency;
 - task provenance/source links;
-- task-related domain events.
+- task-related domain events;
+- authenticated My Tasks visibility.
 
 Only the Tasks module may create or modify authoritative Task state.
 
@@ -40,6 +41,24 @@ public.create_authoritative_task(...)
 public.tasks
 ```
 
+Current My Tasks read flow:
+
+```text
+authenticated caller
+  ->
+RequestContext.actorUserId
+  ->
+TasksService.listMyTasks()
+  ->
+TasksRepository
+  ->
+SupabaseTasksRepository
+  ->
+public.list_my_tasks(...)
+  ->
+public.tasks
+```
+
 The Tasks service depends on the `TasksRepository` abstraction.
 
 The concrete Supabase adapter remains under:
@@ -53,6 +72,8 @@ Other modules must not call `SupabaseTasksRepository` directly.
 ---
 
 ## Authorization
+
+### Authoritative Task Creation
 
 Authoritative Task creation requires:
 
@@ -86,13 +107,35 @@ An assigned Task request without `task.assign` is denied independently.
 
 `agent.approve` does not imply either Tasks permission.
 
+### My Tasks
+
+`GET /api/v1/me/tasks` is self-scoped.
+
+The caller cannot supply another user ID.
+
+The authenticated user is always derived from:
+
+```text
+RequestContext.actorUserId
+```
+
+A Task is visible through My Tasks only when:
+
+```text
+assigned_to = authenticated Cadence user
+status IN (open, in_progress)
+current project access includes task.view
+```
+
+Current project access is evaluated using the user's active project membership and current role permissions.
+
 ---
 
 ## Defence in Depth
 
-`TasksService` performs application-level RBAC.
+`TasksService` performs application-level authorization for authoritative Task creation.
 
-The Tasks-owned PostgreSQL function:
+The Tasks-owned PostgreSQL creation function:
 
 ```text
 public.create_authoritative_task(...)
@@ -107,7 +150,21 @@ task.assign when required
 
 immediately before persistence.
 
-The RPC is restricted to trusted:
+The My Tasks read model uses the Tasks-owned PostgreSQL function:
+
+```text
+public.list_my_tasks(...)
+```
+
+which restricts results to the requested authenticated user and re-evaluates:
+
+```text
+task.view
+```
+
+for each relevant project.
+
+Both RPCs are restricted to trusted:
 
 ```text
 service_role
@@ -115,7 +172,7 @@ service_role
 
 execution.
 
-Browser clients must not invoke the authoritative Task persistence function directly.
+Browser clients must not invoke these server-side Tasks functions directly.
 
 ---
 
@@ -262,7 +319,7 @@ This preserves the immediate business lineage from approved proposal to authorit
 
 ## Atomic Persistence
 
-Migration:
+Authoritative creation migration:
 
 ```text
 supabase/migrations/20260816123000_authoritative_task_creation.sql
@@ -287,6 +344,60 @@ TaskCreated.v1
 ```
 
 If authorization, validation, assignment, provenance, or event persistence fails, no partial Task creation should remain.
+
+---
+
+## My Tasks Read Model
+
+VS001-08 adds:
+
+```text
+GET /api/v1/me/tasks
+```
+
+The endpoint returns the authenticated Cadence user's current actionable Tasks.
+
+Current scope is intentionally narrow:
+
+```text
+assigned_to = authenticated user
+status IN (open, in_progress)
+task.view currently granted for the Task project
+```
+
+It is not a general Task-history API.
+
+Completed and cancelled Tasks are not returned by this read model.
+
+Ordering is deterministic:
+
+```text
+due_date ASC NULLS LAST
+created_at DESC
+id ASC
+```
+
+Database migration:
+
+```text
+supabase/migrations/20260817101500_my_tasks_read_model.sql
+```
+
+Read function:
+
+```text
+public.list_my_tasks(uuid)
+```
+
+The API supplies the authenticated actor ID.
+
+The client cannot select another user's Tasks.
+
+The function remains server-side and is executable only by:
+
+```text
+service_role
+```
 
 ---
 
@@ -363,13 +474,110 @@ created = true
 
 ---
 
+## Live VS001-08 Verification
+
+Authenticated identity:
+
+```text
+Alice Test
+afec9f7c-eb66-46b9-9668-cb57b26394b5
+```
+
+Anonymous access to:
+
+```text
+GET /api/v1/me/tasks
+```
+
+returned:
+
+```text
+401
+```
+
+Authenticated access initially returned Alice's existing actionable Task and correctly excluded the three previously verified VS001-07 authoritative Tasks because those Tasks were unassigned.
+
+A fresh complete vertical-slice verification then used:
+
+```text
+Discussion message =
+b6494274-379e-4347-9109-ae843cba9b9a
+
+Team Agent proposal =
+f82e2320-45d8-42b8-9dd2-e7280d857c51
+
+authoritative Task =
+c132b53e-e9b9-4389-81bc-6d4011bf1e2f
+```
+
+The deterministic Team Agent proposal initially had:
+
+```text
+assigned_to = null
+status = pending
+```
+
+Human review used:
+
+```text
+action = edit
+assigned_to = afec9f7c-eb66-46b9-9668-cb57b26394b5
+```
+
+and produced:
+
+```text
+status = edited
+```
+
+Materialization through the established Tasks boundary returned:
+
+```text
+created = true
+status = open
+assigned_to = Alice
+```
+
+The resulting authoritative Task was then retrieved through:
+
+```text
+GET /api/v1/me/tasks
+```
+
+with exact-Task visibility verified:
+
+```text
+Task ID match = true
+assigned_to match = true
+```
+
+This proves:
+
+```text
+Discussion
+  ->
+MessageCreated.v1
+  ->
+Team Agent proposal
+  ->
+human review
+  ->
+TasksService
+  ->
+authoritative Task
+  ->
+GET /api/v1/me/tasks
+```
+
+---
+
 ## Automated Verification
 
 Current gate:
 
 ```text
 npm run typecheck -> pass
-npm test          -> 51 tests / 51 pass / 0 fail
+npm test          -> 53 tests / 53 pass / 0 fail
 ```
 
 Tasks service coverage includes:
@@ -382,7 +590,9 @@ Tasks service coverage includes:
 - title validation;
 - description normalization;
 - priority validation;
-- due-date validation.
+- due-date validation;
+- My Tasks uses the authenticated actor identity;
+- empty My Tasks result handling.
 
 ---
 
@@ -393,21 +603,24 @@ apps/api/src/modules/tasks/tasks.types.ts
 apps/api/src/modules/tasks/tasks.errors.ts
 apps/api/src/modules/tasks/tasks.repository.ts
 apps/api/src/modules/tasks/tasks.service.ts
+apps/api/src/modules/tasks/tasks.routes.ts
 apps/api/src/modules/tasks/tasks.test.ts
 apps/api/src/infrastructure/database/supabase-tasks.repository.ts
+apps/api/src/server.ts
 supabase/migrations/20260816123000_authoritative_task_creation.sql
+supabase/migrations/20260817101500_my_tasks_read_model.sql
 ```
 
 ---
 
 ## Current Limitations
 
-VS001-07 implements authoritative Task creation, but the broader Tasks capability is still incomplete.
+The current Tasks capability remains intentionally narrower than a complete Task-management product.
 
 Not yet implemented through this checkpoint:
 
-- `GET /me/tasks` API visibility;
 - general Task listing/query APIs;
+- completed/cancelled Task-history API;
 - Task editing;
 - Task status transitions;
 - Task completion workflow;
@@ -415,7 +628,7 @@ Not yet implemented through this checkpoint:
 - Task deletion/cancellation commands beyond schema-supported state;
 - broader database-backed automated integration coverage.
 
-These are future Tasks capabilities and should not weaken the authoritative creation boundary established here.
+These future capabilities must not weaken the authoritative creation or authenticated My Tasks boundaries established here.
 
 ---
 

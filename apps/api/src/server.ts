@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { success } from "./bootstrap/api-response";
 
 import { SupabaseAuthProvider } from "./infrastructure/auth/supabase-auth-provider";
+
 import { SupabaseIdentityRepository } from "./infrastructure/database/supabase-identity.repository";
 import { SupabaseRbacRepository } from "./infrastructure/database/supabase-rbac.repository";
 import { SupabaseProjectsRepository } from "./infrastructure/database/supabase-projects.repository";
@@ -12,27 +13,65 @@ import { SupabaseTeamAgentRepository } from "./infrastructure/database/supabase-
 import { SupabaseTasksRepository } from "./infrastructure/database/supabase-tasks.repository";
 import { SupabaseTeamAgentMaterializationRepository } from "./infrastructure/database/supabase-team-agent-materialization.repository";
 
-import { createAuthenticateMiddleware } from "./middleware/authenticate";
-import { requestTraceMiddleware } from "./middleware/request-trace.middleware";
+import {
+  createAuthenticateMiddleware,
+} from "./middleware/authenticate";
 
-import { IdentityService } from "./modules/identity/identity.service";
-import { createIdentityRouter } from "./modules/identity/identity.routes";
+import {
+  requestTraceMiddleware,
+} from "./middleware/request-trace.middleware";
 
-import { RbacService } from "./modules/rbac/rbac.service";
+import {
+  IdentityService,
+} from "./modules/identity/identity.service";
 
-import { ProjectsService } from "./modules/projects/projects.service";
-import { createProjectsRouter } from "./modules/projects/projects.routes";
+import {
+  createIdentityRouter,
+} from "./modules/identity/identity.routes";
 
-import { DiscussionService } from "./modules/discussion/discussion.service";
-import { createDiscussionRouter } from "./modules/discussion/discussion.routes";
+import {
+  RbacService,
+} from "./modules/rbac/rbac.service";
 
-import { TasksService } from "./modules/tasks/tasks.service";
+import {
+  ProjectsService,
+} from "./modules/projects/projects.service";
 
-import { TeamAgentService } from "./modules/team-agent/team-agent.service";
-import { createTeamAgentRouter } from "./modules/team-agent/team-agent.routes";
+import {
+  createProjectsRouter,
+} from "./modules/projects/projects.routes";
 
-import { TeamAgentTaskMaterializationService } from "./modules/team-agent/team-agent-task-materialization.service";
-import { createTeamAgentTaskMaterializationRouter } from "./modules/team-agent/team-agent-task-materialization.routes";
+import {
+  DiscussionService,
+} from "./modules/discussion/discussion.service";
+
+import {
+  createDiscussionRouter,
+} from "./modules/discussion/discussion.routes";
+
+import {
+  TasksService,
+} from "./modules/tasks/tasks.service";
+
+import {
+  createTasksRouter,
+} from "./modules/tasks/tasks.routes";
+
+import {
+  TeamAgentService,
+} from "./modules/team-agent/team-agent.service";
+
+import {
+  createTeamAgentRouter,
+} from "./modules/team-agent/team-agent.routes";
+
+import {
+  TeamAgentTaskMaterializationService,
+} from "./modules/team-agent/team-agent-task-materialization.service";
+
+import {
+  createTeamAgentTaskMaterializationRouter,
+} from "./modules/team-agent/team-agent-task-materialization.routes";
 
 
 const app =
@@ -211,6 +250,7 @@ app.use(
   express.json()
 );
 
+
 app.use(
   requestTraceMiddleware
 );
@@ -266,6 +306,10 @@ app.use(
 
   createDiscussionRouter(
     discussionService
+  ),
+
+  createTasksRouter(
+    tasksService
   ),
 
   createTeamAgentRouter(

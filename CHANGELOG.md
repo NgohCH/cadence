@@ -5,6 +5,55 @@ All notable changes to Cadence will be documented in this file.
 Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
+### VS001-08 - My Tasks Read Model
+
+#### Added
+
+- Added authenticated `GET /api/v1/me/tasks`.
+- Added `TasksService.listMyTasks()`.
+- Extended `TasksRepository` with the authenticated-user My Tasks read contract.
+- Added `SupabaseTasksRepository.listMyTasks()`.
+- Added Tasks HTTP routing through `tasks.routes.ts`.
+- Added server-side `public.list_my_tasks(uuid)`.
+- Added migration `20260817101500_my_tasks_read_model.sql`.
+- Added automated coverage for authenticated actor scoping and empty My Tasks results.
+- Expanded the API suite to 53 passing tests.
+
+#### Architecture
+
+- My Tasks is intentionally a narrow current-actionable-task read model rather than a general Task-history API.
+- User identity comes exclusively from `RequestContext.actorUserId`; callers cannot request another user's Tasks.
+- Results are limited to Tasks assigned to the authenticated user with status `open` or `in_progress`.
+- Current project authorization is enforced using `task.view`.
+- Read authorization is enforced inside the Tasks-owned server-side database function to avoid per-Task application-layer RBAC queries.
+- `public.list_my_tasks(uuid)` remains restricted to trusted `service_role` execution.
+- The existing `Team Agent -> TasksService -> Tasks-owned persistence` boundary remains unchanged.
+- Result ordering is deterministic by due date, creation time, and Task ID.
+
+#### Verified
+
+- Verified `npm run typecheck` passes.
+- Verified all 53 automated tests pass.
+- Verified migration `20260817101500_my_tasks_read_model.sql` is synchronized with the linked remote Supabase database.
+- Verified unauthenticated `GET /api/v1/me/tasks` returns HTTP `401`.
+- Verified Alice resolves through `/api/v1/me` as the authenticated Cadence actor.
+- Verified Alice's existing assigned open Task is returned through `/api/v1/me/tasks`.
+- Verified previously created open but unassigned authoritative Tasks are not returned through Alice's My Tasks read model.
+- Live-verified fresh Discussion -> Team Agent proposal -> human edit/assignment -> authoritative Task -> My Tasks visibility.
+- Fresh verification proposal `f82e2320-45d8-42b8-9dd2-e7280d857c51` was human-edited to assign Alice.
+- Fresh authoritative Task `c132b53e-e9b9-4389-81bc-6d4011bf1e2f` was created through `TasksService`.
+- Verified that exact Task appears through `/api/v1/me/tasks`.
+- Verified returned `assigned_to` matches authenticated Alice.
+
+#### Current Limitations
+
+- General Task listing and Task-history APIs remain deferred.
+- Completed and cancelled Tasks are outside the current My Tasks read model.
+- Complete audit reconstruction remains outstanding for VS-001.
+- One-correlation-ID continuity across the complete multi-request workflow still requires explicit verification or correction.
+- External LLM invocation, assignee-name resolution, and natural-language due-date resolution remain deferred.
+- The Team Agent worker remains one-shot rather than continuously hosted.
+
 ### VS001-07 - Authoritative Task Creation
 
 #### Added

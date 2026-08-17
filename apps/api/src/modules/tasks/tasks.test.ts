@@ -34,6 +34,7 @@ import {
 import type {
   CreateTaskInput,
   PersistTaskInput,
+  Task,
   TaskCreationResult,
   TaskPriority,
 } from "./tasks.types";
@@ -111,6 +112,14 @@ class FakeTasksRepository
     PersistTaskInput[] = [];
 
 
+  public listMyTasksCalls:
+    string[] = [];
+
+
+  public listMyTasksResult:
+    Task[] = [];
+
+
   public result:
     TaskCreationResult = {
       task: {
@@ -166,6 +175,17 @@ class FakeTasksRepository
     );
 
     return this.result;
+  }
+
+
+  async listMyTasks(
+    userId: string
+  ): Promise<Task[]> {
+    this.listMyTasksCalls.push(
+      userId
+    );
+
+    return this.listMyTasksResult;
   }
 }
 
@@ -746,6 +766,142 @@ test(
     assert.equal(
       repository.calls.length,
       0
+    );
+  }
+);
+
+
+/*
+ * VS001-08A
+ *
+ * Authenticated user
+ *   ->
+ * TasksService.listMyTasks()
+ *   ->
+ * authenticated actor identity
+ *   ->
+ * Tasks-owned read boundary
+ */
+test(
+  "my tasks uses the authenticated actor identity",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createService(
+      createProjectAccess([
+        "task.view",
+      ])
+    );
+
+
+    repository.listMyTasksResult = [
+      {
+        id:
+          taskId,
+
+        projectId,
+
+        title:
+          "Finalise syllabus",
+
+        description:
+          "Complete the revised syllabus.",
+
+        assignedTo:
+          actorUserId,
+
+        status:
+          "open",
+
+        priority:
+          "normal",
+
+        dueDate:
+          null,
+
+        completedAt:
+          null,
+
+        createdBy:
+          actorUserId,
+
+        createdByType:
+          "human",
+
+        createdAt:
+          "2026-08-16T12:00:00.000Z",
+
+        updatedAt:
+          "2026-08-16T12:00:00.000Z",
+      },
+    ];
+
+
+    const result =
+      await service.listMyTasks(
+        context
+      );
+
+
+    assert.deepEqual(
+      repository.listMyTasksCalls,
+      [
+        actorUserId,
+      ]
+    );
+
+    assert.equal(
+      result.length,
+      1
+    );
+
+    assert.equal(
+      result[0].id,
+      taskId
+    );
+
+    assert.equal(
+      result[0].assignedTo,
+      actorUserId
+    );
+  }
+);
+
+
+test(
+  "my tasks returns an empty list when repository finds no visible tasks",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createService(
+      createProjectAccess([
+        "task.view",
+      ])
+    );
+
+
+    repository.listMyTasksResult =
+      [];
+
+
+    const result =
+      await service.listMyTasks(
+        context
+      );
+
+
+    assert.deepEqual(
+      repository.listMyTasksCalls,
+      [
+        actorUserId,
+      ]
+    );
+
+    assert.deepEqual(
+      result,
+      []
     );
   }
 );
