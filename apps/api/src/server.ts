@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
 
 import { success } from "./bootstrap/api-response";
@@ -93,7 +94,9 @@ const port =
         process.env.PORT
       )
     : 3000;
-
+const webOrigin =
+  process.env.WEB_ORIGIN ??
+  "http://localhost:5173";
 
 /*
  * Environment configuration
@@ -267,6 +270,12 @@ const authenticate =
 /*
  * Global middleware
  */
+app.use(
+  cors({
+    origin:
+      webOrigin,
+  })
+);
 
 app.use(
   express.json()
