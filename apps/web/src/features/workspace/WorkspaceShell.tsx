@@ -6,6 +6,10 @@ import type {
   ProjectSummaryResponse,
 } from '../../types/projects'
 
+import {
+  DiscussionPanel,
+} from '../discussion/DiscussionPanel'
+
 
 interface WorkspaceShellProps {
   user: CadenceUser
@@ -115,6 +119,7 @@ export function WorkspaceShell({
 
               <strong className="status">
                 <span className="status-dot" />
+
                 {lifecycleLabel}
               </strong>
 
@@ -157,7 +162,9 @@ export function WorkspaceShell({
               {project.alerts.map(
                 (alert) => (
                   <div
-                    className={`alert-banner alert-${alert.severity}`}
+                    className={
+                      `alert-banner alert-${alert.severity}`
+                    }
                     key={alert.id}
                   >
                     <strong>
@@ -222,46 +229,11 @@ export function WorkspaceShell({
           </section>
 
           <section className="workspace-grid">
-            <article className="panel discussion-panel">
-              <header className="panel-header">
-                <div>
-                  <h2>
-                    Discussion
-                  </h2>
-
-                  <p className="muted">
-                    Collaborate with your project
-                    team and Team Agent.
-                  </p>
-                </div>
-              </header>
-
-              <div className="discussion-empty">
-                <strong>
-                  Discussion is ready for integration.
-                </strong>
-
-                <p>
-                  Messages from the Cadence API
-                  will appear here.
-                </p>
-              </div>
-
-              <div className="composer">
-                <textarea
-                  rows={3}
-                  placeholder="Write a project message..."
-                  disabled
-                />
-
-                <button
-                  type="button"
-                  disabled
-                >
-                  Send
-                </button>
-              </div>
-            </article>
+            <DiscussionPanel
+              projectId={
+                project.project.id
+              }
+            />
 
             <aside className="panel journey-panel">
               <header className="panel-header">
@@ -278,11 +250,15 @@ export function WorkspaceShell({
 
               <ol className="journey">
                 <li>
-                  <span>1</span>
+                  <span>
+                    1
+                  </span>
+
                   <div>
                     <strong>
                       Discussion
                     </strong>
+
                     <small>
                       Human conversation
                     </small>
@@ -290,11 +266,15 @@ export function WorkspaceShell({
                 </li>
 
                 <li>
-                  <span>2</span>
+                  <span>
+                    2
+                  </span>
+
                   <div>
                     <strong>
                       Team Agent
                     </strong>
+
                     <small>
                       Task proposal
                     </small>
@@ -302,11 +282,15 @@ export function WorkspaceShell({
                 </li>
 
                 <li>
-                  <span>3</span>
+                  <span>
+                    3
+                  </span>
+
                   <div>
                     <strong>
                       Human Review
                     </strong>
+
                     <small>
                       Approve or reject
                     </small>
@@ -314,11 +298,15 @@ export function WorkspaceShell({
                 </li>
 
                 <li>
-                  <span>4</span>
+                  <span>
+                    4
+                  </span>
+
                   <div>
                     <strong>
                       Task
                     </strong>
+
                     <small>
                       Authoritative record
                     </small>
@@ -326,11 +314,15 @@ export function WorkspaceShell({
                 </li>
 
                 <li>
-                  <span>5</span>
+                  <span>
+                    5
+                  </span>
+
                   <div>
                     <strong>
                       Audit
                     </strong>
+
                     <small>
                       Traceable journey
                     </small>

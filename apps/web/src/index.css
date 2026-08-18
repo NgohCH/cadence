@@ -541,3 +541,84 @@ textarea:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/*
+ * Discussion
+ */
+
+.discussion-content {
+  flex: 1;
+  min-height: 320px;
+  overflow-y: auto;
+}
+
+.message-list {
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+}
+
+.discussion-message {
+  max-width: 78%;
+  margin-left: auto;
+  padding: 12px 14px;
+  border: 1px solid #dbe2ea;
+  border-radius: 12px 12px 3px 12px;
+  background: #f8fafc;
+}
+
+.discussion-message p {
+  margin: 7px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 11px;
+}
+
+.message-meta time {
+  color: #6b7280;
+}
+
+.composer-input {
+  display: grid;
+  gap: 5px;
+}
+
+.composer-meta {
+  min-height: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+.composer-error {
+  color: #b91c1c;
+  text-align: right;
+}
+
+.composer textarea:not(:disabled) {
+  background: #ffffff;
+}
+
+@media (max-width: 600px) {
+  .discussion-message {
+    max-width: 92%;
+  }
+
+  .composer {
+    grid-template-columns: 1fr;
+  }
+
+  .composer button {
+    justify-self: end;
+  }
+}
