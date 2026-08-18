@@ -113,3 +113,24 @@ export interface TaskProposalProcessingResult {
 
   created: boolean;
 }
+export interface PendingTaskProposal {
+  id: string;
+
+  projectId: string;
+
+  aiRunId: string;
+
+  status: "pending";
+
+  payload:
+    TaskProposalPayload;
+
+  confidence:
+    number | null;
+
+  reason:
+    string | null;
+
+  createdAt:
+    string;
+}

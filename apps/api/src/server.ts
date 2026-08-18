@@ -1,19 +1,57 @@
 import express from "express";
 import cors from "cors";
-import { createClient } from "@supabase/supabase-js";
 
-import { success } from "./bootstrap/api-response";
+import {
+  createClient,
+} from "@supabase/supabase-js";
 
-import { SupabaseAuthProvider } from "./infrastructure/auth/supabase-auth-provider";
 
-import { SupabaseAuditRepository } from "./infrastructure/database/supabase-audit.repository";
-import { SupabaseIdentityRepository } from "./infrastructure/database/supabase-identity.repository";
-import { SupabaseRbacRepository } from "./infrastructure/database/supabase-rbac.repository";
-import { SupabaseProjectsRepository } from "./infrastructure/database/supabase-projects.repository";
-import { SupabaseDiscussionRepository } from "./infrastructure/database/supabase-discussion.repository";
-import { SupabaseTeamAgentRepository } from "./infrastructure/database/supabase-team-agent.repository";
-import { SupabaseTasksRepository } from "./infrastructure/database/supabase-tasks.repository";
-import { SupabaseTeamAgentMaterializationRepository } from "./infrastructure/database/supabase-team-agent-materialization.repository";
+import {
+  success,
+} from "./bootstrap/api-response";
+
+
+import {
+  SupabaseAuthProvider,
+} from "./infrastructure/auth/supabase-auth-provider";
+
+
+import {
+  SupabaseAuditRepository,
+} from "./infrastructure/database/supabase-audit.repository";
+
+import {
+  SupabaseIdentityRepository,
+} from "./infrastructure/database/supabase-identity.repository";
+
+import {
+  SupabaseRbacRepository,
+} from "./infrastructure/database/supabase-rbac.repository";
+
+import {
+  SupabaseProjectsRepository,
+} from "./infrastructure/database/supabase-projects.repository";
+
+import {
+  SupabaseDiscussionRepository,
+} from "./infrastructure/database/supabase-discussion.repository";
+
+import {
+  SupabaseTeamAgentRepository,
+} from "./infrastructure/database/supabase-team-agent.repository";
+
+import {
+  SupabaseTeamAgentQueryRepository,
+} from "./infrastructure/database/supabase-team-agent-query.repository";
+
+import {
+  SupabaseTasksRepository,
+} from "./infrastructure/database/supabase-tasks.repository";
+
+import {
+  SupabaseTeamAgentMaterializationRepository,
+} from "./infrastructure/database/supabase-team-agent-materialization.repository";
+
 
 import {
   createAuthenticateMiddleware,
@@ -23,6 +61,7 @@ import {
   requestTraceMiddleware,
 } from "./middleware/request-trace.middleware";
 
+
 import {
   AuditQueryService,
 } from "./modules/audit/audit-query.service";
@@ -30,6 +69,7 @@ import {
 import {
   createAuditRouter,
 } from "./modules/audit/audit.routes";
+
 
 import {
   IdentityService,
@@ -39,9 +79,11 @@ import {
   createIdentityRouter,
 } from "./modules/identity/identity.routes";
 
+
 import {
   RbacService,
 } from "./modules/rbac/rbac.service";
+
 
 import {
   ProjectsService,
@@ -51,6 +93,7 @@ import {
   createProjectsRouter,
 } from "./modules/projects/projects.routes";
 
+
 import {
   DiscussionService,
 } from "./modules/discussion/discussion.service";
@@ -58,6 +101,7 @@ import {
 import {
   createDiscussionRouter,
 } from "./modules/discussion/discussion.routes";
+
 
 import {
   TasksService,
@@ -67,6 +111,7 @@ import {
   createTasksRouter,
 } from "./modules/tasks/tasks.routes";
 
+
 import {
   TeamAgentService,
 } from "./modules/team-agent/team-agent.service";
@@ -74,6 +119,16 @@ import {
 import {
   createTeamAgentRouter,
 } from "./modules/team-agent/team-agent.routes";
+
+
+import {
+  TeamAgentQueryService,
+} from "./modules/team-agent/team-agent-query.service";
+
+import {
+  createTeamAgentQueryRouter,
+} from "./modules/team-agent/team-agent-query.routes";
+
 
 import {
   TeamAgentTaskMaterializationService,
@@ -94,9 +149,12 @@ const port =
         process.env.PORT
       )
     : 3000;
+
+
 const webOrigin =
   process.env.WEB_ORIGIN ??
   "http://localhost:5173";
+
 
 /*
  * Environment configuration
@@ -189,6 +247,12 @@ const teamAgentRepository =
   );
 
 
+const teamAgentQueryRepository =
+  new SupabaseTeamAgentQueryRepository(
+    databaseClient
+  );
+
+
 const tasksRepository =
   new SupabaseTasksRepository(
     databaseClient
@@ -252,6 +316,13 @@ const teamAgentService =
   );
 
 
+const teamAgentQueryService =
+  new TeamAgentQueryService(
+    rbacService,
+    teamAgentQueryRepository
+  );
+
+
 const teamAgentTaskMaterializationService =
   new TeamAgentTaskMaterializationService(
     rbacService,
@@ -270,12 +341,14 @@ const authenticate =
 /*
  * Global middleware
  */
+
 app.use(
   cors({
     origin:
       webOrigin,
   })
 );
+
 
 app.use(
   express.json()
@@ -349,6 +422,10 @@ app.use(
 
   createTeamAgentRouter(
     teamAgentService
+  ),
+
+  createTeamAgentQueryRouter(
+    teamAgentQueryService
   ),
 
   createTeamAgentTaskMaterializationRouter(
