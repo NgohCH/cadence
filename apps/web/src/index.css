@@ -622,3 +622,167 @@ textarea:disabled {
     justify-self: end;
   }
 }
+/*
+ * Team Agent proposal review
+ */
+
+.workspace-side-column {
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+
+.proposal-panel {
+  overflow: hidden;
+}
+
+.proposal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compact-button {
+  min-height: 34px;
+  padding: 0 11px;
+  flex: 0 0 auto;
+}
+
+.proposal-state {
+  padding: 20px;
+}
+
+.proposal-state p {
+  margin-bottom: 0;
+}
+
+.proposal-success {
+  margin-top: 12px;
+  color: #166534;
+  font-size: 13px;
+}
+
+.proposal-list {
+  display: grid;
+}
+
+.proposal-card {
+  padding: 18px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.proposal-card:last-child {
+  border-bottom: 0;
+}
+
+.proposal-card-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.proposal-card-heading time {
+  color: #9ca3af;
+  font-size: 10px;
+}
+
+.proposal-badge {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #fffbeb;
+  color: #854d0e;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.proposal-card h3 {
+  margin: 14px 0 6px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.proposal-description {
+  margin: 0 0 14px;
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.proposal-details {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.proposal-details div {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.proposal-details dt {
+  color: #6b7280;
+}
+
+.proposal-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.proposal-actions button {
+  min-height: 36px;
+}
+
+.danger-button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.proposal-edit-form {
+  margin-top: 14px;
+  display: grid;
+  gap: 13px;
+}
+
+.proposal-edit-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.proposal-edit-form input,
+.proposal-edit-form textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+}
+
+.proposal-edit-form textarea {
+  resize: vertical;
+}

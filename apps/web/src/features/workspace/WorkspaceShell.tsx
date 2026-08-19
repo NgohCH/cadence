@@ -10,6 +10,10 @@ import {
   DiscussionPanel,
 } from '../discussion/DiscussionPanel'
 
+import {
+  ProposalReviewPanel,
+} from '../team-agent/ProposalReviewPanel'
+
 
 interface WorkspaceShellProps {
   user: CadenceUser
@@ -119,7 +123,6 @@ export function WorkspaceShell({
 
               <strong className="status">
                 <span className="status-dot" />
-
                 {lifecycleLabel}
               </strong>
 
@@ -162,9 +165,7 @@ export function WorkspaceShell({
               {project.alerts.map(
                 (alert) => (
                   <div
-                    className={
-                      `alert-banner alert-${alert.severity}`
-                    }
+                    className={`alert-banner alert-${alert.severity}`}
                     key={alert.id}
                   >
                     <strong>
@@ -235,101 +236,99 @@ export function WorkspaceShell({
               }
             />
 
-            <aside className="panel journey-panel">
-              <header className="panel-header">
-                <div>
-                  <h2>
-                    Task Journey
-                  </h2>
+            <div className="workspace-side-column">
+              <ProposalReviewPanel
+                projectId={
+                  project.project.id
+                }
+              />
 
-                  <p className="muted">
-                    VS-001 workflow
-                  </p>
-                </div>
-              </header>
-
-              <ol className="journey">
-                <li>
-                  <span>
-                    1
-                  </span>
-
+              <aside className="panel journey-panel">
+                <header className="panel-header">
                   <div>
-                    <strong>
-                      Discussion
-                    </strong>
+                    <h2>
+                      Task Journey
+                    </h2>
 
-                    <small>
-                      Human conversation
-                    </small>
+                    <p className="muted">
+                      VS-001 workflow
+                    </p>
                   </div>
-                </li>
+                </header>
 
-                <li>
-                  <span>
-                    2
-                  </span>
+                <ol className="journey">
+                  <li>
+                    <span>1</span>
 
-                  <div>
-                    <strong>
-                      Team Agent
-                    </strong>
+                    <div>
+                      <strong>
+                        Discussion
+                      </strong>
 
-                    <small>
-                      Task proposal
-                    </small>
-                  </div>
-                </li>
+                      <small>
+                        Human conversation
+                      </small>
+                    </div>
+                  </li>
 
-                <li>
-                  <span>
-                    3
-                  </span>
+                  <li>
+                    <span>2</span>
 
-                  <div>
-                    <strong>
-                      Human Review
-                    </strong>
+                    <div>
+                      <strong>
+                        Team Agent
+                      </strong>
 
-                    <small>
-                      Approve or reject
-                    </small>
-                  </div>
-                </li>
+                      <small>
+                        Task proposal
+                      </small>
+                    </div>
+                  </li>
 
-                <li>
-                  <span>
-                    4
-                  </span>
+                  <li>
+                    <span>3</span>
 
-                  <div>
-                    <strong>
-                      Task
-                    </strong>
+                    <div>
+                      <strong>
+                        Human Review
+                      </strong>
 
-                    <small>
-                      Authoritative record
-                    </small>
-                  </div>
-                </li>
+                      <small>
+                        Approve or reject
+                      </small>
+                    </div>
+                  </li>
 
-                <li>
-                  <span>
-                    5
-                  </span>
+                  <li>
+                    <span>4</span>
 
-                  <div>
-                    <strong>
-                      Audit
-                    </strong>
+                    <div>
+                      <strong>
+                        Task
+                      </strong>
 
-                    <small>
-                      Traceable journey
-                    </small>
-                  </div>
-                </li>
-              </ol>
-            </aside>
+                      <small>
+                        Authoritative record
+                      </small>
+                    </div>
+                  </li>
+
+                  <li>
+                    <span>5</span>
+
+                    <div>
+                      <strong>
+                        Audit
+                      </strong>
+
+                      <small>
+                        Traceable journey
+                      </small>
+                    </div>
+                  </li>
+                </ol>
+              </aside>
+            </div>
           </section>
         </main>
       </div>
