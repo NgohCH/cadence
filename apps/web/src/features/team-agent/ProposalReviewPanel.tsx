@@ -26,6 +26,60 @@ interface ProposalReviewPanelProps {
 }
 
 
+interface MaterializedTask {
+  id: string
+
+  project_id: string
+
+  title: string
+
+  description:
+    string | null
+
+  assigned_to:
+    string | null
+
+  status:
+    'open' |
+    'in_progress' |
+    'completed' |
+    'cancelled'
+
+  priority:
+    'low' |
+    'normal' |
+    'high' |
+    'critical'
+
+  due_date:
+    string | null
+
+  completed_at:
+    string | null
+
+  created_by:
+    string | null
+
+  created_by_type:
+    'human' |
+    'agent' |
+    'system'
+
+  created_at: string
+
+  updated_at: string
+}
+
+
+interface TaskMaterializationResult {
+  task:
+    MaterializedTask
+
+  created:
+    boolean
+}
+
+
 export function ProposalReviewPanel({
   projectId,
 }: ProposalReviewPanelProps) {
@@ -67,6 +121,22 @@ export function ProposalReviewPanel({
     )
 
   const [
+    materializingProposalId,
+    setMaterializingProposalId,
+  ] =
+    useState<string | null>(
+      null,
+    )
+
+  const [
+    materializationRetry,
+    setMaterializationRetry,
+  ] =
+    useState<PendingTaskProposal | null>(
+      null,
+    )
+
+  const [
     actionError,
     setActionError,
   ] =
@@ -81,6 +151,30 @@ export function ProposalReviewPanel({
     useState<TaskProposalReviewResult | null>(
       null,
     )
+
+  const [
+    lastTaskResult,
+    setLastTaskResult,
+  ] =
+    useState<TaskMaterializationResult | null>(
+      null,
+    )
+
+
+  function clearEditing():
+    void {
+    setEditingProposalId(
+      null,
+    )
+
+    setTitle(
+      '',
+    )
+
+    setDescription(
+      '',
+    )
+  }
 
 
   function startEditing(
@@ -102,26 +196,124 @@ export function ProposalReviewPanel({
     setActionError(
       null,
     )
+
+    setLastTaskResult(
+      null,
+    )
   }
 
 
   function cancelEditing():
     void {
-    setEditingProposalId(
-      null,
-    )
-
-    setTitle(
-      '',
-    )
-
-    setDescription(
-      '',
-    )
+    clearEditing()
 
     setActionError(
       null,
     )
+  }
+
+
+  async function materializeTask(
+    proposal:
+      PendingTaskProposal,
+
+    reviewKnownSucceeded:
+      boolean,
+  ): Promise<boolean> {
+    setMaterializingProposalId(
+      proposal.id,
+    )
+
+    setLastTaskResult(
+      null,
+    )
+
+
+    try {
+      const response =
+        await apiFetch<
+          ApiSuccess<TaskMaterializationResult>
+        >(
+          `/api/v1/projects/${projectId}/task-proposals/${proposal.id}/task`,
+          {
+            method:
+              'POST',
+          },
+        )
+
+
+      setLastTaskResult(
+        response.data,
+      )
+
+      setMaterializationRetry(
+        null,
+      )
+
+      setActionError(
+        null,
+      )
+
+
+      return true
+    } catch (
+      materializationError:
+        unknown
+    ) {
+      /*
+       * The authoritative Task endpoint is idempotent.
+       *
+       * Keeping the proposal here gives the user a safe retry path
+       * when review succeeded but the browser could not complete or
+       * confirm Task materialisation.
+       */
+      setMaterializationRetry(
+        proposal,
+      )
+
+
+      const message =
+        materializationError instanceof Error
+          ? materializationError.message
+          : 'Unable to create the authoritative Task.'
+
+
+      setActionError(
+        reviewKnownSucceeded
+          ? `Human review succeeded, but authoritative Task creation failed: ${message}`
+          : `The review response could not be confirmed and authoritative Task creation also could not be confirmed: ${message}`,
+      )
+
+
+      return false
+    } finally {
+      setMaterializingProposalId(
+        null,
+      )
+    }
+  }
+
+
+  async function retryMaterialization():
+    Promise<void> {
+    if (
+      !materializationRetry
+    ) {
+      return
+    }
+
+
+    setActionError(
+      null,
+    )
+
+
+    await materializeTask(
+      materializationRetry,
+      true,
+    )
+
+    pending.refresh()
   }
 
 
@@ -139,6 +331,14 @@ export function ProposalReviewPanel({
     )
 
     setActionError(
+      null,
+    )
+
+    setLastReview(
+      null,
+    )
+
+    setLastTaskResult(
       null,
     )
 
@@ -218,25 +418,88 @@ export function ProposalReviewPanel({
         response.data,
       )
 
-      cancelEditing()
+      clearEditing()
+
+
+      /*
+       * Rejection is terminal and deliberately does not create
+       * an authoritative Task.
+       */
+      if (
+        action ===
+        'reject'
+      ) {
+        setMaterializationRetry(
+          null,
+        )
+
+        pending.refresh()
+
+        return
+      }
+
+
+      /*
+       * Confirmed and edited proposals cross the authoritative
+       * boundary only after human review has succeeded.
+       *
+       * Team Agent does not create the Task directly. This API call
+       * reaches TeamAgentTaskMaterializationService, which delegates
+       * authoritative creation to TasksService.
+       */
+      await materializeTask(
+        proposal,
+        true,
+      )
 
       pending.refresh()
     } catch (
       reviewError:
         unknown
     ) {
-      setActionError(
-        reviewError instanceof Error
-          ? `${reviewError.message} Refreshing proposal state...`
-          : 'Unable to review the proposal. Refreshing proposal state...',
-      )
-
       /*
-       * Reconcile with the authoritative server state.
+       * A browser may lose the review HTTP response after the server
+       * successfully committed the human decision.
        *
-       * A review may have been committed successfully even if
-       * the browser lost the HTTP response.
+       * For confirm/edit, safely attempt authoritative materialisation.
+       * The materialisation endpoint accepts only reviewed proposals
+       * and is idempotent, so:
+       *
+       *   - if review committed, Task creation can continue;
+       *   - if review did not commit, materialisation is rejected;
+       *   - if the Task already exists, the existing Task is returned.
        */
+      if (
+        action ===
+          'confirm' ||
+        action ===
+          'edit'
+      ) {
+        const materialized =
+          await materializeTask(
+            proposal,
+            false,
+          )
+
+
+        if (
+          materialized
+        ) {
+          clearEditing()
+
+          pending.refresh()
+
+          return
+        }
+      } else {
+        setActionError(
+          reviewError instanceof Error
+            ? `${reviewError.message} Refreshing proposal state...`
+            : 'Unable to confirm the proposal review result. Refreshing proposal state...',
+        )
+      }
+
+
       pending.refresh()
     } finally {
       setReviewingProposalId(
@@ -264,7 +527,11 @@ export function ProposalReviewPanel({
           className="secondary-button compact-button"
           type="button"
           disabled={
-            pending.loading
+            pending.loading ||
+            reviewingProposalId !==
+              null ||
+            materializingProposalId !==
+              null
           }
           onClick={
             pending.refresh
@@ -284,6 +551,51 @@ export function ProposalReviewPanel({
           </div>
         </div>
       )}
+
+      {materializationRetry && (
+        <div className="proposal-state">
+          <strong>
+            Task creation needs attention.
+          </strong>
+
+          <p className="muted">
+            The human review may already be
+            recorded. Retrying Task creation is
+            safe because authoritative
+            materialisation is idempotent.
+          </p>
+
+          <button
+            className="primary-button"
+            type="button"
+            disabled={
+              materializingProposalId !==
+              null
+            }
+            onClick={
+              () => {
+                void retryMaterialization()
+              }
+            }
+          >
+            {materializingProposalId ===
+            materializationRetry.id
+              ? 'Creating task...'
+              : 'Retry task creation'}
+          </button>
+        </div>
+      )}
+
+      {lastTaskResult &&
+        !actionError && (
+          <div className="proposal-state">
+            <p className="proposal-success">
+              {lastTaskResult.created
+                ? 'Authoritative Task created successfully.'
+                : 'Authoritative Task already existed and was safely reused.'}
+            </p>
+          </div>
+        )}
 
       {pending.loading ? (
         <div className="proposal-state">
@@ -311,12 +623,14 @@ export function ProposalReviewPanel({
             then refresh this queue.
           </p>
 
-          {lastReview && (
-            <p className="proposal-success">
-              Proposal was successfully{' '}
-              {lastReview.status}.
-            </p>
-          )}
+          {lastReview &&
+            !lastTaskResult &&
+            !actionError && (
+              <p className="proposal-success">
+                Proposal was successfully{' '}
+                {lastReview.status}.
+              </p>
+            )}
         </div>
       ) : (
         <div className="proposal-list">
@@ -329,6 +643,14 @@ export function ProposalReviewPanel({
               const isReviewing =
                 reviewingProposalId ===
                 proposal.id
+
+              const isMaterializing =
+                materializingProposalId ===
+                proposal.id
+
+              const isBusy =
+                isReviewing ||
+                isMaterializing
 
 
               return (
@@ -364,7 +686,7 @@ export function ProposalReviewPanel({
                             title
                           }
                           disabled={
-                            isReviewing
+                            isBusy
                           }
                           onChange={
                             (
@@ -391,7 +713,7 @@ export function ProposalReviewPanel({
                             description
                           }
                           disabled={
-                            isReviewing
+                            isBusy
                           }
                           onChange={
                             (
@@ -466,7 +788,7 @@ export function ProposalReviewPanel({
                           className="primary-button"
                           type="button"
                           disabled={
-                            isReviewing
+                            isBusy
                           }
                           onClick={
                             () => {
@@ -477,16 +799,18 @@ export function ProposalReviewPanel({
                             }
                           }
                         >
-                          {isReviewing
-                            ? 'Saving...'
-                            : 'Approve changes'}
+                          {isMaterializing
+                            ? 'Creating task...'
+                            : isReviewing
+                              ? 'Saving review...'
+                              : 'Approve changes'}
                         </button>
 
                         <button
                           className="secondary-button"
                           type="button"
                           disabled={
-                            isReviewing
+                            isBusy
                           }
                           onClick={
                             cancelEditing
@@ -501,7 +825,7 @@ export function ProposalReviewPanel({
                           className="primary-button"
                           type="button"
                           disabled={
-                            isReviewing
+                            isBusy
                           }
                           onClick={
                             () => {
@@ -512,16 +836,18 @@ export function ProposalReviewPanel({
                             }
                           }
                         >
-                          {isReviewing
-                            ? 'Reviewing...'
-                            : 'Confirm'}
+                          {isMaterializing
+                            ? 'Creating task...'
+                            : isReviewing
+                              ? 'Confirming...'
+                              : 'Confirm'}
                         </button>
 
                         <button
                           className="secondary-button"
                           type="button"
                           disabled={
-                            isReviewing
+                            isBusy
                           }
                           onClick={
                             () => {
@@ -538,7 +864,7 @@ export function ProposalReviewPanel({
                           className="danger-button"
                           type="button"
                           disabled={
-                            isReviewing
+                            isBusy
                           }
                           onClick={
                             () => {
@@ -549,7 +875,9 @@ export function ProposalReviewPanel({
                             }
                           }
                         >
-                          Reject
+                          {isReviewing
+                            ? 'Rejecting...'
+                            : 'Reject'}
                         </button>
                       </>
                     )}

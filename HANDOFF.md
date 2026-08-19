@@ -28,20 +28,23 @@ Status:
 
 Current checkpoint:
 
-**VS001-09 Complete Audit Reconstruction implementation, both Audit migrations, direct database reconstruction, authenticated Audit API reconstruction, and post-hardening happy-path verification are complete. Documentation and source-control checkpoint are in progress.**
+**VS001-10G Authoritative Task Materialisation browser integration and live acceptance verification are complete. Final documentation, regression verification, staged security review, commit, and push are in progress.**
 
 Latest reported automated implementation gate before the final documentation/source-control pass:
 
 ```text
-npm run typecheck = passed
-npm test = 61 passed, 0 failed
+API typecheck = passed
+targeted materialisation tests = 11 passed, 0 failed
+API test suite = 64 passed, 0 failed
+web build = passed
+web lint = 0 warnings, 0 errors
 ```
 
-A final post-documentation/post-hardening typecheck and test run is still required before commit.
+A final post-documentation API and web regression gate is still required before the VS001-10G commit.
 
-Next implementation area after the VS001-09 source-control checkpoint:
+Current continuation point:
 
-**Complete the VS001-09 final verification, staged security review, commit, and push. Then continue final VS-001 UI integration where required.**
+**Complete the VS001-10G documentation update, rerun the final API and web verification gates, perform the staged security review, commit, and push the VS001-10G checkpoint.**
 
 ---
 
@@ -299,10 +302,10 @@ Latest reported automated implementation verification:
 
 ```text
 npm run typecheck = passed
-npm test = 61 passed, 0 failed
+npm test = 64 passed, 0 failed
 ```
 
-This 61/61 gate was reached during VS001-09 implementation. Run the gate again after the current documentation and route-hardening changes before committing.
+The current API gate is 64/64 after VS001-10G browser integration. Run the gate again after the final documentation changes before committing.
 
 ---
 
@@ -4210,7 +4213,7 @@ supabase/migrations/20260817101500_my_tasks_read_model.sql
 
 Status:
 
-**Implementation, both remote migrations, direct database reconstruction, authenticated API reconstruction, and post-hardening happy-path verification complete. Documentation and source-control checkpoint in progress.**
+**Implementation, both remote migrations, direct database reconstruction, authenticated API reconstruction, post-hardening verification, documentation, and source-control checkpoint complete.**
 
 VS001-09 completes the backend Audit portion of the vertical slice.
 
@@ -4640,13 +4643,240 @@ supabase/migrations/20260817140000_audit_task_journey_reconstruction.sql
 [x] authenticated Audit API reconstruction live-verified
 [x] post-hardening Audit happy path live-verified
 [x] Audit README updated
-[ ] final post-documentation/post-hardening typecheck rerun
-[ ] final post-documentation/post-hardening test rerun
-[ ] final staged diff and secret scan
-[ ] VS001-09 commit and push
+[x] final post-documentation/post-hardening typecheck rerun
+[x] final post-documentation/post-hardening test rerun
+[x] final staged diff and secret scan
+[x] VS001-09 commit and push
 ```
 
 ---
+
+# VS001-10G Authoritative Task Materialisation
+
+Status:
+
+Browser integration, automated verification, and live acceptance verification are complete. Final documentation and source-control checkpoint are in progress.
+
+VS001-10G connects the browser human-review flow to the authoritative Task creation boundary already established by VS001-07.
+
+The verified browser flow is:
+
+pending Team Agent task proposal
+  ->
+human review
+  ->
+confirm / edit + approve / reject
+  ->
+review API
+  ->
+confirmed / edited proposal
+  ->
+authoritative materialisation API
+  ->
+TeamAgentTaskMaterializationService
+  ->
+TasksService
+  ->
+Tasks-owned persistence
+  ->
+authoritative Task
+  ->
+TaskCreated.v1
+
+Rejected proposals stop after review and do not create Tasks.
+
+## Browser Integration
+
+The browser proposal-review component now automatically calls:
+
+POST /api/v1/projects/{projectId}/task-proposals/{proposalId}/task
+
+after a successful Confirm or Edit + Approve operation.
+
+This endpoint and its backend architecture already existed from VS001-07.
+
+VS001-10G does not introduce another Task creation service or another database write path.
+
+## Required Module Boundary
+
+The required dependency direction remains:
+
+browser
+  ->
+Team Agent HTTP materialisation route
+  ->
+TeamAgentTaskMaterializationService
+  ->
+TasksService
+  ->
+TasksRepository
+  ->
+SupabaseTasksRepository
+  ->
+public.create_authoritative_task(...)
+
+Team Agent must not write directly to public.tasks.
+
+## Review and Task Authorization
+
+Human proposal review requires:
+
+agent.approve
+
+Authoritative Task creation independently requires:
+
+task.create
+
+When the reviewed proposal assigns a user, Task creation also requires:
+
+task.assign
+
+agent.approve must never be interpreted as implicit Task authorization.
+
+## Partial-Success Semantics
+
+Review and Task materialisation are distinct protected operations.
+
+A browser may observe:
+
+review successfully committed
+  ->
+Task materialisation response lost or Task creation fails
+
+The UI therefore distinguishes review success from Task-materialisation failure.
+
+It provides a safe Task-creation retry.
+
+The retry is safe because the Tasks module owns idempotency by AI-proposal source.
+
+If a Task already exists, the authoritative endpoint returns the same Task with created = false rather than creating a duplicate.
+
+
+## Automated Verification
+
+API verification:
+
+npm run typecheck
+  -> passed
+
+targeted authoritative materialisation tests
+  -> 11 passed
+  -> 0 failed
+
+npm test
+  -> 64 passed
+  -> 0 failed
+
+Web verification:
+
+npm run build
+  -> passed
+
+npm run lint
+  -> 0 warnings
+  -> 0 errors
+
+git diff --check was also clean before documentation updates.
+
+
+## Live Acceptance Verification
+
+Browser-reviewed proposal:
+
+a9beb552-5d4c-469d-a8e7-d250879892c3
+
+Review outcome:
+
+status = confirmed
+reviewed_by = afec9f7c-eb66-46b9-9668-cb57b26394b5
+
+Resulting authoritative Task:
+
+8d26632d-1ac1-4516-84f7-019aab307eab
+
+Proposal result linkage:
+
+result_entity_type = task
+result_entity_id = 8d26632d-1ac1-4516-84f7-019aab307eab
+
+Task provenance:
+
+entity_type = task
+entity_id = 8d26632d-1ac1-4516-84f7-019aab307eab
+source_type = ai_proposal
+source_id = a9beb552-5d4c-469d-a8e7-d250879892c3
+
+Verified uniqueness:
+
+task_links = 1
+task_created_events = 1
+
+Human-review event:
+
+AIProposalConfirmed.v1
+event_id = 4857a3fe-012f-4983-803d-d1b1c99ea898
+correlation_id = 90ef1d6e-9345-4fad-aea9-742ee5fc05e4
+
+Task event:
+
+TaskCreated.v1
+event_id = 8e04a51b-68f6-41bf-a428-c6c295584d84
+correlation_id = 90ef1d6e-9345-4fad-aea9-742ee5fc05e4
+causation_id = 4857a3fe-012f-4983-803d-d1b1c99ea898
+
+This verifies that TaskCreated.v1 preserves the successful human-review correlation and directly references the successful human-review event as its causation.
+
+## Historical Development Data Watch Item
+
+Development-era data contains older reviewed proposals that predate the complete browser-materialisation flow.
+
+Confirmed proposal:
+
+5b6df7fe-ec92-458a-9a11-fe4fb62325f6
+
+currently has no recorded resulting Task.
+
+Edited proposal:
+
+def8f97f-adf7-444a-a1dd-919b3467464b
+
+has an authoritative Task and source provenance but currently has a null proposal-side result entity.
+
+This historical state does not invalidate VS001-10G.
+
+It demonstrates why Task materialisation retry and later reconciliation must remain idempotent.
+
+Do not repair these records by directly creating or modifying authoritative Tasks through Team Agent persistence.
+
+Any later reconciliation must preserve the Tasks module as the authoritative boundary and must remain retry-safe.
+
+## VS001-10G Definition of Done
+
+[x] browser proposal review integrated
+[x] Confirm automatically continues to Task materialisation
+[x] Edit + Approve automatically continues to Task materialisation
+[x] Reject does not materialise a Task
+[x] existing TasksService boundary is reused
+[x] no duplicate authoritative Task persistence path introduced
+[x] Team Agent does not write directly to Tasks persistence
+[x] agent.approve remains separate from task.create
+[x] task.assign remains independently enforced when required
+[x] reviewed_payload supplies authoritative candidate values
+[x] authoritative Task materialisation remains idempotent
+[x] browser distinguishes review success from Task-materialisation failure
+[x] safe Task-materialisation retry exists
+[x] proposal result linkage live-verified
+[x] Task provenance live-verified
+[x] exactly one Task link live-verified
+[x] exactly one TaskCreated.v1 live-verified
+[x] human-review correlation continuity live-verified
+[x] TaskCreated.v1 causation to human-review event live-verified
+[x] API typecheck passed
+[x] targeted materialisation suite passed: 11/11
+[x] complete API suite passed: 64/64
+[x] web production build passed
+[x] web lint passed with zero warnings and zero errors
+[x] live browser-driven authoritative Task materialisation verified
 
 # Not Yet Implemented in VS-001
 
@@ -4762,39 +4992,43 @@ When adding or changing functionality:
 
 # Immediate Next Engineering Step
 
-VS001-09 implementation, both remote database migrations, Audit backfill, direct reconstruction, authenticated Audit API reconstruction, and post-hardening happy-path verification are complete.
+# Immediate Next Engineering Step
 
-The immediate activity is the **VS001-09 final documentation and source-control checkpoint**.
+VS001-10G browser integration and live authoritative Task materialisation acceptance verification are complete.
+
+The immediate activity is the VS001-10G final documentation and source-control checkpoint.
 
 From the repository root:
 
-```text
 C:\Users\chngo\cadence
-```
 
 perform:
 
-1. replace the updated Audit `README.md`, `docs/vertical-slices/VS-001.md`, `CHANGELOG.md`, and `HANDOFF.md`;
-2. run `npm run typecheck` and `npm test` from `apps/api`;
-3. confirm the final automated result is 61 tests, 61 pass, 0 fail;
-4. return to the repository root and run `git diff --check`;
-5. run `npx supabase migration list` and confirm both Audit migrations are synchronized;
+1. rerun API typecheck;
+2. rerun all 64 API tests;
+3. rerun web production build;
+4. rerun web lint;
+5. run git diff --check;
 6. inspect the complete working tree;
-7. confirm `apps/api/.env` remains ignored and unstaged;
-8. stage only intended VS001-09 code, migrations, tests, and documentation;
-9. run `git diff --cached --check`;
+7. confirm .env files and generated dist output remain ignored and unstaged;
+8. stage only intended VS001-10G browser and documentation changes;
+9. run git diff --cached --check;
 10. scan the staged diff for Supabase secrets, JWTs, bearer tokens, passwords, and temporary credentials;
-11. inspect `git diff --cached --stat`, `git diff --cached --name-only`, and the staged diff;
-12. commit the VS001-09 checkpoint;
-13. push `feature/vs-001`;
+11. inspect git diff --cached --stat and git diff --cached --name-only;
+12. commit the VS001-10G checkpoint;
+13. push feature/vs-001;
 14. confirm the branch is clean and synchronized with origin.
 
-After the VS001-09 checkpoint, remaining VS-001 work is concentrated on:
+Do not create another authoritative Task persistence path.
 
-```text
-final end-to-end UI integration where required
-  ->
-final vertical-slice acceptance
+The established architecture remains:
+
+Discussion -> asynchronous domain events
+Team Agent -> human review
+Team Agent materialisation -> TasksService -> Tasks-owned persistence
+Audit -> domain-event consumer / read reconstruction
+
+Historical development-data reconciliation should be handled separately from the VS001-10G checkpoint.
 ```
 
 Do not reintroduce the old one-correlation-ID requirement.
@@ -6189,7 +6423,7 @@ Task visibility and backend Audit reconstruction are complete for VS-001.
 
 The correlation-model question is resolved.
 
-Remaining VS-001 architecture work is concentrated on final end-to-end UI integration where required and the final slice acceptance checkpoint.
+Remaining VS-001 work is concentrated on the final VS001-10G documentation, regression verification, staged security review, source-control checkpoint, and final slice acceptance.
 
 ---
 
@@ -6255,7 +6489,11 @@ commit and push VS001-09
 After that:
 
 ```text
-final end-to-end UI integration where required
+final VS001-10G documentation and regression gate
+  ->
+staged security review
+  ->
+commit and push
   ->
 final VS-001 acceptance
 ```

@@ -5,6 +5,59 @@ All notable changes to Cadence will be documented in this file.
 Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
+### VS001-10G - Authoritative Task Materialisation
+
+#### Added
+
+- Integrated the browser human-review flow with the existing authoritative Task materialisation endpoint.
+- Confirmed proposals now continue automatically from successful human review to authoritative Task creation.
+- Human-edited and approved proposals use the same authoritative materialisation path.
+- Rejected proposals remain terminal review outcomes and do not create Tasks.
+- Added browser handling for the partial-success case where human review succeeds but Task materialisation cannot be confirmed.
+- Added a safe Task-materialisation retry action using the existing idempotent Tasks boundary.
+
+#### Architecture
+
+- Reused the existing VS001-07 authoritative Task creation architecture rather than introducing another Task persistence path.
+- Preserved the required dependency direction:
+  - Team Agent browser workflow,
+  - Team Agent materialisation API,
+  - `TeamAgentTaskMaterializationService`,
+  - `TasksService`,
+  - Tasks-owned persistence.
+- Team Agent still does not write directly to `public.tasks`.
+- `agent.approve` remains separate from `task.create` and conditional `task.assign`.
+- Authoritative Task creation continues to use `ai_proposals.reviewed_payload`.
+- Proposal-to-Task idempotency remains owned by the Tasks module.
+- Browser retry is safe because repeated materialisation of the same reviewed proposal returns the existing authoritative Task instead of creating a duplicate.
+- `TaskCreated.v1` continues the successful human-review correlation and uses the human-review event as its direct causation.
+- No new database migration was required because authoritative persistence, provenance, idempotency, and Task events were already implemented in VS001-07.
+
+#### Verified
+
+- Verified API TypeScript typecheck passes.
+- Verified targeted authoritative materialisation tests: 11 passed, 0 failed.
+- Verified the complete API suite: 64 passed, 0 failed.
+- Verified web production build passes.
+- Verified web lint reports 0 warnings and 0 errors.
+- Live-verified browser-driven human confirmation followed by authoritative Task materialisation.
+- Verified proposal `a9beb552-5d4c-469d-a8e7-d250879892c3` materialised into authoritative Task `8d26632d-1ac1-4516-84f7-019aab307eab`.
+- Verified proposal result linkage uses `result_entity_type = task`.
+- Verified exactly one Task provenance link exists for the proposal.
+- Verified exactly one `TaskCreated.v1` exists for the proposal.
+- Verified `AIProposalConfirmed.v1` event `4857a3fe-012f-4983-803d-d1b1c99ea898`.
+- Verified `TaskCreated.v1` event `8e04a51b-68f6-41bf-a428-c6c295584d84`.
+- Verified both events share correlation ID `90ef1d6e-9345-4fad-aea9-742ee5fc05e4`.
+- Verified `TaskCreated.v1.causation_id` equals the successful human-review event ID.
+- Verified `task_links = 1` and `task_created_events = 1`.
+
+#### Current Limitations
+
+- External LLM invocation, assignee-name resolution, and natural-language due-date resolution remain deferred.
+- The Team Agent/Audit worker remains one-shot rather than continuously hosted.
+- Historical reviewed proposals created during earlier development may not all contain current proposal result-link metadata.
+- Historical reconciliation, if required, must preserve the Tasks module as the authoritative boundary.
+
 ### VS001-09 - Complete Audit Reconstruction
 
 #### Added
