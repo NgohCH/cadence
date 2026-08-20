@@ -5,6 +5,48 @@ All notable changes to Cadence will be documented in this file.
 Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
+### VS001-10H - Final Read-Side UI
+
+#### Added
+
+- Added authenticated My Tasks browser navigation and read-side rendering using `GET /api/v1/me/tasks`.
+- Added a modular Tasks frontend feature with task selection and refresh support.
+- Added browser Audit reconstruction for selected Tasks using `GET /api/v1/projects/{projectId}/tasks/{taskId}/audit`.
+- Added chronological Audit event rendering with actor, entity, correlation, causation, source, domain-event, audit-event, and event-state details.
+- Added explicit presentation of historical business-journey correlations separately from the current Audit inspection request correlation.
+- Added responsive browser layouts for My Tasks and Audit Journey.
+
+#### Architecture
+
+- No backend, database, migration, domain-event, or RBAC changes were required.
+- My Tasks continues to derive user identity exclusively from the authenticated request context; the browser does not supply another user ID.
+- Audit remains a protected read model requiring `audit.view`.
+- Audit remains non-authoritative and reconstructs existing business history rather than creating or modifying domain state.
+- Existing Tasks and Audit module boundaries remain unchanged.
+
+#### Verified
+
+- Web production build passed after My Tasks integration.
+- Web lint reported 0 warnings and 0 errors after My Tasks integration.
+- Live-verified authenticated My Tasks navigation and rendering for Alice Test.
+- Live-verified task selection and selected-state highlighting.
+- Live-verified the VS001-08 authoritative Task Audit journey in the browser.
+- Verified the reconstructed journey contains 4 events across 2 truthful historical correlation IDs:
+  - `MessageCreated.v1`
+  - `AIProposalCreated.v1`
+  - `AIProposalEdited.v1`
+  - `TaskCreated.v1`
+- Verified `TaskCreated.v1` directly cites the human review event as causation.
+- Verified the current Audit inspection request correlation is displayed separately from historical journey correlations.
+- Verified Audit event before-state, after-state, and metadata can be inspected in the browser.
+- Verified a Task without a reconstructable VS-001 journey returns `Task audit journey not found.` rather than fabricating history.
+
+#### Acceptance
+
+- VS001-10H-01 My Tasks Browser Read-Side: passed.
+- VS001-10H-02 Audit Browser Read-Side: passed.
+- The VS-001 user journey is now exposed end to end through the browser where required.
+
 ### VS001-10G - Authoritative Task Materialisation
 
 #### Added

@@ -1,3 +1,7 @@
+import {
+  useState,
+} from 'react'
+
 import type {
   CadenceUser,
 } from '../../types/identity'
@@ -6,6 +10,10 @@ import type {
   ProjectSummaryResponse,
 } from '../../types/projects'
 
+import type {
+  MyTask,
+} from '../../types/tasks'
+
 import {
   DiscussionPanel,
 } from '../discussion/DiscussionPanel'
@@ -13,6 +21,10 @@ import {
 import {
   ProposalReviewPanel,
 } from '../team-agent/ProposalReviewPanel'
+
+import {
+  MyTasksPanel,
+} from '../tasks/MyTasksPanel'
 
 
 interface WorkspaceShellProps {
@@ -23,19 +35,47 @@ interface WorkspaceShellProps {
 }
 
 
+type WorkspaceView =
+  | 'workspace'
+  | 'my_tasks'
+
+
 export function WorkspaceShell({
   user,
   project,
   signingOut,
   onSignOut,
 }: WorkspaceShellProps) {
+  const [
+    activeView,
+    setActiveView,
+  ] =
+    useState<WorkspaceView>(
+      'workspace',
+    )
+
+  const [
+    selectedTask,
+    setSelectedTask,
+  ] =
+    useState<MyTask | null>(
+      null,
+    )
+
+
   const lifecycleLabel =
     project.project.lifecycle_status
-      .replaceAll('_', ' ')
+      .replaceAll(
+        '_',
+        ' ',
+      )
 
   const healthLabel =
     project.project.health_status
-      .replaceAll('_', ' ')
+      .replaceAll(
+        '_',
+        ' ',
+      )
 
 
   return (
@@ -65,10 +105,14 @@ export function WorkspaceShell({
           <button
             className="signout-button"
             type="button"
-            disabled={signingOut}
-            onClick={() => {
-              void onSignOut()
-            }}
+            disabled={
+              signingOut
+            }
+            onClick={
+              () => {
+                void onSignOut()
+              }
+            }
           >
             {signingOut
               ? 'Signing out...'
@@ -81,15 +125,39 @@ export function WorkspaceShell({
         <aside className="sidebar">
           <nav className="navigation">
             <button
-              className="nav-item nav-item-active"
+              className={
+                activeView ===
+                'workspace'
+                  ? 'nav-item nav-item-active'
+                  : 'nav-item'
+              }
               type="button"
+              onClick={
+                () => {
+                  setActiveView(
+                    'workspace',
+                  )
+                }
+              }
             >
               Workspace
             </button>
 
             <button
-              className="nav-item"
+              className={
+                activeView ===
+                'my_tasks'
+                  ? 'nav-item nav-item-active'
+                  : 'nav-item'
+              }
               type="button"
+              onClick={
+                () => {
+                  setActiveView(
+                    'my_tasks',
+                  )
+                }
+              }
             >
               My Tasks
             </button>
@@ -97,239 +165,347 @@ export function WorkspaceShell({
         </aside>
 
         <main className="workspace">
-          <section className="workspace-heading">
-            <div>
-              <p className="eyebrow">
-                PROJECT WORKSPACE
-              </p>
+          {activeView ===
+          'workspace' ? (
+            <>
+              <section className="workspace-heading">
+                <div>
+                  <p className="eyebrow">
+                    PROJECT WORKSPACE
+                  </p>
 
-              <h1>
-                {project.project.name}
-              </h1>
+                  <h1>
+                    {
+                      project
+                        .project
+                        .name
+                    }
+                  </h1>
 
-              <p className="muted">
-                {project.project.description ??
-                  project.project.goal ??
-                  'Cadence project workspace'}
-              </p>
-            </div>
-          </section>
+                  <p className="muted">
+                    {project
+                      .project
+                      .description ??
+                      project
+                        .project
+                        .goal ??
+                      'Cadence project workspace'}
+                  </p>
+                </div>
+              </section>
 
-          <section className="summary-grid">
-            <article className="summary-card">
-              <span className="summary-label">
-                Project status
-              </span>
+              <section className="summary-grid">
+                <article className="summary-card">
+                  <span className="summary-label">
+                    Project status
+                  </span>
 
-              <strong className="status">
-                <span className="status-dot" />
-                {lifecycleLabel}
-              </strong>
+                  <strong className="status">
+                    <span className="status-dot" />
 
-              <small className="muted">
-                Health: {healthLabel}
-              </small>
-            </article>
-
-            <article className="summary-card">
-              <span className="summary-label">
-                My pending tasks
-              </span>
-
-              <strong className="summary-number">
-                {project.my_tasks.pending}
-              </strong>
-
-              <small className="muted">
-                {project.my_tasks.overdue} overdue
-              </small>
-            </article>
-
-            <article className="summary-card">
-              <span className="summary-label">
-                Alerts
-              </span>
-
-              <strong className="summary-number">
-                {project.alerts.length}
-              </strong>
-
-              <small className="muted">
-                {project.blockers} blockers
-              </small>
-            </article>
-          </section>
-
-          {project.alerts.length > 0 ? (
-            <section className="project-alerts">
-              {project.alerts.map(
-                (alert) => (
-                  <div
-                    className={`alert-banner alert-${alert.severity}`}
-                    key={alert.id}
-                  >
-                    <strong>
-                      {alert.title}
-                    </strong>
-
-                    <span>
-                      {alert.message}
-                    </span>
-                  </div>
-                ),
-              )}
-            </section>
-          ) : (
-            <section className="alert-banner">
-              No active project alerts.
-            </section>
-          )}
-
-          <section className="project-detail-grid">
-            <article className="summary-card">
-              <span className="summary-label">
-                Progress
-              </span>
-
-              <strong>
-                {project.project.progress_percent}%
-              </strong>
-
-              <div className="progress-track">
-                <div
-                  className="progress-value"
-                  style={{
-                    width:
-                      `${project.project.progress_percent}%`,
-                  }}
-                />
-              </div>
-            </article>
-
-            <article className="summary-card">
-              <span className="summary-label">
-                Next milestone
-              </span>
-
-              {project.next_milestone ? (
-                <>
-                  <strong>
-                    {project.next_milestone.title}
+                    {
+                      lifecycleLabel
+                    }
                   </strong>
 
                   <small className="muted">
-                    {project.next_milestone.target_date}
+                    Health:{' '}
+                    {
+                      healthLabel
+                    }
                   </small>
-                </>
+                </article>
+
+                <article className="summary-card">
+                  <span className="summary-label">
+                    My pending tasks
+                  </span>
+
+                  <strong className="summary-number">
+                    {
+                      project
+                        .my_tasks
+                        .pending
+                    }
+                  </strong>
+
+                  <small className="muted">
+                    {
+                      project
+                        .my_tasks
+                        .overdue
+                    }{' '}
+                    overdue
+                  </small>
+                </article>
+
+                <article className="summary-card">
+                  <span className="summary-label">
+                    Alerts
+                  </span>
+
+                  <strong className="summary-number">
+                    {
+                      project
+                        .alerts
+                        .length
+                    }
+                  </strong>
+
+                  <small className="muted">
+                    {
+                      project
+                        .blockers
+                    }{' '}
+                    blockers
+                  </small>
+                </article>
+              </section>
+
+              {project.alerts.length >
+              0 ? (
+                <section className="project-alerts">
+                  {project.alerts.map(
+                    (
+                      alert,
+                    ) => (
+                      <div
+                        className={`alert-banner alert-${alert.severity}`}
+                        key={
+                          alert.id
+                        }
+                      >
+                        <strong>
+                          {
+                            alert.title
+                          }
+                        </strong>
+
+                        <span>
+                          {
+                            alert.message
+                          }
+                        </span>
+                      </div>
+                    ),
+                  )}
+                </section>
               ) : (
-                <strong>
-                  No upcoming milestone
-                </strong>
+                <section className="alert-banner">
+                  No active project alerts.
+                </section>
               )}
-            </article>
-          </section>
 
-          <section className="workspace-grid">
-            <DiscussionPanel
-              projectId={
-                project.project.id
-              }
-            />
+              <section className="project-detail-grid">
+                <article className="summary-card">
+                  <span className="summary-label">
+                    Progress
+                  </span>
 
-            <div className="workspace-side-column">
-              <ProposalReviewPanel
-                projectId={
-                  project.project.id
+                  <strong>
+                    {
+                      project
+                        .project
+                        .progress_percent
+                    }
+                    %
+                  </strong>
+
+                  <div className="progress-track">
+                    <div
+                      className="progress-value"
+                      style={{
+                        width:
+                          `${project.project.progress_percent}%`,
+                      }}
+                    />
+                  </div>
+                </article>
+
+                <article className="summary-card">
+                  <span className="summary-label">
+                    Next milestone
+                  </span>
+
+                  {project.next_milestone ? (
+                    <>
+                      <strong>
+                        {
+                          project
+                            .next_milestone
+                            .title
+                        }
+                      </strong>
+
+                      <small className="muted">
+                        {
+                          project
+                            .next_milestone
+                            .target_date
+                        }
+                      </small>
+                    </>
+                  ) : (
+                    <strong>
+                      No upcoming milestone
+                    </strong>
+                  )}
+                </article>
+              </section>
+
+              <section className="workspace-grid">
+                <DiscussionPanel
+                  projectId={
+                    project
+                      .project
+                      .id
+                  }
+                />
+
+                <div className="workspace-side-column">
+                  <ProposalReviewPanel
+                    projectId={
+                      project
+                        .project
+                        .id
+                    }
+                  />
+
+                  <aside className="panel journey-panel">
+                    <header className="panel-header">
+                      <div>
+                        <h2>
+                          Task Journey
+                        </h2>
+
+                        <p className="muted">
+                          VS-001 workflow
+                        </p>
+                      </div>
+                    </header>
+
+                    <ol className="journey">
+                      <li>
+                        <span>
+                          1
+                        </span>
+
+                        <div>
+                          <strong>
+                            Discussion
+                          </strong>
+
+                          <small>
+                            Human conversation
+                          </small>
+                        </div>
+                      </li>
+
+                      <li>
+                        <span>
+                          2
+                        </span>
+
+                        <div>
+                          <strong>
+                            Team Agent
+                          </strong>
+
+                          <small>
+                            Task proposal
+                          </small>
+                        </div>
+                      </li>
+
+                      <li>
+                        <span>
+                          3
+                        </span>
+
+                        <div>
+                          <strong>
+                            Human Review
+                          </strong>
+
+                          <small>
+                            Approve or reject
+                          </small>
+                        </div>
+                      </li>
+
+                      <li>
+                        <span>
+                          4
+                        </span>
+
+                        <div>
+                          <strong>
+                            Task
+                          </strong>
+
+                          <small>
+                            Authoritative record
+                          </small>
+                        </div>
+                      </li>
+
+                      <li>
+                        <span>
+                          5
+                        </span>
+
+                        <div>
+                          <strong>
+                            Audit
+                          </strong>
+
+                          <small>
+                            Traceable journey
+                          </small>
+                        </div>
+                      </li>
+                    </ol>
+                  </aside>
+                </div>
+              </section>
+            </>
+          ) : (
+            <>
+              <section className="workspace-heading">
+                <div>
+                  <p className="eyebrow">
+                    MY WORK
+                  </p>
+
+                  <h1>
+                    My Tasks
+                  </h1>
+
+                  <p className="muted">
+                    Current actionable Tasks
+                    assigned to your authenticated
+                    Cadence account.
+                  </p>
+                </div>
+              </section>
+
+              <MyTasksPanel
+                selectedTaskId={
+                  selectedTask?.id ??
+                  null
+                }
+                onSelectTask={
+                  (
+                    task,
+                  ) => {
+                    setSelectedTask(
+                      task,
+                    )
+                  }
                 }
               />
-
-              <aside className="panel journey-panel">
-                <header className="panel-header">
-                  <div>
-                    <h2>
-                      Task Journey
-                    </h2>
-
-                    <p className="muted">
-                      VS-001 workflow
-                    </p>
-                  </div>
-                </header>
-
-                <ol className="journey">
-                  <li>
-                    <span>1</span>
-
-                    <div>
-                      <strong>
-                        Discussion
-                      </strong>
-
-                      <small>
-                        Human conversation
-                      </small>
-                    </div>
-                  </li>
-
-                  <li>
-                    <span>2</span>
-
-                    <div>
-                      <strong>
-                        Team Agent
-                      </strong>
-
-                      <small>
-                        Task proposal
-                      </small>
-                    </div>
-                  </li>
-
-                  <li>
-                    <span>3</span>
-
-                    <div>
-                      <strong>
-                        Human Review
-                      </strong>
-
-                      <small>
-                        Approve or reject
-                      </small>
-                    </div>
-                  </li>
-
-                  <li>
-                    <span>4</span>
-
-                    <div>
-                      <strong>
-                        Task
-                      </strong>
-
-                      <small>
-                        Authoritative record
-                      </small>
-                    </div>
-                  </li>
-
-                  <li>
-                    <span>5</span>
-
-                    <div>
-                      <strong>
-                        Audit
-                      </strong>
-
-                      <small>
-                        Traceable journey
-                      </small>
-                    </div>
-                  </li>
-                </ol>
-              </aside>
-            </div>
-          </section>
+            </>
+          )}
         </main>
       </div>
     </div>

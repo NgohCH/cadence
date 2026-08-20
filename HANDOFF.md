@@ -28,7 +28,9 @@ Status:
 
 Current checkpoint:
 
-**VS001-10G Authoritative Task Materialisation browser integration and live acceptance verification are complete. Final documentation, regression verification, staged security review, commit, and push are in progress.**
+**VS001-10H Final Read-Side UI is functionally complete and live-verified. My Tasks and Audit are now exposed through the browser. Final documentation, regression verification, staged security review, commit, and push are in progress.**
+
+**Complete the VS001-10H documentation checkpoint, rerun the final API and web verification gates, perform the staged security review, commit and push the checkpoint, then treat VS-001 as complete.**
 
 Latest reported automated implementation gate before the final documentation/source-control pass:
 
@@ -40,7 +42,7 @@ web build = passed
 web lint = 0 warnings, 0 errors
 ```
 
-A final post-documentation API and web regression gate is still required before the VS001-10G commit.
+A final post-documentation API and web regression gate is required before the VS001-10H checkpoint commit.
 
 Current continuation point:
 
@@ -4882,7 +4884,6 @@ Any later reconciliation must preserve the Tasks module as the authoritative bou
 
 The following work remains outstanding or deliberately deferred:
 
-* end-to-end VS-001 UI where required
 * external LLM provider integration
 * prompt execution and prompt-version selection
 * assignee name resolution
@@ -4992,11 +4993,9 @@ When adding or changing functionality:
 
 # Immediate Next Engineering Step
 
-# Immediate Next Engineering Step
+VS001-10H My Tasks and Audit browser integration and live acceptance verification are complete.
 
-VS001-10G browser integration and live authoritative Task materialisation acceptance verification are complete.
-
-The immediate activity is the VS001-10G final documentation and source-control checkpoint.
+The immediate activity is the final VS001-10H documentation and source-control checkpoint.
 
 From the repository root:
 
@@ -5010,14 +5009,18 @@ perform:
 4. rerun web lint;
 5. run git diff --check;
 6. inspect the complete working tree;
-7. confirm .env files and generated dist output remain ignored and unstaged;
-8. stage only intended VS001-10G browser and documentation changes;
+7. confirm `.env` files and generated `dist` output remain ignored and unstaged;
+8. stage only intended VS001-10H browser and documentation changes;
 9. run git diff --cached --check;
 10. scan the staged diff for Supabase secrets, JWTs, bearer tokens, passwords, and temporary credentials;
 11. inspect git diff --cached --stat and git diff --cached --name-only;
-12. commit the VS001-10G checkpoint;
+12. commit the VS001-10H checkpoint;
 13. push feature/vs-001;
 14. confirm the branch is clean and synchronized with origin.
+
+After that checkpoint, VS-001 is complete.
+
+Historical development-data reconciliation remains separate maintenance work and must preserve existing Tasks and Audit boundaries.
 
 Do not create another authoritative Task persistence path.
 
@@ -6423,7 +6426,7 @@ Task visibility and backend Audit reconstruction are complete for VS-001.
 
 The correlation-model question is resolved.
 
-Remaining VS-001 work is concentrated on the final VS001-10G documentation, regression verification, staged security review, source-control checkpoint, and final slice acceptance.
+Remaining VS-001 work is limited to final VS001-10H regression verification, staged security review, source-control checkpoint, and branch synchronization. No functional VS-001 implementation work remains.
 
 ---
 
@@ -6475,28 +6478,15 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-complete VS001-09 documentation
+complete VS001-10H documentation
   ->
-rerun final typecheck and 61-test gate
+rerun final API and web regression gate
   ->
-verify both Audit migrations are synchronized
+perform staged security review
   ->
-run staged diff and secret checks
+commit and push VS001-10H
   ->
-commit and push VS001-09
-```
-
-After that:
-
-```text
-final VS001-10G documentation and regression gate
-  ->
-staged security review
-  ->
-commit and push
-  ->
-final VS-001 acceptance
-```
+VS-001 complete
 
 Do not bypass established module boundaries merely to complete the vertical slice more quickly.
 
