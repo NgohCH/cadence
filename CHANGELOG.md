@@ -5,6 +5,70 @@ All notable changes to Cadence will be documented in this file.
 Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
+### VS002-01 - Identity and Membership Domain Foundations
+
+#### Added
+
+- Added stable `CadencePerson` identity independent of email, authentication
+  account, affiliation, and project membership.
+- Added provider-neutral `AuthenticationIdentity` with Person linkage,
+  provider subject, login identifier, validity period, and active/disabled
+  status.
+- Added time-varying `INTERNAL` and `EXTERNAL` organisational affiliation
+  concepts without project authority.
+- Added the dedicated Project Membership domain module.
+- Added `ProjectMembership` separately from `ProjectRoleAssignment`.
+- Added the exact frozen project-role vocabulary:
+  - `PROJECT_SPONSOR`;
+  - `PROJECT_OWNER`;
+  - `PROJECT_MANAGER`;
+  - `PROJECT_MEMBER`;
+  - `PROJECT_OBSERVER`;
+  - `PROJECT_AUDITOR`.
+- Added protected-role classification for Sponsor, Owner, and Manager.
+- Added read-only role classification for Observer and Auditor without adding
+  a permission engine.
+- Added validated open-ended and time-bounded membership periods.
+- Added deterministic membership-effectiveness evaluation with an explicit
+  timestamp and `[effectiveFrom, effectiveTo)` boundary semantics.
+- Added focused identity, affiliation, role, separation, temporal-boundary,
+  historical-effectiveness, and invalid-range unit tests.
+
+#### Architecture
+
+- Kept Cadence Person, authentication identity, organisational affiliation,
+  project membership, and role assignment as distinct domain concepts.
+- Project Membership depends on stable `personId`/`projectId` references and
+  contains no provider, email, or login data.
+- Authentication identities contain no project membership, role, permission,
+  or access authority.
+- Affiliation does not grant membership or authority; `EXTERNAL` remains valid
+  with `PROJECT_MANAGER`.
+- Temporary access is represented through membership duration. No
+  `TEMPORARY_PROJECT_MEMBER` role was introduced.
+- Preserved the VS-001 `CadenceUser`, `RequestContext.actorUserId`, Supabase
+  identity mapping, RBAC repository, and permission-code behaviour unchanged.
+- Documented the current VS-001 user/membership shape as a compatibility bridge
+  pending VS002-02 persistence work.
+
+#### Verified
+
+- API TypeScript typecheck passed.
+- API TypeScript build passed.
+- Full API test suite passed: 80 tests, 0 failures.
+- Added 17 focused VS002-01 unit tests covering the frozen affiliation/role
+  vocabulary, external Project Manager representation, protected/read-only
+  classifications, identity authority separation, membership duration,
+  deterministic boundary semantics, historical effectiveness, and invalid
+  ranges.
+
+#### Deferred
+
+- No migration, table, repository, route, permission engine, membership flow,
+  worker, event, role transfer, responsibility guard, audit integration,
+  frontend, Entra integration, or invitation delivery was added.
+- VS002-02 and all later checkpoints remain incomplete.
+
 ### VS001-10H - Final Read-Side UI
 
 #### Added

@@ -1,5 +1,21 @@
 # RBAC Module
 
+## VS002-01 Compatibility Note
+
+VS002-01 introduces provider-neutral Person, Project Membership, and project
+role domain foundations under the Identity and Project Membership modules. It
+does not replace the working VS-001 authorization implementation.
+
+The current RBAC repository continues to resolve the existing
+`public.project_memberships` shape (`user_id`, one `role_id`, and active status)
+for VS-001 behaviour. Persistence migration is deferred to VS002-02, and the
+single frozen Project Authorisation service is deferred to VS002-03.
+
+New VS-002 domain code must not treat the authentication provider, login
+identifier, or `INTERNAL`/`EXTERNAL` affiliation as project authority. Existing
+permission-code checks remain authoritative until the later integration
+checkpoint deliberately changes that path.
+
 ## Ownership
 
 The RBAC module owns Cadence authorization decisions.

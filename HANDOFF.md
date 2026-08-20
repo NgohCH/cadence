@@ -12,41 +12,122 @@ v0.1 - Development
 
 ## Current Branch
 
-`feature/vs-001`
-
-A draft pull request has been created for Vertical Slice VS-001.
+`feature/vs-002`
 
 ## Current Implementation Work
 
 Vertical Slice:
 
-`VS-001 - Login to Discussion to AI-Proposed Task to Human Confirmation to Task Creation to Audit Trail`
+`VS-002 - Project Membership & Collaboration`
 
 Status:
 
-**In Progress**
+**VS002-01 implemented in the working tree; pending human review and
+source-control checkpoint.**
 
 Current checkpoint:
 
-**VS001-10H Final Read-Side UI is functionally complete and live-verified. My Tasks and Audit are now exposed through the browser. Final documentation, regression verification, staged security review, commit, and push are in progress.**
+**VS002-01 Identity and Membership Domain Foundations are implemented without
+persistence or runtime authorization changes. Review the working tree, then
+create the human-controlled source-control checkpoint. Do not begin VS002-02
+until VS002-01 is accepted.**
 
-**Complete the VS001-10H documentation checkpoint, rerun the final API and web verification gates, perform the staged security review, commit and push the checkpoint, then treat VS-001 as complete.**
-
-Latest reported automated implementation gate before the final documentation/source-control pass:
+Latest VS002-01 validation:
 
 ```text
 API typecheck = passed
-targeted materialisation tests = 11 passed, 0 failed
-API test suite = 64 passed, 0 failed
-web build = passed
-web lint = 0 warnings, 0 errors
+API build = passed
+API test suite = 80 passed, 0 failed
+VS002-01 focused tests added = 17
 ```
 
-A final post-documentation API and web regression gate is required before the VS001-10H checkpoint commit.
+---
 
-Current continuation point:
+# VS002-01 Identity and Membership Domain Foundations
 
-**Complete the VS001-10G documentation update, rerun the final API and web verification gates, perform the staged security review, commit, and push the VS001-10G checkpoint.**
+## Implemented
+
+Identity now owns explicit, separate domain representations for:
+
+* stable `CadencePerson` identity;
+* replaceable provider-neutral `AuthenticationIdentity`;
+* authentication identity validity and active/disabled status; and
+* time-varying `INTERNAL`/`EXTERNAL` organisational affiliation.
+
+The new Project Membership module owns domain representations for:
+
+* `ProjectMembership` as an authorised stable Person-to-Project relationship;
+* membership status, grantor, duration, and optional termination reason;
+* `ProjectRoleAssignment` separately from membership;
+* the exact frozen six-role vocabulary;
+* protected responsibility role classification;
+* Observer/Auditor read-only classification; and
+* deterministic membership-effectiveness evaluation.
+
+Membership intervals use `[effectiveFrom, effectiveTo)`: the start is
+inclusive, the end is exclusive, and null end means open-ended. The caller
+supplies the evaluation timestamp; domain logic does not depend on `Date.now()`.
+Invalid timestamps and non-positive ranges are rejected explicitly. An ended
+membership retains its historical effective interval.
+
+## Architectural Boundaries
+
+The following distinctions are mandatory:
+
+```text
+Cadence Person
+!= Authentication Identity
+!= Organisational Affiliation
+!= Project Membership
+!= Project Role Assignment
+```
+
+Authentication data carries no membership, role, permission, or project
+authority. Affiliation grants no project access. Project Membership depends on
+stable Person and Project identifiers and does not understand authentication
+providers, email addresses, or login identifiers.
+
+An `EXTERNAL` Person can hold `PROJECT_MANAGER`. Temporary access is membership
+duration and is not a role. `PROJECT_SPONSOR`, `PROJECT_OWNER`, and
+`PROJECT_MANAGER` are protected responsibility roles, but transfer behaviour is
+not part of this checkpoint.
+
+Identity linking/relinking remains an explicit trusted operation. No name,
+email, or username matching/merging logic was introduced. Linking a replacement
+authentication identity cannot itself recreate a membership or role.
+
+## VS-001 Compatibility
+
+The current runtime flow remains unchanged:
+
+```text
+Supabase Auth
+  -> public.users.auth_user_id
+  -> CadenceUser.id
+  -> RequestContext.actorUserId
+  -> existing RBAC repository
+  -> permission codes
+```
+
+`CadenceUser` remains the compatibility projection for `GET /api/v1/me` and
+existing protected operations. The VS-001 `public.project_memberships` table,
+RBAC service, routes, server composition, and permission behaviour were not
+redesigned in VS002-01.
+
+## Deliberately Deferred
+
+VS002-01 adds no:
+
+* migration, table, persistence adapter, or repository;
+* member API or membership application flow;
+* Project Authorisation service or permission engine;
+* expiry job, membership event, or Audit integration;
+* role transfer, removal, or responsibility guard;
+* Tasks integration or Members frontend;
+* Entra-specific implementation, invitation delivery, or hierarchy; or
+* temporary leadership delegation.
+
+All persistence work remains VS002-02. All later checkpoints remain incomplete.
 
 ---
 
