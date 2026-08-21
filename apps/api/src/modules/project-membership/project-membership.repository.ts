@@ -24,6 +24,11 @@ export interface ProjectMembershipRepository {
     membershipId: string
   ): Promise<ProjectMembership | null>;
 
+  listMembershipsForPersonInProject(
+    personId: string,
+    projectId: string
+  ): Promise<ProjectMembership[]>;
+
   createRoleAssignment(
     assignment: ProjectRoleAssignment
   ): Promise<ProjectRoleAssignment>;

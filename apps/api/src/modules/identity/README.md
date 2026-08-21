@@ -88,12 +88,14 @@ VS-001 continues to use `CadenceUser`:
 ```text
 Supabase Auth subject
   -> public.users.auth_user_id
-  -> CadenceUser.id
-  -> RequestContext.actorUserId
+  -> CadenceUser.id + CadenceUser.personId
+  -> RequestContext.actorUserId + RequestContext.actorPersonId
 ```
 
 `GET /api/v1/me`, authentication failure behaviour, actor IDs, historical user
-FKs, and current project authorization remain unchanged.
+FKs, and current VS-001 authorization remain compatible. VS002-03 uses
+`actorPersonId` for new Project Authorisation decisions and retains
+`actorUserId` only for the explicit legacy RBAC fallback.
 
 The migration adds this deterministic bridge:
 
@@ -143,5 +145,6 @@ Identity must not:
 
 ## Deliberately Deferred
 
-VS002-02 does not add identity relinking APIs, automatic matching, Entra/B2B
-integration, invitation delivery, member routes, or project authorisation.
+VS002-03 does not add identity relinking APIs, automatic matching, Entra/B2B
+integration, invitation delivery, or member routes. Adding a replacement
+authentication identity still cannot create or restore project membership.

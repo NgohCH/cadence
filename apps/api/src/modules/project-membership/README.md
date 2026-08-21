@@ -1,6 +1,45 @@
 # Project Membership Module
 
-## VS002-02 Ownership
+## VS002-03 Project Authorisation
+
+Project Membership now publishes the single project-authorisation decision
+boundary:
+
+```text
+canAccessProject(context, projectId)
+hasProjectPermission(context, projectId, permission)
+getEffectiveProjectRoles(personId, projectId)
+```
+
+`ProjectAuthorisationService` evaluates the authenticated stable Person's
+current `ACTIVE` membership, the membership's half-open effective period, and
+effective frozen role assignments. It returns permission-code decisions;
+consuming modules must not reproduce frozen-role logic.
+
+All six frozen roles can read ordinary authorised project information.
+`PROJECT_OBSERVER` has read permissions only. `PROJECT_AUDITOR` has ordinary
+read permissions plus `audit.view`; neither receives create, update, delete,
+member-management, or other mutation permissions. Owner, Manager, Member, and
+Sponsor follow the frozen baseline in `project-permissions.ts`. Sponsor and
+Owner receive protected-transfer permission codes; Manager does not.
+Specialised `audit.view` requires effective Auditor authority rather than
+being implied by another frozen role.
+
+Authentication provider, login identifier, email, affiliation, department,
+and platform-administrator status do not participate in the decision. A new
+authentication identity linked to the same Person can use that Person's
+current authority; linking the identity creates no membership and restores no
+ended membership.
+
+Existing VS-001 role codes remain available through an explicit legacy RBAC
+fallback. This is necessary because several legacy roles have no truthful
+one-to-one frozen-role mapping. No data mapping is invented.
+
+Project-facing modules continue to call the existing RBAC service until the
+controlled VS002-09 integration. VS002-03 adds no member route, transfer,
+expiry process, event, RLS browser grant, or frontend control.
+
+## VS002-02 Persistence Ownership
 
 Project Membership owns the authorised stable Person-to-Project relationship
 and project-role assignment history. VS002-02 adds durable persistence for the
@@ -36,8 +75,8 @@ There is no `TEMPORARY_PROJECT_MEMBER`. Duration describes how long
 participation is authorised; role describes responsibility or authority.
 
 Sponsor, Owner, and Manager remain protected responsibility roles, but
-VS002-02 implements no transfer logic. Observer and Auditor remain read-only
-concepts; backend permission enforcement begins in VS002-03.
+VS002-03 implements no transfer logic. Observer and Auditor are enforced as
+read-only by the VS002-03 Project Authorisation service.
 
 ## Membership Effectiveness
 
@@ -138,18 +177,18 @@ recreated under the same name so authenticated direct reads can see only rows
 with the complete VS-001 compatibility shape (`user_id` and `role_id` both
 non-null) after the existing project-membership check passes. Person-only
 VS-002 rows therefore remain server-side. Service-role repository access is
-unchanged. VS002-03 remains responsible for the eventual Project Authorisation
-model; no browser mutation grant or membership route is added here.
+unchanged. Authoritative VS002-03 decisions are server-side; no browser
+mutation grant or membership route is added here.
 
 ## Deliberately Deferred
 
-VS002-03 and later checkpoints own:
+Later checkpoints own:
 
-- Project Authorisation and permission decisions;
 - member query/add/update/remove flows;
 - duplicate-membership application behaviour;
 - protected-role transfer and responsibility guards;
 - expiry workers and events;
 - membership Audit projection;
-- Tasks integration; and
-- Members frontend integration.
+- Tasks integration;
+- Members frontend integration; and
+- cross-module adoption of the Project Authorisation service.

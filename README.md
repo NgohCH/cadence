@@ -33,6 +33,9 @@ Cadence_v0.1_Supabase_Migrations/
 - VS002-02 adds stable Person, replaceable authentication identity,
   time-varying affiliation, temporal membership, and separate project-role
   assignment persistence while retaining the VS-001 user/RBAC bridge.
+- VS002-03 adds the stable Person-based Project Authorisation service,
+  effective frozen-role permission evaluation, read-only Observer/Auditor
+  enforcement, and an explicit VS-001 RBAC compatibility fallback.
 
 ## Supabase Auth and local pilot accounts
 

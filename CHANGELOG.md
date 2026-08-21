@@ -5,6 +5,55 @@ All notable changes to Cadence will be documented in this file.
 Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
+### VS002-03 - Project Authorisation Service
+
+#### Added
+
+- Added the single `ProjectAuthorisationService` boundary with
+  `canAccessProject(...)`, `hasProjectPermission(...)`,
+  `getEffectiveProjectRoles(...)`, and an effective-authorisation read model.
+- Added the frozen VS-002 role-to-permission baseline, including backend
+  read-only enforcement for Project Observer and Project Auditor.
+- Added stable Person/project membership lookup to the Project Membership
+  repository and Supabase adapter.
+- Added stable `personId` to the authenticated `CadenceUser` projection and
+  `actorPersonId` to `RequestContext` without replacing the existing
+  `actorUserId` compatibility identifier.
+- Added focused service and repository tests for authorised and unauthorised
+  access, read-only permissions, project isolation, membership/role periods,
+  multiple effective roles, replacement login identity, and VS-001 fallback.
+
+#### Architecture
+
+- New VS-002 decisions use stable Person membership plus effective frozen
+  role assignments. Email, provider identity, affiliation, and department do
+  not participate in project authority.
+- Membership and role periods use the existing half-open interval semantics;
+  inactive, future, expired, ended, or role-less membership does not grant
+  current access.
+- Permission codes remain the authorisation primitive exposed to consuming
+  modules. Frozen role interpretation is encapsulated behind the Project
+  Authorisation service rather than repeated by business modules.
+- Existing VS-001 memberships retain an explicit legacy RBAC fallback because
+  `PROJECT_LEAD`, `CONTRIBUTOR`, `REVIEWER`, and `VIEWER` were deliberately not
+  assigned invented frozen-role meanings.
+- No project-facing module has been rewired yet; that controlled migration is
+  still VS002-09. No member route or browser database grant was added.
+
+#### Verified
+
+- API TypeScript typecheck passed.
+- API TypeScript build passed.
+- Full API test suite passed: 104 tests, 0 failures.
+- Added 11 focused VS002-03 tests covering the required authorisation matrix
+  and persistence query scoping.
+
+#### Deferred
+
+- Member list/add flows remain VS002-04.
+- Role assignment/transfer, removal/expiry, Audit events, frontend work, and
+  cross-module authorisation integration remain VS002-05 through VS002-09.
+
 ### VS002-02 - Membership Persistence and Database Migration
 
 #### Added

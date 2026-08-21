@@ -113,6 +113,9 @@ RequestContext {
     actorUserId:
       userId,
 
+    actorPersonId:
+      userId,
+
     projectId,
 
     correlationId,

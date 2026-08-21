@@ -71,6 +71,8 @@ const roleId =
 const context:
   RequestContext = {
     actorUserId,
+    actorPersonId:
+      actorUserId,
 
     projectId,
 

@@ -374,6 +374,9 @@ RequestContext {
     actorUserId:
       reviewerUserId,
 
+    actorPersonId:
+      reviewerUserId,
+
     projectId,
 
     correlationId:

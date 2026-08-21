@@ -1,6 +1,6 @@
 # RBAC Module
 
-## VS002-02 Compatibility Note
+## VS002-03 Compatibility Note
 
 VS002-02 persists provider-neutral Person, Project Membership, and project-role
 history under the Identity and Project Membership modules. It does not replace
@@ -11,19 +11,26 @@ The current RBAC repository continues to resolve the existing
 `public.project_memberships` shape (`user_id`, one `role_id`, and active status)
 for VS-001 behaviour. The migration retains those columns and values as an
 explicit compatibility bridge. Frozen role assignments are stored separately
-in `public.project_role_assignments`, but RBAC does not consume them until the
-single frozen Project Authorisation service is implemented in VS002-03.
+in `public.project_role_assignments` and are interpreted only through the
+VS002-03 `ProjectAuthorisationService`.
 
 New VS-002 membership inserts leave legacy `user_id` and `role_id` null, so
-persistence alone cannot silently grant access through current RBAC. Existing
-VS-001 rows retain both values and therefore retain current access.
+persistence alone cannot silently grant access through current RBAC. Effective
+VS-002 access requires a frozen role assignment and a Project Authorisation
+decision. Existing VS-001 rows retain both compatibility values and current
+access through the Project Authorisation service's explicit RBAC fallback.
 
 The migration also replaces the existing authenticated
 `memberships_select_project_member` RLS policy under the same name. During the
 compatibility period it requires non-null `user_id` and `role_id` in addition
 to the existing `is_project_member(project_id)` check. This preserves direct
-reads of VS-001-compatible rows but excludes new Person-only rows. It is a
-temporary defensive restriction, not the VS002-03 Project Authorisation model.
+reads of VS-001-compatible rows but excludes new Person-only rows. This remains
+a temporary browser-read restriction. Authoritative VS002-03 decisions are
+server-side and do not depend on browser RLS interpretation.
+
+Project-facing modules are deliberately not rewired in VS002-03. They continue
+using this RBAC service until VS002-09 moves them to the single Project
+Authorisation boundary and verifies VS-001 regression behaviour.
 
 New VS-002 domain code must not treat the authentication provider, login
 identifier, or `INTERNAL`/`EXTERNAL` affiliation as project authority. Existing
@@ -32,19 +39,21 @@ checkpoint deliberately changes that path.
 
 ## Ownership
 
-The RBAC module owns Cadence authorization decisions.
+The RBAC module owns the VS-001 role/permission persistence interpretation and
+compatibility service. The Project Membership module owns the VS-002 stable
+Person membership, frozen role history, and the single Project Authorisation
+decision boundary.
 
-This includes:
+During the compatibility period, RBAC continues to resolve:
 
-- project roles,
-- permissions,
-- role-to-permission relationships,
-- project membership authorization,
-- permission checks for protected operations.
+- legacy project roles;
+- legacy role-to-permission relationships;
+- active VS-001 compatibility memberships; and
+- permission checks required by existing protected operations.
 
-The RBAC module answers:
+New consumers should depend on `ProjectAuthorisationService`, which answers:
 
-> Is this authenticated Cadence user allowed to perform this operation in this project?
+> Is this authenticated Cadence Person allowed to perform this operation in this project?
 
 ---
 

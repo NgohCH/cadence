@@ -8,6 +8,7 @@ export function createRequestContext(
 ): RequestContext {
   return {
     actorUserId: user.id,
+    actorPersonId: user.personId,
     correlationId,
     requestId,
     source: "web",

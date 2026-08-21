@@ -17,6 +17,7 @@ export class SupabaseIdentityRepository
       .from("users")
       .select(`
         id,
+        person_id,
         display_name,
         email,
         status,
@@ -35,6 +36,7 @@ export class SupabaseIdentityRepository
 
     return {
       id: data.id,
+      personId: data.person_id,
       displayName: data.display_name,
       email: data.email,
       status: data.status,

@@ -72,6 +72,7 @@ export interface AuthenticationIdentity {
  */
 export interface CadenceUser {
   id: string;
+  personId: string;
   displayName: string;
   email: string;
   status: "active" | "disabled";

@@ -1,5 +1,6 @@
 export interface RequestContext {
   actorUserId: string;
+  actorPersonId: string;
   projectId?: string;
 
   correlationId: string;

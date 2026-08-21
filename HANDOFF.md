@@ -22,24 +22,119 @@ Vertical Slice:
 
 Status:
 
-**VS002-02 implemented in the working tree; pending human review and
+**VS002-03 implemented in the working tree; pending human review and
 source-control checkpoint.**
 
 Current checkpoint:
 
-**VS002-02 Membership Persistence and Database Migration is implemented without
-runtime authorization or member-management behaviour. Review and apply/verify
-the migration through the human-controlled Supabase workflow, then create the
-source-control checkpoint. Do not begin VS002-03 until VS002-02 is accepted.**
+**VS002-03 Project Authorisation Service is implemented with stable-Person
+membership and effective frozen-role decisions plus an explicit VS-001 RBAC
+fallback. Review the code and test evidence, then create the source-control
+checkpoint. Do not begin VS002-04 until VS002-03 is accepted.**
 
-Latest VS002-02 validation:
+Latest VS002-03 validation:
 
 ```text
 API typecheck = passed
 API build = passed
-API test suite = 93 passed, 0 failed
-VS002-02 focused tests added = 13
+API test suite = 104 passed, 0 failed
+VS002-03 focused tests added = 11
 ```
+
+---
+
+# VS002-03 Project Authorisation Service
+
+## Implemented
+
+Project Membership now publishes the single server-side authorisation boundary:
+
+```text
+ProjectAuthorisationService.canAccessProject(...)
+ProjectAuthorisationService.hasProjectPermission(...)
+ProjectAuthorisationService.getEffectiveProjectRoles(...)
+ProjectAuthorisationService.getEffectiveProjectAuthorisation(...)
+```
+
+The service evaluates the authenticated stable Person, requested Project,
+current `ACTIVE` membership, membership `[effectiveFrom, effectiveTo)` period,
+and effective frozen role assignments. A membership without an effective role
+does not grant access. Future, expired, ended, wrong-Person, and wrong-Project
+records do not grant current authority.
+
+The permission baseline is encapsulated in
+`project-membership/project-permissions.ts`. All frozen roles receive ordinary
+authorised reads. Observer is read-only. Auditor is read-only with additional
+`audit.view`. Owner, Manager, and Member receive the frozen operational
+baseline. Sponsor receives ordinary reads plus the protected-transfer
+permission baseline. Sponsor and Owner may authorise protected transfers;
+Manager may not. Specialised `audit.view` is granted by the Auditor role rather
+than implied by another frozen role. Transfer commands remain VS002-05.
+
+Multiple effective roles combine permission codes without duplicates.
+Consuming modules call permission checks and must not interpret role names.
+This keeps the boundary replaceable by a later policy-backed implementation.
+
+## Stable Person Request Identity
+
+Authentication resolution now selects `public.users.person_id` and carries:
+
+```text
+CadenceUser.id       -> RequestContext.actorUserId
+CadenceUser.personId -> RequestContext.actorPersonId
+```
+
+New VS-002 decisions use `actorPersonId`. `actorUserId` remains available only
+for the compatibility path and existing VS-001 actor attribution. A replacement
+login can map to the same Person without changing project membership identity.
+Linking a login still cannot create or restore membership.
+
+## VS-001 Compatibility
+
+Existing role history was deliberately not rewritten in VS002-02 because
+`PROJECT_LEAD`, `CONTRIBUTOR`, `REVIEWER`, and `VIEWER` have no exact frozen
+equivalents. `ProjectAuthorisationService` therefore uses the existing
+`RbacService.hasPermission(...)` as an explicit fallback for existing
+compatibility memberships. It does not fabricate frozen roles.
+
+Project-facing modules still use their existing RBAC dependencies. Rewiring
+Discussion, Tasks, Audit, Projects, and Team Agent is deliberately VS002-09,
+where their response semantics and VS-001 regression can be verified together.
+
+## Persistence Query
+
+`ProjectMembershipRepository` now publishes:
+
+```text
+listMembershipsForPersonInProject(personId, projectId)
+```
+
+The Supabase adapter applies both stable Person and Project filters and returns
+historical rows in effective-start order. The service applies the current
+lifecycle/period/role decision. No browser grant or direct client query was
+introduced.
+
+## Verification
+
+Validation completed in the implementation workspace:
+
+```text
+API typecheck = passed
+API build = passed
+API test suite = 104 passed, 0 failed
+```
+
+Eleven focused tests cover the stable Person/project query, authorised access,
+unauthorised access, Observer and Auditor read-only enforcement, project
+isolation, future/expired/ended membership, exclusive role end boundaries,
+multiple effective roles, and the explicit VS-001 fallback.
+
+## Deliberately Deferred
+
+VS002-03 adds no member list/add route, duplicate-membership command handling,
+role assignment/transfer workflow, removal/expiry processing, responsibility
+guard, domain event, Audit projection, Members frontend, or cross-module
+integration. Those remain VS002-04 through VS002-09.
 
 ---
 
