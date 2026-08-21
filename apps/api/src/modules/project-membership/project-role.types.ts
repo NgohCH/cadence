@@ -56,8 +56,8 @@ export function isReadOnlyProjectRole(
 
 /**
  * A role assignment is separate from the membership that authorises a
- * Person's relationship with a Project. Persistence and transfer behaviour
- * are deliberately deferred beyond VS002-01.
+ * Person's relationship with a Project. VS002-02 persists this history;
+ * transfer behaviour remains deliberately deferred to VS002-05.
  */
 export interface ProjectRoleAssignment {
   id: string;

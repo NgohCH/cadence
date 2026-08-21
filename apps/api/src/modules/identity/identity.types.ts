@@ -67,8 +67,8 @@ export interface AuthenticationIdentity {
  * repository and exposed by GET /api/v1/me.
  *
  * Its id remains the authoritative actorUserId for the existing request
- * path. VS002-02 will establish persistence mappings to the stable Person
- * model without changing this checkpoint's working authentication flow.
+ * path. VS002-02 establishes an explicit persistence bridge to the stable
+ * Person model without changing that working authentication flow.
  */
 export interface CadenceUser {
   id: string;

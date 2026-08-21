@@ -22,24 +22,170 @@ Vertical Slice:
 
 Status:
 
-**VS002-01 implemented in the working tree; pending human review and
+**VS002-02 implemented in the working tree; pending human review and
 source-control checkpoint.**
 
 Current checkpoint:
 
-**VS002-01 Identity and Membership Domain Foundations are implemented without
-persistence or runtime authorization changes. Review the working tree, then
-create the human-controlled source-control checkpoint. Do not begin VS002-02
-until VS002-01 is accepted.**
+**VS002-02 Membership Persistence and Database Migration is implemented without
+runtime authorization or member-management behaviour. Review and apply/verify
+the migration through the human-controlled Supabase workflow, then create the
+source-control checkpoint. Do not begin VS002-03 until VS002-02 is accepted.**
 
-Latest VS002-01 validation:
+Latest VS002-02 validation:
 
 ```text
 API typecheck = passed
 API build = passed
-API test suite = 80 passed, 0 failed
-VS002-01 focused tests added = 17
+API test suite = 93 passed, 0 failed
+VS002-02 focused tests added = 13
 ```
+
+---
+
+# VS002-02 Membership Persistence and Database Migration
+
+## Implemented
+
+Forward-only migration:
+
+```text
+supabase/migrations/20260820000100_vs002_membership_persistence.sql
+```
+
+Identity persistence now includes:
+
+```text
+public.persons
+public.authentication_identities
+public.organisational_affiliations
+```
+
+Project Membership persistence now includes the evolved existing table plus
+separate history:
+
+```text
+public.project_memberships
+public.project_role_assignments
+```
+
+Identity and Project Membership each publish explicit foundational repository
+contracts with Supabase adapters. They provide create/read persistence only;
+no HTTP route, member-management service, Project Authorisation decision,
+transfer command, expiry worker, or event projection is included.
+
+## Stable Identity and Backfill
+
+The safe deterministic VS-001 bridge is:
+
+```text
+public.users.id
+  = initial public.persons.id
+
+public.users.person_id
+  -> public.persons.id
+```
+
+This preserves every current `CadenceUser.id`, `actorUserId`, and historical
+user FK. The migration does not compare names, usernames, or email addresses.
+
+Existing authentication identities are created only for rows with an explicit
+`auth_user_id`. The existing `identity_provider` and exact `auth_user_id`
+become provider/subject data; email is copied only as mutable login data.
+`users.created_at` supplies the Cadence mapping start. Disabled users become
+disabled authentication identities without changing Person identity and keep
+null `valid_to` because there is no dedicated disable timestamp. No affiliation
+is inferred because VS-001 has no safe source.
+
+## Membership Compatibility Bridge
+
+`public.project_memberships` is evolved in place. Existing columns remain:
+
+```text
+user_id
+role_id
+status = active | inactive
+joined_at
+created_by
+updated_at
+```
+
+They continue to serve the existing RBAC repository, RLS helpers, task guards,
+and other VS-001 database functions. New fields provide stable `person_id`,
+half-open effective dates, generated frozen lifecycle status, stable grantor,
+creation time, and termination reason.
+
+Existing memberships map to Person through the exact user FK. `joined_at`
+supplies the historical start/creation timestamp. Existing inactive rows have
+no end column, so their recorded `updated_at` supplies the end boundary, with a
+one-microsecond floor only when needed for a positive interval.
+
+Historical `created_by` is nullable in VS-001. The migration maps it only
+through its exact user-to-Person relationship; when it is null,
+`granted_by_person_id` remains null. Persisted `ProjectMembership` therefore
+represents `grantedBy: string | null`, while `CreateProjectMembershipInput`
+requires a real stable Person grantor. A database constraint permits unknown
+provenance only on legacy-shaped rows and prevents grantor-less Person-only
+membership creation.
+
+The old all-history `(project_id, user_id)` uniqueness constraint becomes a
+partial unique index for active compatibility rows. This preserves the
+existing `maybeSingle()` RBAC assumption while permitting historical ended
+membership records.
+
+## Role History Compatibility
+
+Frozen roles are persisted separately in `public.project_role_assignments`
+with role period, assigning Person, reason, creation time, and a composite FK
+that guarantees membership/project consistency.
+
+The legacy roles `PROJECT_LEAD`, `CONTRIBUTOR`, `REVIEWER`, and `VIEWER` do not
+have exact frozen semantic equivalents. VS002-02 therefore does not invent a
+mapping. Existing `role_id` values and permission bundles remain authoritative
+for VS-001. An explicit approved role-data migration remains required before a
+later checkpoint makes frozen role assignments authoritative at runtime.
+
+## Security and Historical Preservation
+
+New tables have RLS enabled. Anonymous and authenticated browser roles receive
+no direct access in VS002-02; the server service role receives explicit
+persistence privileges. The pre-existing authenticated
+`memberships_select_project_member` policy is recreated under the same name
+with `user_id is not null` and `role_id is not null` compatibility predicates.
+Existing VS-001 rows retain their current project-member read path; new
+Person-only rows are not exposed. This is a temporary VS002-02 restriction,
+not the VS002-03 Project Authorisation implementation.
+
+Database constraints enforce provider-subject uniqueness, exact status and
+affiliation vocabularies, positive bounded intervals, frozen project roles,
+FK integrity, membership/project consistency, and paired legacy user/role
+access fields referencing the same Person. Delete-prevention triggers
+preserve Person, identity, affiliation, membership, and role history. No SQL
+trigger implements protected-role transfer, expiry, or future permission
+policy.
+
+## Manual Supabase Action
+
+The migration has not been pushed or applied to the linked remote project.
+After human review:
+
+```text
+npx supabase db push --dry-run
+npx supabase db push
+```
+
+Then run `tests/schema_smoke.sql` and `tests/rls_manual_test.md` against the
+reviewed target. Do not reset or destroy remote data.
+
+There is no destructive down migration. Confirm backup/PITR readiness before
+application. Any schema correction should be a new reviewed forward migration;
+backup restoration is an explicit operational recovery action.
+
+## Deliberately Deferred
+
+All VS002-03+ runtime authorization, member APIs, transfers, removal/expiry,
+Tasks responsibility guards, Audit projection, frontend, invitations, Entra,
+and organisational hierarchy remain incomplete.
 
 ---
 
@@ -127,7 +273,9 @@ VS002-01 adds no:
 * Entra-specific implementation, invitation delivery, or hierarchy; or
 * temporary leadership delegation.
 
-All persistence work remains VS002-02. All later checkpoints remain incomplete.
+That checkpoint intentionally contained no persistence. VS002-02 now provides
+the reviewed-next persistence implementation described above; VS002-03 and all
+later checkpoints remain incomplete.
 
 ---
 

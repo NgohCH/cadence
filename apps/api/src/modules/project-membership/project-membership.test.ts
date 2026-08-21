@@ -12,6 +12,7 @@ import {
 
 import type {
   CreateProjectMembershipInput,
+  ProjectMembership,
 } from "./project-membership.types";
 
 import {
@@ -387,6 +388,48 @@ test(
     assert.equal(
       "providerSubjectId" in membership,
       false
+    );
+  }
+);
+
+
+test(
+  "persisted historical membership can represent unavailable grantor provenance",
+  () => {
+    const historicalMembership = {
+      ...createInput(),
+      grantedBy: null,
+    } satisfies ProjectMembership;
+
+    assert.equal(
+      historicalMembership.grantedBy,
+      null
+    );
+  }
+);
+
+
+test(
+  "new membership creation requires a stable Person grantor",
+  () => {
+    assert.throws(
+      () =>
+        createProjectMembership(
+          createInput({
+            grantedBy: "   ",
+          })
+        ),
+      ProjectMembershipValidationError
+    );
+
+    assert.throws(
+      () =>
+        createProjectMembership({
+          ...createInput(),
+          // @ts-expect-error New membership creation cannot use null provenance.
+          grantedBy: null,
+        }),
+      ProjectMembershipValidationError
     );
   }
 );

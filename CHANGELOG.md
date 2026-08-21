@@ -5,6 +5,114 @@ All notable changes to Cadence will be documented in this file.
 Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
+### VS002-02 - Membership Persistence and Database Migration
+
+#### Added
+
+- Added forward-only migration
+  `20260820000100_vs002_membership_persistence.sql`.
+- Added `public.persons`, `public.authentication_identities`,
+  `public.organisational_affiliations`, and
+  `public.project_role_assignments`.
+- Added the deterministic `public.users.person_id` compatibility bridge.
+- Evolved `public.project_memberships` with stable Person, temporal lifecycle,
+  grantor, creation, and termination persistence while retaining VS-001
+  compatibility columns.
+- Added Identity-owned Person/authentication/affiliation persistence contracts
+  and a Supabase adapter.
+- Added Project Membership-owned membership/role-history persistence contracts
+  and a Supabase adapter.
+- Added repository-mapping, separation, compatibility, and migration-structure
+  tests.
+- Extended the schema smoke test and manual RLS checklist for VS002-02.
+
+#### Architecture
+
+- Existing `public.users.id` values deterministically become the initial stable
+  Person IDs; no name, username, or email matching is used.
+- `public.users`, `CadenceUser`, `actorUserId`, historical user foreign keys,
+  and the current authentication resolution path remain unchanged.
+- Existing `public.project_memberships` remains the single membership table.
+  Its `user_id`, `role_id`, lowercase status, and `joined_at` columns remain the
+  VS-001 RBAC compatibility path.
+- New membership identity is anchored by `person_id`; role history is stored
+  separately in `public.project_role_assignments`.
+- Existing non-frozen VS-001 roles are not automatically mapped to frozen
+  roles because several codes have no exact semantic equivalent. Current role
+  IDs and permissions remain authoritative for VS-001.
+- New persistence adapters are not wired to routes or Project Authorisation.
+  A new VS-002 membership does not silently grant current VS-001 access.
+- Persisted memberships represent unavailable historical VS-001 grantor
+  provenance as null, while the explicit creation input requires a stable
+  Person grantor for every new VS-002 membership.
+- Identity owns Person, Authentication Identity, and affiliation persistence.
+  Project Membership owns membership and role-assignment persistence.
+
+#### Database
+
+- Enforced stable Person/Project FKs, provider-subject uniqueness, positive
+  temporal intervals, `ACTIVE`/`DISABLED` authentication status,
+  `INTERNAL`/`EXTERNAL` affiliation, `ACTIVE`/`ENDED` membership projection,
+  and the exact frozen six-role vocabulary.
+- Enforced role-assignment project/membership consistency with a composite FK.
+- Enforced that a legacy compatibility user maps to the membership Person and
+  is paired with a legacy role, preventing malformed compatibility access rows.
+- Enforced that Person-only membership rows require
+  `granted_by_person_id`; legacy compatibility rows remain valid when their
+  original nullable `created_by` did not preserve grantor provenance.
+- Added lookup indexes for identity validity, affiliation history, membership
+  project/Person periods, and role-assignment history.
+- Replaced the VS-001 all-history membership uniqueness constraint with an
+  active compatibility-user partial unique index, preserving current RBAC
+  `maybeSingle()` assumptions while permitting ended history.
+- Added hard-delete prevention for stable Person, authentication identity,
+  affiliation, membership, and role-assignment history.
+- Enabled RLS on new tables, revoked anonymous/authenticated browser access,
+  and explicitly granted server-side service-role persistence access.
+- Recreated `memberships_select_project_member` under its existing name so
+  authenticated direct reads retain the VS-001 path only for rows with both
+  legacy `user_id` and `role_id`; Person-only rows remain server-side until
+  VS002-03 defines Project Authorisation.
+- Added no transfer, expiry, permission, or future business-policy trigger.
+
+#### Backfill
+
+- Backfilled one Person per existing user using the exact existing user UUID.
+- Backfilled authentication identities only where an explicit
+  `auth_user_id` provider subject exists; email is copied only as mutable login
+  data, `users.created_at` supplies mapping start, and disabled rows retain null
+  end time because VS-001 has no dedicated disable timestamp.
+- Backfilled membership `person_id` through the exact user FK, creation time
+  from `joined_at`, and grantor through the exact `created_by` FK when present.
+- Preserved `granted_by_person_id = NULL` when historical VS-001 `created_by`
+  is null; no member, administrator, system Person, or arbitrary identity is
+  substituted.
+- Used legacy `updated_at` as the only available end boundary for existing
+  inactive memberships, adding one microsecond only when necessary to retain a
+  positive interval.
+- Did not infer affiliation or frozen project roles from names, email,
+  organisation, or approximate legacy-role meaning.
+
+#### Verified
+
+- API TypeScript typecheck passed.
+- Full API test suite passed: 93 tests, 0 failures.
+- Added 13 VS002-02 tests covering migration structure, deterministic identity
+  bridging, server-only identity data, multiple authentication identities per
+  Person, affiliation/role separation, external Project Manager persistence,
+  open-ended/time-bounded membership, independent role periods, nullable
+  historical provenance, required new grantors, database enforcement, and
+  restricted authenticated compatibility reads.
+
+#### Deferred
+
+- Remote Supabase migration application and live schema/RLS smoke verification
+  require explicit human action after review.
+- Legacy role-to-frozen-role data mapping requires an explicit approved data
+  decision; VS002-02 does not guess it.
+- VS002-03 and later authorisation, member APIs, transfers, expiry, Audit,
+  Tasks guards, frontend, invitation, and Entra work remain incomplete.
+
 ### VS002-01 - Identity and Membership Domain Foundations
 
 #### Added
@@ -67,7 +175,8 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 - No migration, table, repository, route, permission engine, membership flow,
   worker, event, role transfer, responsibility guard, audit integration,
   frontend, Entra integration, or invitation delivery was added.
-- VS002-02 and all later checkpoints remain incomplete.
+- At the VS002-01 checkpoint, VS002-02 and all later checkpoints remained
+  incomplete.
 
 ### VS001-10H - Final Read-Side UI
 

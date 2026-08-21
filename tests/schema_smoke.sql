@@ -4,8 +4,10 @@
 do $$
 declare
   required_tables text[] := array[
-    'users','roles','permissions','role_permissions','platform_role_assignments',
-    'projects','project_memberships','messages','message_versions','message_mentions','message_reactions',
+    'users','persons','authentication_identities','organisational_affiliations',
+    'roles','permissions','role_permissions','platform_role_assignments',
+    'projects','project_memberships','project_role_assignments',
+    'messages','message_versions','message_mentions','message_reactions',
     'topics','decisions','decision_supersedes','tasks','blockers','milestones','files','file_links',
     'entity_links','source_links','ai_prompt_versions','ai_runs','ai_proposals','alerts','notifications',
     'idempotency_keys','domain_events','audit_events','project_health','project_health_history'
@@ -14,6 +16,8 @@ declare
   missing_count integer;
   role_count integer;
   permission_count integer;
+  unmapped_user_count integer;
+  unmapped_membership_count integer;
 begin
   foreach t in array required_tables loop
     if to_regclass('public.' || t) is null then
@@ -36,6 +40,35 @@ begin
   where r.code = 'SYSTEM_ADMIN' and r.scope <> 'platform';
   if missing_count <> 0 then
     raise exception 'SYSTEM_ADMIN must remain platform-scoped';
+  end if;
+
+  select count(*) into unmapped_user_count
+  from public.users u
+  left join public.persons p
+    on p.id = u.person_id
+  where p.id is null
+     or u.person_id <> u.id;
+
+  if unmapped_user_count <> 0 then
+    raise exception
+      'Expected deterministic VS-001 user-to-Person mappings, found % invalid rows',
+      unmapped_user_count;
+  end if;
+
+  select count(*) into unmapped_membership_count
+  from public.project_memberships pm
+  left join public.users u
+    on u.id = pm.user_id
+  where pm.person_id is null
+     or (
+       pm.user_id is not null
+       and pm.person_id <> u.person_id
+     );
+
+  if unmapped_membership_count <> 0 then
+    raise exception
+      'Expected stable Person mappings for VS-001 memberships, found % invalid rows',
+      unmapped_membership_count;
   end if;
 
   raise notice 'Cadence schema smoke test passed.';

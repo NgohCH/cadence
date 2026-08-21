@@ -1,15 +1,29 @@
 # RBAC Module
 
-## VS002-01 Compatibility Note
+## VS002-02 Compatibility Note
 
-VS002-01 introduces provider-neutral Person, Project Membership, and project
-role domain foundations under the Identity and Project Membership modules. It
-does not replace the working VS-001 authorization implementation.
+VS002-02 persists provider-neutral Person, Project Membership, and project-role
+history under the Identity and Project Membership modules. It does not replace
+the working VS-001 authorization implementation or make RBAC the owner of the
+new persistence.
 
 The current RBAC repository continues to resolve the existing
 `public.project_memberships` shape (`user_id`, one `role_id`, and active status)
-for VS-001 behaviour. Persistence migration is deferred to VS002-02, and the
-single frozen Project Authorisation service is deferred to VS002-03.
+for VS-001 behaviour. The migration retains those columns and values as an
+explicit compatibility bridge. Frozen role assignments are stored separately
+in `public.project_role_assignments`, but RBAC does not consume them until the
+single frozen Project Authorisation service is implemented in VS002-03.
+
+New VS-002 membership inserts leave legacy `user_id` and `role_id` null, so
+persistence alone cannot silently grant access through current RBAC. Existing
+VS-001 rows retain both values and therefore retain current access.
+
+The migration also replaces the existing authenticated
+`memberships_select_project_member` RLS policy under the same name. During the
+compatibility period it requires non-null `user_id` and `role_id` in addition
+to the existing `is_project_member(project_id)` check. This preserves direct
+reads of VS-001-compatible rows but excludes new Person-only rows. It is a
+temporary defensive restriction, not the VS002-03 Project Authorisation model.
 
 New VS-002 domain code must not treat the authentication provider, login
 identifier, or `INTERNAL`/`EXTERNAL` affiliation as project authority. Existing

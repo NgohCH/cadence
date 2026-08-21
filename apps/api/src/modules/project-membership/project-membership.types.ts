@@ -20,11 +20,17 @@ export interface ProjectMembership {
   effectiveFrom: string;
   effectiveTo: string | null;
   status: ProjectMembershipStatus;
-  grantedBy: string;
+  /**
+   * Null only when VS-001 did not preserve the historical grantor.
+   * New VS-002 memberships always require a stable Person grantor.
+   */
+  grantedBy: string | null;
   createdAt: string;
   terminationReason: string | null;
 }
 
 
 export type CreateProjectMembershipInput =
-  ProjectMembership;
+  Omit<ProjectMembership, "grantedBy"> & {
+    grantedBy: string;
+  };

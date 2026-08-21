@@ -19,6 +19,15 @@ import type {
 export function createProjectMembership(
   input: CreateProjectMembershipInput
 ): ProjectMembership {
+  if (
+    typeof input.grantedBy !== "string" ||
+    input.grantedBy.trim().length === 0
+  ) {
+    throw new ProjectMembershipValidationError(
+      "A new project membership requires a stable Person grantor."
+    );
+  }
+
   assertMembershipStatus(
     input.status
   );
