@@ -25,6 +25,18 @@ import {
 } from "./infrastructure/database/supabase-identity.repository";
 
 import {
+  SupabaseIdentityPersistenceRepository,
+} from "./infrastructure/database/supabase-identity-persistence.repository";
+
+import {
+  SupabaseProjectMembershipRepository,
+} from "./infrastructure/database/supabase-project-membership.repository";
+
+import {
+  SupabaseProjectMemberAdmissionRepository,
+} from "./infrastructure/database/supabase-project-member-admission.repository";
+
+import {
   SupabaseRbacRepository,
 } from "./infrastructure/database/supabase-rbac.repository";
 
@@ -83,6 +95,19 @@ import {
 import {
   RbacService,
 } from "./modules/rbac/rbac.service";
+
+
+import {
+  ProjectAuthorisationService,
+} from "./modules/project-membership/project-authorisation.service";
+
+import {
+  ProjectMembershipService,
+} from "./modules/project-membership/project-membership.service";
+
+import {
+  createProjectMembershipRouter,
+} from "./modules/project-membership/project-membership.routes";
 
 
 import {
@@ -222,6 +247,22 @@ const identityRepository =
     databaseClient
   );
 
+const identityPersistenceRepository =
+  new SupabaseIdentityPersistenceRepository(
+    databaseClient
+  );
+
+
+const projectMembershipRepository =
+  new SupabaseProjectMembershipRepository(
+    databaseClient
+  );
+
+
+const projectMemberAdmissionRepository =
+  new SupabaseProjectMemberAdmissionRepository(
+    databaseClient
+  );
 
 const rbacRepository =
   new SupabaseRbacRepository(
@@ -278,6 +319,22 @@ const identityService =
 const rbacService =
   new RbacService(
     rbacRepository
+  );
+
+
+const projectAuthorisationService =
+  new ProjectAuthorisationService(
+    projectMembershipRepository,
+    rbacService
+  );
+
+
+const projectMembershipService =
+  new ProjectMembershipService(
+    projectAuthorisationService,
+    projectMembershipRepository,
+    projectMemberAdmissionRepository,
+    identityPersistenceRepository
   );
 
 
@@ -406,6 +463,10 @@ app.use(
 
   createProjectsRouter(
     projectsService
+  ),
+
+  createProjectMembershipRouter(
+    projectMembershipService
   ),
 
   createDiscussionRouter(

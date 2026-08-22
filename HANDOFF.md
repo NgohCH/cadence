@@ -6750,7 +6750,116 @@ Task visibility and backend Audit reconstruction are complete for VS-001.
 
 The correlation-model question is resolved.
 
-Remaining VS-001 work is limited to final VS001-10H regression verification, staged security review, source-control checkpoint, and branch synchronization. No functional VS-001 implementation work remains.
+The text above records the completed VS-001 architecture state. VS-001 is complete and current development is proceeding through VS-002.
+
+---
+
+# VS-002 Current Implementation State
+
+VS002-01 through VS002-04 are implemented.
+
+## VS002-04 — Member Query and Add-Member Flow
+
+Current server path:
+
+```text
+authenticated request
+  ->
+RequestContext
+  |
+  +-- actorUserId     VS-001 compatibility
+  +-- actorPersonId   stable VS-002 identity
+  ->
+ProjectMembershipRouter
+  ->
+ProjectMembershipService
+  ->
+ProjectAuthorisationService
+  |
+  +-- frozen VS-002 membership/role authority
+  +-- explicit VS-001 RBAC fallback where required
+  ->
+Project Membership persistence
+```
+
+Member query:
+
+```text
+GET /api/v1/projects/{projectId}/members
+  ->
+member.view
+  ->
+current ACTIVE/effective memberships
+  ->
+stable Person
+  ->
+effective frozen roles
+  ->
+current organisational affiliation
+```
+
+Ordinary member admission:
+
+```text
+POST /api/v1/projects/{projectId}/members
+  ->
+member.invite
+  ->
+existing stable Person
+  ->
+validate half-open membership period
+  ->
+reject overlapping ACTIVE membership
+  ->
+add_project_member()
+     |
+     +-- Person-only ProjectMembership
+     +-- initial PROJECT_MEMBER assignment
+```
+
+`add_project_member()` is `SECURITY DEFINER`, uses a fixed search path, and is
+executable only by `service_role`. It locks the target Person before repeating
+the overlap check, preventing concurrent duplicate admission.
+
+Migration:
+
+```text
+20260821144400_vs002_member_admission.sql
+```
+
+is applied to the remote Supabase database. Local and remote migration history
+are synchronized.
+
+VS002-04 live verification established:
+
+* authenticated member listing;
+* open-ended INTERNAL member admission;
+* bounded EXTERNAL member admission;
+* affiliation-independent project authority;
+* initial `PROJECT_MEMBER` assignment;
+* stable Person grantor and assigner provenance;
+* null legacy `user_id` / `role_id` on new Person-only memberships;
+* duplicate overlap rejection with
+  `PROJECT_MEMBERSHIP_ALREADY_ACTIVE`; and
+* publishable-key denial of direct RPC execution.
+
+The API currently passes 130 automated tests with zero failures, and API
+typecheck/build pass.
+
+A transitional compatibility condition remains intentional: migrated VS-001
+members such as existing `PROJECT_LEAD`, `CONTRIBUTOR`, `REVIEWER`, or
+`VIEWER` memberships may have no frozen VS-002 role-assignment row and can
+therefore appear with an empty frozen-role list in the VS002 member query.
+Their existing permissions remain available through the explicit legacy RBAC
+fallback. Do not invent a frozen-role mapping merely to populate the display.
+
+VS002-04 does not implement member removal, automatic expiry processing,
+general role assignment/change, protected responsibility transfer, membership
+domain events, Audit membership projection, Tasks responsibility guards,
+Members frontend controls, or broad cross-module authorisation migration.
+
+The next implementation checkpoint is VS002-05: Role Assignment and Key-Role
+Transfer.
 
 ---
 
@@ -6802,16 +6911,18 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-complete VS001-10H documentation
+start VS002-05
   ->
-rerun final API and web regression gate
+implement ordinary role assignment
   ->
-perform staged security review
+implement protected Project Manager / Owner / Sponsor transfer rules
   ->
-commit and push VS001-10H
+preserve independent role history
   ->
-VS-001 complete
-
+verify external Project Manager scenario
+  ->
+complete VS002-05 regression and documentation
+```
 Do not bypass established module boundaries merely to complete the vertical slice more quickly.
 
 In particular:

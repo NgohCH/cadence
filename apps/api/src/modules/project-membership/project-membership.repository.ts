@@ -9,11 +9,11 @@ import type {
 
 
 /**
- * Foundational VS002-02 persistence only.
+ * Persistence boundary owned by Project Membership.
  *
- * Membership lifecycle commands, duplicate detection, protected-role
- * transfer, expiry, and authorisation remain application concerns for later
- * checkpoints.
+ * Application services remain responsible for authorisation, lifecycle
+ * decisions, duplicate-membership protection, protected-role transfer,
+ * expiry behaviour, and other business rules.
  */
 export interface ProjectMembershipRepository {
   createMembership(
@@ -23,6 +23,10 @@ export interface ProjectMembershipRepository {
   findMembershipById(
     membershipId: string
   ): Promise<ProjectMembership | null>;
+
+  listMembershipsForProject(
+    projectId: string
+  ): Promise<ProjectMembership[]>;
 
   listMembershipsForPersonInProject(
     personId: string,

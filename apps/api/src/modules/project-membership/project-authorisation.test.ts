@@ -86,6 +86,15 @@ class InMemoryProjectMembershipRepository
   }
 
 
+   async listMembershipsForProject(
+    requestedProjectId: string
+  ): Promise<ProjectMembership[]> {
+    return this.memberships.filter(
+      (membership) =>
+        membership.projectId ===
+          requestedProjectId
+    );
+  }
   async listMembershipsForPersonInProject(
     requestedPersonId: string,
     requestedProjectId: string

@@ -5,6 +5,82 @@ All notable changes to Cadence will be documented in this file.
 Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
+### VS002-04 - Member Query and Add-Member Flow
+
+#### Added
+
+- Added `GET /api/v1/projects/:projectId/members` for current effective member
+  queries through `member.view`.
+- Added `POST /api/v1/projects/:projectId/members` for ordinary
+  `PROJECT_MEMBER` admission through `member.invite`.
+- Added open-ended and time-bounded membership admission using stable Person
+  identity independently from authentication identity and organisational
+  affiliation.
+- Added `ProjectMembershipService`, the atomic
+  `ProjectMemberAdmissionRepository` contract, and the Supabase admission
+  adapter.
+- Added forward migration
+  `20260821144400_vs002_member_admission.sql` with service-role-only
+  `add_project_member(...)`.
+- Added eight HTTP route contract tests plus service, repository, and migration
+  coverage.
+
+#### Architecture
+
+- Project Membership consumes the VS002-03 `ProjectAuthorisationService`
+  rather than interpreting frozen roles or persistence directly in routes.
+- Member listing exposes only current effective ACTIVE memberships.
+- Internal/external affiliation remains informational and does not affect
+  project authorisation.
+- Admission requires an existing stable Person and does not create login or
+  authentication identity records.
+- VS002-04 creates only the initial `PROJECT_MEMBER` assignment. General role
+  management and protected-role transfer remain VS002-05.
+- Membership and initial role assignment persist atomically.
+- New Person-only membership rows retain null VS-001 `user_id` and `role_id`
+  compatibility fields.
+- Historical ENDED membership does not block a returning Person from receiving
+  a new non-overlapping membership period.
+- Existing migrated VS-001 members may have no frozen role assignments;
+  existing access remains available through the explicit VS-001 RBAC fallback
+  until an approved migration decision is made.
+
+#### Database and Security
+
+- Added concurrency-safe duplicate admission protection by locking the target
+  stable Person before rechecking overlapping ACTIVE membership periods.
+- Preserved half-open membership-period semantics for open-ended, bounded, and
+  adjacent periods.
+- Restricted `add_project_member(...)` execution to `service_role`.
+- Verified the publishable/browser key is rejected with PostgreSQL `42501`.
+- Applied migration `20260821144400` to remote Supabase and verified local and
+  remote migration history are synchronized.
+
+#### Verified
+
+- API TypeScript typecheck passed.
+- API TypeScript build passed.
+- Full API suite passed: 130 tests, 0 failures.
+- Live authenticated GET of project members passed.
+- Live open-ended INTERNAL member admission passed.
+- Live bounded EXTERNAL member admission passed.
+- Live duplicate admission returned HTTP 409
+  `PROJECT_MEMBERSHIP_ALREADY_ACTIVE`.
+- Live reads returned the new members with the expected affiliation and
+  `PROJECT_MEMBER` role.
+- Direct persistence verification confirmed Person-only membership shape,
+  stable grantor provenance, and matching initial role assignments.
+
+#### Deferred
+
+- General role assignment/change and protected key-role transfer remain
+  VS002-05.
+- Removal, expiry, responsibility guards and Tasks integration remain
+  VS002-06.
+- Membership/role domain events and Audit consumption remain VS002-07.
+- Members frontend integration remains VS002-08.
+- Broad cross-module Project Authorisation adoption remains VS002-09.
+
 ### VS002-03 - Project Authorisation Service
 
 #### Added

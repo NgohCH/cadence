@@ -140,6 +140,29 @@ export class SupabaseProjectMembershipRepository
   }
 
 
+  async listMembershipsForProject(
+    projectId: string
+    ): Promise<ProjectMembership[]> {
+    const {
+      data,
+      error,
+    } = await this.db
+      .from("project_memberships")
+      .select(membershipColumns)
+      .eq("project_id", projectId)
+      .order("effective_from", {
+        ascending: true,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    return (
+      (data ?? []) as
+        ProjectMembershipRow[]
+    ).map(mapMembership);
+  }
   async listMembershipsForPersonInProject(
     personId: string,
     projectId: string

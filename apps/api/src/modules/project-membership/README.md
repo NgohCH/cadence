@@ -1,5 +1,112 @@
 # Project Membership Module
 
+## VS002-04 — Member Query and Add-Member Flow
+
+VS002-04 adds the first HTTP member-management surface on top of the
+VS002-03 Project Authorisation boundary:
+
+```text
+GET  /api/v1/projects/:projectId/members
+POST /api/v1/projects/:projectId/members
+```
+
+`ProjectMembershipService` owns the application flow. The routes do not
+interpret membership persistence or frozen roles directly.
+
+Member listing requires `member.view`. It returns only memberships that are
+currently `ACTIVE` and effective at the evaluation time, together with the
+stable Person display name, effective frozen project roles, and current
+organisational affiliation when one exists. Affiliation is presentation
+context only and does not participate in project authorisation.
+
+Ordinary admission requires `member.invite`. VS002-04 accepts only the initial
+`PROJECT_MEMBER` role. General role assignment, role changes, Observer/Auditor
+assignment, and protected Sponsor/Owner/Manager transfer remain VS002-05
+responsibilities.
+
+Admission requires an existing stable Cadence Person. The flow does not create
+an authentication identity, login account, or organisational affiliation.
+Internal and external Persons therefore follow the same project-membership
+authorisation rules.
+
+An admission atomically creates:
+
+```text
+ProjectMembership
+  +
+initial PROJECT_MEMBER ProjectRoleAssignment
+```
+
+through the service-role-only `public.add_project_member(...)` RPC introduced
+by migration:
+
+```text
+20260821144400_vs002_member_admission.sql
+```
+
+The new membership is Person-only: legacy `user_id` and `role_id` remain null.
+The stable actor Person is persisted as both membership grantor and initial
+role assigner.
+
+Membership periods remain half-open:
+
+```text
+[effectiveFrom, effectiveTo)
+```
+
+Null `effectiveTo` means open-ended participation. A bounded membership may
+start exactly when an earlier period ends.
+
+Duplicate protection exists at both layers. The application rejects an
+overlapping `ACTIVE` membership for the same Person and Project for immediate
+business feedback. The database repeats the overlap check while holding a row
+lock on the target stable Person, preventing concurrent admissions from both
+observing an apparently free period and inserting overlapping memberships.
+
+Historical `ENDED` membership does not block re-entry. A returning Person
+receives a new membership period; earlier membership history remains intact.
+
+The member API maps the principal VS002-04 outcomes to HTTP semantics:
+
+```text
+PROJECT_ACCESS_DENIED              -> 403
+PROJECT_MEMBERSHIP_ALREADY_ACTIVE  -> 409
+unknown stable Person              -> 404
+invalid request / membership       -> 400
+```
+
+The admission RPC is not executable through the publishable/browser key.
+Remote verification returned PostgreSQL `42501` for publishable-key execution,
+while service-role execution reached the function's own validation boundary.
+
+Live verification against the remote Supabase project proved:
+
+- authenticated member listing;
+- open-ended INTERNAL participation;
+- time-bounded EXTERNAL participation;
+- initial `PROJECT_MEMBER` role creation;
+- organisational affiliation remaining independent of project authority;
+- stable Person grantor and assigner provenance;
+- Person-only membership persistence with null legacy user/role fields;
+- duplicate overlapping membership rejection; and
+- successful retrieval of both new members through the HTTP API.
+
+The automated API suite passes 130 tests with zero failures, including eight
+HTTP contract tests for the member routes.
+
+Existing migrated VS-001 members may appear in the VS002 member listing with
+an empty frozen-role array because historical `PROJECT_LEAD`, `CONTRIBUTOR`,
+`REVIEWER`, and `VIEWER` roles were deliberately not assigned invented VS002
+role meanings. Their existing authority continues through the explicit legacy
+RBAC fallback in `ProjectAuthorisationService`. This is a transitional
+compatibility condition, not loss of access.
+
+VS002-04 deliberately does not implement membership removal, automatic expiry
+processing, general role assignment/change, protected-role transfer,
+membership domain events, Audit projection, Tasks responsibility guards,
+Members frontend controls, or broad cross-module authorisation migration.
+
+
 ## VS002-03 Project Authorisation
 
 Project Membership now publishes the single project-authorisation decision
@@ -177,15 +284,13 @@ recreated under the same name so authenticated direct reads can see only rows
 with the complete VS-001 compatibility shape (`user_id` and `role_id` both
 non-null) after the existing project-membership check passes. Person-only
 VS-002 rows therefore remain server-side. Service-role repository access is
-unchanged. Authoritative VS002-03 decisions are server-side; no browser
-mutation grant or membership route is added here.
+unchanged. Authoritative VS002-03 decisions remain server-side. VS002-04 exposes member HTTP routes through server-side services only; no browser database mutation grant is added.
 
 ## Deliberately Deferred
 
 Later checkpoints own:
 
-- member query/add/update/remove flows;
-- duplicate-membership application behaviour;
+- member update/remove flows;
 - protected-role transfer and responsibility guards;
 - expiry workers and events;
 - membership Audit projection;
