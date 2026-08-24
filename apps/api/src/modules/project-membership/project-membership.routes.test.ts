@@ -33,6 +33,26 @@ import type {
 } from "./project-membership.repository";
 
 import type {
+  AdministrativeMembershipTerminationPersistenceInput,
+  BoundedProtectedRoleViolation,
+  MembershipExpiryFinalisationPersistenceInput,
+  ProjectMembershipLifecycleRepository,
+} from "./project-membership-lifecycle.repository";
+
+import type {
+  ProjectMembershipTerminationResult,
+} from "./project-membership-lifecycle.types";
+
+import type {
+  ProjectMembershipLifecycleState,
+  ProjectsMembershipLifecycleService,
+} from "../projects/projects-membership-lifecycle";
+
+import type {
+  TasksMembershipResponsibilityService,
+} from "../tasks/tasks-membership-responsibility";
+
+import type {
   ChangeOrdinaryRolePersistenceInput,
   ChangeOrdinaryRolePersistenceResult,
   ProjectRoleManagementRepository,
@@ -52,6 +72,10 @@ import type {
   ProjectAuthorisationPort,
   ProjectMemberIdentityPort,
 } from "./project-membership.service";
+
+import {
+  LastRequiredRoleHolderError,
+} from "./project-membership.errors";
 
 import type {
   CreateProjectMembershipInput,
@@ -307,6 +331,84 @@ class FakeRoleManagementRepository
 }
 
 
+class FakeLifecycleRepository
+  implements ProjectMembershipLifecycleRepository
+{
+  public calls:
+    AdministrativeMembershipTerminationPersistenceInput[] = [];
+  public error: unknown = null;
+
+  async terminateAdministratively(
+    input: AdministrativeMembershipTerminationPersistenceInput
+  ): Promise<ProjectMembershipTerminationResult> {
+    this.calls.push(input);
+    if (this.error !== null) throw this.error;
+
+    return {
+      outcome: "ENDED",
+      membership: {
+        ...createMembership(),
+        status: "ENDED",
+        effectiveTo: evaluatedAt,
+        terminationReason:
+          input.terminationReason,
+      },
+      closedAssignments: [{
+        ...createAssignment(),
+        effectiveTo: evaluatedAt,
+      }],
+      termination: {
+        type: "ADMINISTRATIVE_REMOVAL",
+        projectId: input.projectId,
+        membershipId: input.membershipId,
+        terminatedByPersonId:
+          input.terminatedByPersonId,
+        terminationReason:
+          input.terminationReason,
+        correlationId:
+          input.correlationId,
+        terminatedAt:
+          input.effectiveAt,
+      },
+    };
+  }
+
+  async listDueMemberships(): Promise<ProjectMembership[]> { return []; }
+  async finaliseExpiry(_input: MembershipExpiryFinalisationPersistenceInput): Promise<ProjectMembershipTerminationResult> { throw new Error("not used"); }
+  async listBoundedProtectedRoleViolations(): Promise<BoundedProtectedRoleViolation[]> { return []; }
+}
+
+
+class FakeProjectsLifecycle
+  implements ProjectsMembershipLifecycleService
+{
+  public state: ProjectMembershipLifecycleState | null = {
+    projectId,
+    status: "active",
+    classification: "OPERATIONAL",
+  };
+
+  async getMembershipLifecycleState(): Promise<ProjectMembershipLifecycleState | null> {
+    return this.state;
+  }
+}
+
+
+class FakeTasksResponsibilities
+  implements TasksMembershipResponsibilityService
+{
+  public blocking = false;
+  public calls: Array<{ projectId: string; personId: string; evaluatedAt: string }> = [];
+
+  async assessMembershipResponsibilities(
+    input: { projectId: string; personId: string; evaluatedAt: string }
+  ): Promise<{ hasBlockingResponsibilities: boolean }> {
+    this.calls.push(input);
+    return { hasBlockingResponsibilities: this.blocking };
+  }
+}
+
+
 class FakeIdentityRepository
   implements ProjectMemberIdentityPort
 {
@@ -494,6 +596,11 @@ function createService(
 
     roles?:
       Record<string, ProjectRole[]>;
+
+    lifecycleError?: unknown;
+    tasksBlocking?: boolean;
+    lifecycleState?:
+      ProjectMembershipLifecycleState;
   } = {}
 ): {
   service:
@@ -504,6 +611,12 @@ function createService(
 
   roleManagementRepository:
     FakeRoleManagementRepository;
+
+  lifecycleRepository:
+    FakeLifecycleRepository;
+
+  tasksResponsibilities:
+    FakeTasksResponsibilities;
 } {
   const membershipRepository =
     new InMemoryMembershipRepository(
@@ -516,6 +629,23 @@ function createService(
 
   const roleManagementRepository =
     new FakeRoleManagementRepository();
+
+  const lifecycleRepository =
+    new FakeLifecycleRepository();
+  lifecycleRepository.error =
+    options.lifecycleError ?? null;
+
+  const projectsLifecycle =
+    new FakeProjectsLifecycle();
+  if (options.lifecycleState) {
+    projectsLifecycle.state =
+      options.lifecycleState;
+  }
+
+  const tasksResponsibilities =
+    new FakeTasksResponsibilities();
+  tasksResponsibilities.blocking =
+    options.tasksBlocking ?? false;
 
   const identityRepository =
     new FakeIdentityRepository(
@@ -576,6 +706,14 @@ function createService(
         admissionRepository,
         identityRepository,
         roleManagementRepository,
+        {
+          repository:
+            lifecycleRepository,
+          projects:
+            projectsLifecycle,
+          tasks:
+            tasksResponsibilities,
+        },
         () =>
           evaluatedAt,
         () => {
@@ -596,6 +734,8 @@ function createService(
 
     admissionRepository,
     roleManagementRepository,
+    lifecycleRepository,
+    tasksResponsibilities,
   };
 }
 
@@ -2122,3 +2262,207 @@ test(
     );
   }
 );
+
+
+test("DELETE member lets Owner and Manager terminate through authenticated context", async (t) => {
+  for (const actorRole of ["PROJECT_OWNER", "PROJECT_MANAGER"]) {
+    await t.test(actorRole, async () => {
+      const harness = createService({
+        memberships: [createMembership()],
+        permissions: { "member.remove": true },
+      });
+      const response = await request(
+        harness.service,
+        `/api/v1/projects/${projectId}/members/${membershipId}`,
+        {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ reason: "  Contract ended  " }),
+        }
+      );
+
+      assert.equal(response.status, 200);
+      assert.equal(response.body.success, true);
+      assert.deepEqual(harness.lifecycleRepository.calls, [{
+        projectId,
+        membershipId,
+        effectiveAt: evaluatedAt,
+        terminatedByPersonId: actorPersonId,
+        terminationReason: "Contract ended",
+        correlationId,
+      }]);
+      assert.deepEqual(harness.tasksResponsibilities.calls, [{
+        projectId,
+        personId: targetPersonId,
+        evaluatedAt,
+      }]);
+
+      const data = response.body.data as JsonObject;
+      const termination = data.termination as JsonObject;
+      assert.equal(data.outcome, "ENDED");
+      assert.equal(termination.kind, "ADMINISTRATIVE_REMOVAL");
+      assert.equal(termination.terminated_by_person_id, actorPersonId);
+      assert.equal(termination.correlation_id, correlationId);
+      assert.equal((response.body.meta as JsonObject).request_id, requestId);
+    });
+  }
+});
+
+
+test("DELETE member rejects unauthenticated, unauthorized, and self-removal attempts", async () => {
+  const unauthenticated = createService();
+  const noAuth = await request(
+    unauthenticated.service,
+    `/api/v1/projects/${projectId}/members/${membershipId}`,
+    { method: "DELETE" },
+    false
+  );
+  assert.equal(noAuth.status, 401);
+  assert.equal((noAuth.body.error as JsonObject).code, "UNAUTHENTICATED");
+
+  const denied = createService({
+    memberships: [createMembership()],
+    permissions: { "member.remove": false },
+  });
+  const forbidden = await request(
+    denied.service,
+    `/api/v1/projects/${projectId}/members/${membershipId}`,
+    { method: "DELETE" }
+  );
+  assert.equal(forbidden.status, 403);
+  assert.equal((forbidden.body.error as JsonObject).code, "PROJECT_ACCESS_DENIED");
+  assert.equal(denied.lifecycleRepository.calls.length, 0);
+
+  const self = createService({
+    memberships: [createMembership({ personId: actorPersonId })],
+    permissions: { "member.remove": true },
+  });
+  const selfResponse = await request(
+    self.service,
+    `/api/v1/projects/${projectId}/members/${membershipId}`,
+    { method: "DELETE" }
+  );
+  assert.equal(selfResponse.status, 409);
+  assert.equal((selfResponse.body.error as JsonObject).code, "MEMBER_REMOVAL_NOT_PERMITTED");
+  assert.equal(self.lifecycleRepository.calls.length, 0);
+});
+
+
+test("DELETE member maps Tasks, continuity, and lifecycle-read-only conflicts", async (t) => {
+  const cases = [
+    {
+      name: "Tasks blocker",
+      options: { tasksBlocking: true },
+      code: "ACTIVE_RESPONSIBILITIES_EXIST",
+    },
+    {
+      name: "Owner continuity",
+      options: { lifecycleError: new LastRequiredRoleHolderError() },
+      code: "LAST_REQUIRED_ROLE_HOLDER",
+    },
+    {
+      name: "Manager continuity",
+      options: { lifecycleError: new LastRequiredRoleHolderError() },
+      code: "LAST_REQUIRED_ROLE_HOLDER",
+    },
+    {
+      name: "read-only project",
+      options: {
+        lifecycleState: {
+          projectId,
+          status: "completed" as const,
+          classification: "LIFECYCLE_READ_ONLY" as const,
+        },
+      },
+      code: "MEMBER_REMOVAL_NOT_PERMITTED",
+    },
+  ];
+
+  for (const item of cases) {
+    await t.test(item.name, async () => {
+      const harness = createService({
+        memberships: [createMembership()],
+        permissions: { "member.remove": true },
+        ...item.options,
+      });
+      const response = await request(
+        harness.service,
+        `/api/v1/projects/${projectId}/members/${membershipId}`,
+        { method: "DELETE" }
+      );
+      assert.equal(response.status, 409);
+      assert.equal((response.body.error as JsonObject).code, item.code);
+    });
+  }
+});
+
+
+test("DELETE member maps missing and ended membership without persistence details", async () => {
+  const missing = createService({ permissions: { "member.remove": true } });
+  const missingResponse = await request(
+    missing.service,
+    `/api/v1/projects/${projectId}/members/${membershipId}`,
+    { method: "DELETE" }
+  );
+  assert.equal(missingResponse.status, 404);
+  assert.equal((missingResponse.body.error as JsonObject).code, "PROJECT_MEMBERSHIP_NOT_FOUND");
+
+  const ended = createService({
+    memberships: [createMembership({
+      status: "ENDED",
+      effectiveTo: "2026-08-01T00:00:00.000Z",
+    })],
+    permissions: { "member.remove": true },
+  });
+  const endedResponse = await request(
+    ended.service,
+    `/api/v1/projects/${projectId}/members/${membershipId}`,
+    { method: "DELETE" }
+  );
+  assert.equal(endedResponse.status, 409);
+  assert.equal((endedResponse.body.error as JsonObject).code, "PROJECT_MEMBERSHIP_EXPIRED");
+
+  const failed = createService({
+    memberships: [createMembership()],
+    permissions: { "member.remove": true },
+    lifecycleError: new Error("sensitive postgres failure"),
+  });
+  const failedResponse = await request(
+    failed.service,
+    `/api/v1/projects/${projectId}/members/${membershipId}`,
+    { method: "DELETE" }
+  );
+  assert.equal(failedResponse.status, 409);
+  assert.equal((failedResponse.body.error as JsonObject).code, "MEMBER_REMOVAL_NOT_PERMITTED");
+  assert.doesNotMatch(
+    String((failedResponse.body.error as JsonObject).message),
+    /postgres|sensitive/i
+  );
+});
+
+
+test("DELETE member accepts only optional reason provenance", async () => {
+  for (const body of [
+    { actor_person_id: actorPersonId },
+    { correlation_id: correlationId },
+    { termination_kind: "EXPIRY" },
+    { effective_at: evaluatedAt },
+  ]) {
+    const harness = createService({
+      memberships: [createMembership()],
+      permissions: { "member.remove": true },
+    });
+    const response = await request(
+      harness.service,
+      `/api/v1/projects/${projectId}/members/${membershipId}`,
+      {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+    assert.equal(response.status, 400);
+    assert.equal((response.body.error as JsonObject).code, "VALIDATION_ERROR");
+    assert.equal(harness.lifecycleRepository.calls.length, 0);
+  }
+});

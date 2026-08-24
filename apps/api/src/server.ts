@@ -41,6 +41,18 @@ import {
 } from "./infrastructure/database/supabase-project-role-management.repository";
 
 import {
+  SupabaseProjectMembershipLifecycleRepository,
+} from "./infrastructure/database/supabase-project-membership-lifecycle.repository";
+
+import {
+  SupabaseProjectLifecycleRepository,
+} from "./infrastructure/database/supabase-project-lifecycle.repository";
+
+import {
+  SupabaseTasksMembershipResponsibilityRepository,
+} from "./infrastructure/database/supabase-tasks-membership-responsibility.repository";
+
+import {
   SupabaseRbacRepository,
 } from "./infrastructure/database/supabase-rbac.repository";
 
@@ -119,6 +131,10 @@ import {
 } from "./modules/projects/projects.service";
 
 import {
+  DefaultProjectsMembershipLifecycleService,
+} from "./modules/projects/projects-membership-lifecycle";
+
+import {
   createProjectsRouter,
 } from "./modules/projects/projects.routes";
 
@@ -135,6 +151,10 @@ import {
 import {
   TasksService,
 } from "./modules/tasks/tasks.service";
+
+import {
+  DefaultTasksMembershipResponsibilityService,
+} from "./modules/tasks/tasks-membership-responsibility";
 
 import {
   createTasksRouter,
@@ -273,6 +293,21 @@ const projectRoleManagementRepository =
     databaseClient
   );
 
+const projectMembershipLifecycleRepository =
+  new SupabaseProjectMembershipLifecycleRepository(
+    databaseClient
+  );
+
+const projectLifecycleRepository =
+  new SupabaseProjectLifecycleRepository(
+    databaseClient
+  );
+
+const tasksMembershipResponsibilityRepository =
+  new SupabaseTasksMembershipResponsibilityRepository(
+    databaseClient
+  );
+
 const rbacRepository =
   new SupabaseRbacRepository(
     databaseClient
@@ -337,6 +372,16 @@ const projectAuthorisationService =
     rbacService
   );
 
+const projectsMembershipLifecycleService =
+  new DefaultProjectsMembershipLifecycleService(
+    projectLifecycleRepository
+  );
+
+const tasksMembershipResponsibilityService =
+  new DefaultTasksMembershipResponsibilityService(
+    tasksMembershipResponsibilityRepository
+  );
+
 
 const projectMembershipService =
   new ProjectMembershipService(
@@ -344,7 +389,15 @@ const projectMembershipService =
     projectMembershipRepository,
     projectMemberAdmissionRepository,
     identityPersistenceRepository,
-    projectRoleManagementRepository
+    projectRoleManagementRepository,
+    {
+      repository:
+        projectMembershipLifecycleRepository,
+      projects:
+        projectsMembershipLifecycleService,
+      tasks:
+        tasksMembershipResponsibilityService,
+    }
   );
 
 

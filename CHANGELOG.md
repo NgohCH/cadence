@@ -6,6 +6,49 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### VS002-06 - Membership Removal and Expiry
+
+#### Added
+
+- Added administrative membership removal through `member.remove` and
+  `DELETE /api/v1/projects/:projectId/members/:membershipId`; self-leave is
+  explicitly rejected.
+- Added published Projects lifecycle and Tasks blocking-responsibility read
+  boundaries without leaking either module's persistence model.
+- Added immutable administrative-removal and system-expiry provenance and an
+  idempotent expiry processor wired into the one-shot worker.
+- Added `ProjectMembershipLifecycleRepository` with transactional,
+  service-role-only Supabase lifecycle RPCs.
+
+#### Lifecycle and Continuity
+
+- Preserved membership and role history by closing effective periods without
+  physical deletion.
+- Enforced mandatory Owner continuity and Manager continuity for active and
+  on-hold projects; draft Manager removal is allowed and Sponsor continuity is
+  optional.
+- Made completed and cancelled projects read-only for membership lifecycle.
+- Rejected new bounded Owner and Manager assignments while continuing to
+  permit bounded Sponsor assignments.
+
+#### Database, Security, and Verification
+
+- Added and remotely applied
+  `20260824120000_vs002_membership_lifecycle.sql`.
+- Verified clean local migration/runtime behavior, browser-role denial,
+  service-role execution, immutable provenance/history, idempotent expiry,
+  bounded-role enforcement, and real concurrent termination serialization.
+- Completed controlled remote API and expiry-processor verification for
+  success, denial, Tasks blocker, continuity, lifecycle-read-only, history,
+  provenance, and idempotency behavior with no domain events emitted.
+- API typecheck passed; full API suite passed: 289 tests, 0 failures.
+
+#### Deferred
+
+- Membership/role domain events and Audit consumption remain VS002-07.
+- Members frontend integration remains VS002-08.
+- Broad cross-module Project Authorisation adoption remains VS002-09.
+
 ### VS002-05 - Role Assignment and Key-Role Transfer
 
 #### Added

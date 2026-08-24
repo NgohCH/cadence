@@ -14,7 +14,7 @@ const serverSource = readFileSync(
 
 
 test(
-  "production composition injects the Supabase role-management repository",
+  "production composition injects role-management and membership-lifecycle boundaries",
   () => {
     assert.match(
       serverSource,
@@ -23,7 +23,27 @@ test(
 
     assert.match(
       serverSource,
-      /new ProjectMembershipService\([\s\S]*projectMemberAdmissionRepository,[\s\S]*identityPersistenceRepository,[\s\S]*projectRoleManagementRepository\s*\)/
+      /new SupabaseProjectMembershipLifecycleRepository\(\s*databaseClient\s*\)/
+    );
+    assert.match(
+      serverSource,
+      /new SupabaseTasksMembershipResponsibilityRepository\(\s*databaseClient\s*\)/
+    );
+    assert.match(
+      serverSource,
+      /new DefaultTasksMembershipResponsibilityService\(\s*tasksMembershipResponsibilityRepository\s*\)/
+    );
+    assert.match(
+      serverSource,
+      /new SupabaseProjectLifecycleRepository\(\s*databaseClient\s*\)/
+    );
+    assert.match(
+      serverSource,
+      /new DefaultProjectsMembershipLifecycleService\(\s*projectLifecycleRepository\s*\)/
+    );
+    assert.match(
+      serverSource,
+      /new ProjectMembershipService\([\s\S]*projectRoleManagementRepository,[\s\S]*repository:\s*projectMembershipLifecycleRepository,[\s\S]*projects:\s*projectsMembershipLifecycleService,[\s\S]*tasks:\s*tasksMembershipResponsibilityService/
     );
   }
 );

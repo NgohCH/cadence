@@ -43,6 +43,7 @@ import {
 
 import type {
   ProjectAuthorisationPort,
+  ProjectMembershipLifecycleDependencies,
   ProjectMemberIdentityPort,
   ProjectRoleCommandContext,
 } from "./project-membership.service";
@@ -506,6 +507,7 @@ function createService(
     identityRepository,
     roleManagementRepository ??
       new FakeRoleManagementRepository(),
+    {} as ProjectMembershipLifecycleDependencies,
     () => evaluatedAt,
     () => {
       const id =

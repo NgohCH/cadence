@@ -23,6 +23,10 @@ import {
 } from "./infrastructure/database/supabase-team-agent.repository";
 
 import {
+  SupabaseProjectMembershipLifecycleRepository,
+} from "./infrastructure/database/supabase-project-membership-lifecycle.repository";
+
+import {
   DomainEventProcessor,
 } from "./infrastructure/events/domain-event.processor";
 
@@ -41,6 +45,10 @@ import {
 import {
   RbacService,
 } from "./modules/rbac/rbac.service";
+
+import {
+  ProjectMembershipExpiryProcessor,
+} from "./modules/project-membership/project-membership-expiry.processor";
 
 import {
   MessageCreatedV1Handler,
@@ -111,6 +119,11 @@ const teamAgentRepository =
     databaseClient
   );
 
+const projectMembershipLifecycleRepository =
+  new SupabaseProjectMembershipLifecycleRepository(
+    databaseClient
+  );
+
 
 /*
  * Application services
@@ -136,6 +149,11 @@ const teamAgentService =
   new TeamAgentService(
     rbacService,
     teamAgentRepository
+  );
+
+const membershipExpiryProcessor =
+  new ProjectMembershipExpiryProcessor(
+    projectMembershipLifecycleRepository
   );
 
 
@@ -166,6 +184,10 @@ const processor =
 
 
 async function main(): Promise<void> {
+  const expiryResult =
+    await membershipExpiryProcessor
+      .processDueMemberships();
+
   /*
    * Audit and Team Agent are independent domain-event consumers.
    *
@@ -189,6 +211,8 @@ async function main(): Promise<void> {
 
 
   if (
+    expiryResult.finalised.length === 0 &&
+    expiryResult.conflicts.length === 0 &&
     !auditProcessed &&
     !teamAgentProcessed
   ) {
@@ -197,6 +221,20 @@ async function main(): Promise<void> {
     );
 
     return;
+  }
+
+
+  if (expiryResult.finalised.length > 0) {
+    console.log(
+      `Cadence worker: finalised ${expiryResult.finalised.length} membership expiry transition(s).`
+    );
+  }
+
+
+  if (expiryResult.conflicts.length > 0) {
+    console.warn(
+      `Cadence worker: ${expiryResult.conflicts.length} membership expiry conflict(s) require administrative resolution.`
+    );
   }
 
 

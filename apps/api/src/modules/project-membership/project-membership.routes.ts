@@ -15,13 +15,22 @@ import type {
 } from "../../middleware/authenticate";
 
 import {
+  ActiveResponsibilitiesExistError,
+  LastRequiredRoleHolderError,
+  MemberRemovalNotPermittedError,
   ProjectMemberPersonNotFoundError,
   ProjectMembershipAlreadyActiveError,
+  ProjectMembershipExpiredError,
+  ProjectMembershipNotFoundError,
   ProjectMembershipPermissionDeniedError,
   ProjectMembershipValidationError,
   ProjectRoleAssignmentInvalidError,
   ProjectRoleTransferRequiredError,
 } from "./project-membership.errors";
+
+import type {
+  RemoveProjectMemberInput,
+} from "./project-membership-lifecycle.types";
 
 import type {
   AddProjectMemberInput,
@@ -360,6 +369,93 @@ export function createProjectMembershipRouter(
   );
 
 
+  router.delete(
+    "/projects/:projectId/members/:membershipId",
+    async (req, res, next) => {
+      try {
+        const authenticated =
+          res.locals.authenticated as
+            AuthenticatedRequestState;
+        const { context } = authenticated;
+        const projectId =
+          req.params.projectId;
+        const membershipId =
+          req.params.membershipId;
+        const input =
+          parseRemoveProjectMemberRequest(
+            req.body,
+            membershipId
+          );
+
+        const result =
+          await projectMembershipService
+            .removeProjectMember(
+              context,
+              projectId,
+              input
+            );
+
+        res.status(200).json(
+          success(
+            {
+              outcome:
+                result.outcome,
+              membership: {
+                id:
+                  result.membership.id,
+                person_id:
+                  result.membership.personId,
+                project_id:
+                  result.membership.projectId,
+                effective_from:
+                  result.membership.effectiveFrom,
+                effective_to:
+                  result.membership.effectiveTo,
+                status:
+                  result.membership.status,
+              },
+              closed_assignments:
+                result.closedAssignments.map(
+                  mapRoleAssignment
+                ),
+              termination: {
+                kind:
+                  result.termination.type,
+                terminated_by_person_id:
+                  result.termination
+                    .terminatedByPersonId,
+                reason:
+                  result.termination
+                    .terminationReason,
+                correlation_id:
+                  result.termination
+                    .correlationId,
+                terminated_at:
+                  result.termination
+                    .terminatedAt,
+              },
+            },
+            {
+              correlation_id:
+                context.correlationId,
+              request_id:
+                context.requestId,
+              next_cursor:
+                null,
+            }
+          )
+        );
+      } catch (error) {
+        handleProjectMembershipError(
+          error,
+          res,
+          next
+        );
+      }
+    }
+  );
+
+
   router.post(
     "/projects/:projectId/role-transfers",
     async (req, res, next) => {
@@ -449,6 +545,31 @@ function parseChangeOrdinaryRoleRequest(
     membershipId,
     role:
       role as ChangeOrdinaryRoleInput["role"],
+    reason:
+      optionalText(
+        request.reason,
+        "reason"
+      ),
+  };
+}
+
+
+function parseRemoveProjectMemberRequest(
+  body: unknown,
+  membershipId: string
+): RemoveProjectMemberInput {
+  const request =
+    body === undefined
+      ? {}
+      : requireRequestObject(body);
+
+  assertAllowedRequestFields(
+    request,
+    ["reason"]
+  );
+
+  return {
+    membershipId,
     reason:
       optionalText(
         request.reason,
@@ -721,6 +842,48 @@ function handleProjectMembershipError(
       )
     );
 
+    return;
+  }
+
+  if (
+    error instanceof
+      ProjectMembershipNotFoundError
+  ) {
+    res.status(404).json(
+      failure(
+        "PROJECT_MEMBERSHIP_NOT_FOUND",
+        error.message,
+        correlationId
+      )
+    );
+    return;
+  }
+
+  const lifecycleConflict =
+    error instanceof
+      ProjectMembershipExpiredError
+      ? "PROJECT_MEMBERSHIP_EXPIRED"
+      : error instanceof
+          ActiveResponsibilitiesExistError
+        ? "ACTIVE_RESPONSIBILITIES_EXIST"
+        : error instanceof
+            LastRequiredRoleHolderError
+          ? "LAST_REQUIRED_ROLE_HOLDER"
+          : error instanceof
+              MemberRemovalNotPermittedError
+            ? "MEMBER_REMOVAL_NOT_PERMITTED"
+            : null;
+
+  if (lifecycleConflict !== null) {
+    res.status(409).json(
+      failure(
+        lifecycleConflict,
+        error instanceof Error
+          ? error.message
+          : "Membership lifecycle conflict.",
+        correlationId
+      )
+    );
     return;
   }
 

@@ -7,6 +7,14 @@ import type {
 } from "../identity/identity.repository";
 
 import type {
+  ProjectsMembershipLifecycleService,
+} from "../projects/projects-membership-lifecycle";
+
+import type {
+  TasksMembershipResponsibilityService,
+} from "../tasks/tasks-membership-responsibility";
+
+import type {
   CadencePerson,
   OrganisationalAffiliation,
 } from "../identity/identity.types";
@@ -21,13 +29,27 @@ import type {
 } from "./project-member-admission.repository";
 
 import {
+  ActiveResponsibilitiesExistError,
+  LastRequiredRoleHolderError,
+  MemberRemovalNotPermittedError,
   ProjectMemberPersonNotFoundError,
   ProjectMembershipAlreadyActiveError,
+  ProjectMembershipExpiredError,
+  ProjectMembershipNotFoundError,
   ProjectMembershipPermissionDeniedError,
   ProjectMembershipValidationError,
   ProjectRoleAssignmentInvalidError,
   ProjectRoleTransferRequiredError,
 } from "./project-membership.errors";
+
+import type {
+  ProjectMembershipLifecycleRepository,
+} from "./project-membership-lifecycle.repository";
+
+import type {
+  ProjectMembershipTerminationResult,
+  RemoveProjectMemberInput,
+} from "./project-membership-lifecycle.types";
 
 import type {
   ProjectMembershipRepository,
@@ -61,6 +83,7 @@ import {
 
 import {
   getProtectedRolePermission,
+  PROJECT_MEMBER_REMOVAL_PERMISSION,
   ORDINARY_ROLE_CHANGE_PERMISSION,
 } from "./project-permissions";
 
@@ -179,6 +202,16 @@ export type ProjectMembershipIdGenerator =
   () => string;
 
 
+export interface ProjectMembershipLifecycleDependencies {
+  repository:
+    ProjectMembershipLifecycleRepository;
+  projects:
+    ProjectsMembershipLifecycleService;
+  tasks:
+    TasksMembershipResponsibilityService;
+}
+
+
 /**
  * VS002-04 application boundary for member query and ordinary admission.
  *
@@ -210,6 +243,9 @@ export class ProjectMembershipService {
 
     private readonly roleManagementRepository:
       ProjectRoleManagementRepository,
+
+    private readonly lifecycle:
+      ProjectMembershipLifecycleDependencies,
 
     private readonly currentTime:
       ProjectMembershipClock = () =>
@@ -555,6 +591,141 @@ export class ProjectMembershipService {
   }
 
 
+  async removeProjectMember(
+    context: ProjectRoleCommandContext,
+    projectId: string,
+    input: RemoveProjectMemberInput
+  ): Promise<ProjectMembershipTerminationResult> {
+    assertLifecycleRequiredText(
+      projectId,
+      "projectId"
+    );
+    assertLifecycleRequiredText(
+      input.membershipId,
+      "membershipId"
+    );
+    assertLifecycleRequiredText(
+      context.correlationId,
+      "correlationId"
+    );
+
+    const reason =
+      normalizeLifecycleReason(
+        input.reason
+      );
+
+    await this.requirePermission(
+      context,
+      projectId,
+      PROJECT_MEMBER_REMOVAL_PERMISSION
+    );
+
+    const effectiveAt =
+      normalizeTimestamp(
+        this.currentTime(),
+        "current time"
+      );
+
+    const membership =
+      await this.membershipRepository
+        .findMembershipById(
+          input.membershipId
+        );
+
+    if (
+      membership === null ||
+      membership.projectId !== projectId
+    ) {
+      throw new ProjectMembershipNotFoundError();
+    }
+
+    if (
+      membership.personId ===
+        context.actorPersonId
+    ) {
+      throw new MemberRemovalNotPermittedError(
+        "Self-removal is not supported."
+      );
+    }
+
+    if (
+      membership.status === "ENDED" ||
+      (
+        membership.effectiveTo !== null &&
+        Date.parse(effectiveAt) >=
+          Date.parse(membership.effectiveTo)
+      )
+    ) {
+      throw new ProjectMembershipExpiredError();
+    }
+
+    if (
+      !isProjectMembershipEffectiveAt(
+        membership,
+        effectiveAt
+      )
+    ) {
+      throw new MemberRemovalNotPermittedError(
+        "The target project membership is not currently effective."
+      );
+    }
+
+    const lifecycle =
+      await this.lifecycle.projects
+        .getMembershipLifecycleState(
+          projectId
+        );
+
+    if (
+      lifecycle === null ||
+      lifecycle.projectId !== projectId
+    ) {
+      throw new MemberRemovalNotPermittedError(
+        "Project lifecycle state is unavailable."
+      );
+    }
+
+    if (
+      lifecycle.classification ===
+        "LIFECYCLE_READ_ONLY"
+    ) {
+      throw new MemberRemovalNotPermittedError();
+    }
+
+    const assessment =
+      await this.lifecycle.tasks
+        .assessMembershipResponsibilities({
+          projectId,
+          personId:
+            membership.personId,
+          evaluatedAt:
+            effectiveAt,
+        });
+
+    if (
+      assessment.hasBlockingResponsibilities
+    ) {
+      throw new ActiveResponsibilitiesExistError();
+    }
+
+    return this.mapLifecyclePersistenceFailure(
+      this.lifecycle.repository
+        .terminateAdministratively({
+          projectId,
+          membershipId:
+            membership.id,
+          effectiveAt,
+          terminatedByPersonId:
+            context.actorPersonId,
+          terminationReason:
+            reason,
+          correlationId:
+            context.correlationId,
+        })
+    );
+  }
+
+
   async transferProtectedRole(
     context: ProjectRoleCommandContext,
     projectId: string,
@@ -700,6 +871,34 @@ export class ProjectMembershipService {
   }
 
 
+  private async mapLifecyclePersistenceFailure<T>(
+    operation: Promise<T>
+  ): Promise<T> {
+    try {
+      return await operation;
+    } catch (error) {
+      if (
+        error instanceof
+          ProjectMembershipNotFoundError ||
+        error instanceof
+          ProjectMembershipExpiredError ||
+        error instanceof
+          ActiveResponsibilitiesExistError ||
+        error instanceof
+          LastRequiredRoleHolderError ||
+        error instanceof
+          MemberRemovalNotPermittedError
+      ) {
+        throw error;
+      }
+
+      throw new MemberRemovalNotPermittedError(
+        "Membership lifecycle persistence rejected the requested transition."
+      );
+    }
+  }
+
+
   private async requirePermission(
     context: ProjectAuthorisationContext,
     projectId: string,
@@ -761,6 +960,42 @@ function assertRequiredText(
       `${fieldName} is required.`
     );
   }
+}
+
+
+function assertLifecycleRequiredText(
+  value: string,
+  fieldName: string
+): void {
+  if (
+    typeof value !== "string" ||
+    value.trim().length === 0
+  ) {
+    throw new ProjectMembershipValidationError(
+      `${fieldName} is required.`
+    );
+  }
+}
+
+
+function normalizeLifecycleReason(
+  reason: string | null
+): string | null {
+  if (reason === null) {
+    return null;
+  }
+
+  if (typeof reason !== "string") {
+    throw new ProjectMembershipValidationError(
+      "A membership termination reason must be text or null."
+    );
+  }
+
+  const normalized = reason.trim();
+
+  return normalized.length === 0
+    ? null
+    : normalized;
 }
 
 

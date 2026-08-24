@@ -35,6 +35,10 @@ import {
   PROJECT_ROLES,
 } from "./project-role.types";
 
+import {
+  PROJECT_MEMBER_REMOVAL_PERMISSION,
+} from "./project-permissions";
+
 
 const personId =
   "11111111-1111-4111-8111-111111111111";
@@ -422,6 +426,44 @@ test(
         ),
         expectations[role],
         `${role} ordinary-role permission must match the frozen matrix.`
+      );
+    }
+  }
+);
+
+
+test(
+  "administrative membership removal follows the frozen Owner and Manager permission matrix",
+  async () => {
+    const expectations = {
+      PROJECT_SPONSOR: false,
+      PROJECT_OWNER: true,
+      PROJECT_MANAGER: true,
+      PROJECT_MEMBER: false,
+      PROJECT_OBSERVER: false,
+      PROJECT_AUDITOR: false,
+    } as const satisfies Record<
+      ProjectRole,
+      boolean
+    >;
+
+    for (const role of PROJECT_ROLES) {
+      const service =
+        createService(
+          new InMemoryProjectMembershipRepository(
+            [createMembership()],
+            [createAssignment(role)]
+          )
+        );
+
+      assert.equal(
+        await service.hasProjectPermission(
+          context,
+          projectId,
+          PROJECT_MEMBER_REMOVAL_PERMISSION
+        ),
+        expectations[role],
+        `${role} member-removal permission must match the frozen matrix.`
       );
     }
   }

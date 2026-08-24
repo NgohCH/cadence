@@ -22,21 +22,21 @@ Vertical Slice:
 
 Status:
 
-**VS002-05 Role Assignment and Key-Role Transfer is complete and verified;
+**VS002-06 Membership Removal and Expiry is complete and verified;
 the implementation remains uncommitted pending the source-control checkpoint.**
 
 Current checkpoint:
 
-**VS002-05 is closed. VS002-06 Membership Removal and Expiry is next. Do not
-begin VS002-06 until this checkpoint is accepted.**
+**VS002-06 is closed. VS002-07 Membership and Role Audit Events is next. Do not
+begin VS002-07 until this checkpoint is accepted.**
 
-Latest VS002-05 validation:
+Latest VS002-06 validation:
 
 ```text
 API typecheck = passed
-API test suite = 209 passed, 0 failed
+API test suite = 289 passed, 0 failed
 local PostgreSQL runtime/security/concurrency verification = passed
-remote migration 20260822120000 = applied
+remote migration 20260824120000 = applied
 controlled remote-backed live API verification = passed
 ```
 
@@ -6912,7 +6912,59 @@ VS002-05 does not implement membership removal/expiry or responsibility-removal
 guards, membership/role domain events, frontend work, or broad cross-module
 Project Authorisation adoption.
 
-The next implementation checkpoint is VS002-06: Membership Removal and Expiry.
+## VS002-06 — Membership Removal and Expiry
+
+VS002-06 adds administrative membership removal through:
+
+```text
+DELETE /api/v1/projects/{projectId}/members/{membershipId}
+  -> ProjectAuthorisationService (member.remove)
+  -> Projects lifecycle boundary
+  -> Tasks responsibility boundary
+  -> ProjectMembershipLifecycleRepository
+  -> service-role-only transactional RPC
+```
+
+There is no self-leave workflow. Owner and Manager may remove members through
+`member.remove`; other frozen roles are denied. Tasks owns the stable-Person
+to actionable-responsibility assessment, and Project Membership receives only
+the blocking business result. Completed and cancelled projects are lifecycle
+read-only.
+
+Persistence locks the Project and membership, ends the membership and all its
+effective assignments at one timestamp, and preserves every historical row.
+Owner continuity is mandatory. Manager continuity is mandatory for active and
+on-hold projects, while a draft Manager may be removed and Sponsor continuity
+is optional. Administrative provenance records the stable Person actor,
+reason, correlation ID, and timestamp and cannot be rewritten.
+
+The one-shot worker composes `ProjectMembershipExpiryProcessor`. Expiry first
+removes temporal access, then idempotently materialises `ENDED` with `EXPIRY`,
+a null system actor, and the original `effective_to`. New bounded Owner and
+Manager assignments are rejected because no automatic continuity mechanism
+exists; bounded Sponsor assignments remain permitted.
+
+Migration `20260824120000_vs002_membership_lifecycle.sql` is applied remotely,
+and local/remote histories are synchronized. Local PostgreSQL runtime,
+security, immutable-provenance, bounded-role, rollback/idempotency, and true
+concurrent termination verification passed. Controlled remote API and expiry-
+processor verification passed removal, denial, Tasks-blocker, continuity,
+project-state, history, provenance, and idempotency checks. No membership or
+role domain event was emitted.
+
+The remote idempotency check used a one-line Node harness that printed the
+expected zero-work result before a Windows libuv assertion during forced
+process exit. Normal worker composition, API execution, persisted state, and
+the automated suite were unaffected; this was a harness shutdown anomaly, not
+an application failure.
+
+Final validation: API typecheck passed and all **289/289** API tests passed.
+
+VS002-06 does not add membership/role domain events, Audit consumption,
+frontend work, or broad cross-module Project Authorisation adoption.
+
+The next implementation checkpoint is VS002-07: Membership and Role Audit
+Events.
 
 ---
 
@@ -6964,13 +7016,13 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-start VS002-06
+start VS002-07
   ->
-implement membership removal and expiry
+emit membership and role domain events
   ->
-apply protected-responsibility removal guards
+consume them through Audit
   ->
-preserve role and membership history
+preserve lifecycle and transfer correlation
 ```
 Do not bypass established module boundaries merely to complete the vertical slice more quickly.
 

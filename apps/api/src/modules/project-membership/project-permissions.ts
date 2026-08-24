@@ -8,6 +8,10 @@ export const ORDINARY_ROLE_CHANGE_PERMISSION =
   "member.change_role";
 
 
+export const PROJECT_MEMBER_REMOVAL_PERMISSION =
+  "member.remove";
+
+
 export const PROTECTED_ROLE_PERMISSIONS = {
   PROJECT_MANAGER:
     "member.assign_manager",
@@ -79,7 +83,7 @@ const managerPermissions = [
   "project.change_lifecycle",
   "project.export",
   "member.invite",
-  "member.remove",
+  PROJECT_MEMBER_REMOVAL_PERMISSION,
   ORDINARY_ROLE_CHANGE_PERMISSION,
   "message.moderate",
   "topic.change_status",

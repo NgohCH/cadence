@@ -85,3 +85,78 @@ export class ProjectRoleAssignmentInvalidError
       "ProjectRoleAssignmentInvalidError";
   }
 }
+
+
+export class ProjectMembershipNotFoundError
+  extends Error
+{
+  constructor(
+    message =
+      "The requested project membership does not exist."
+  ) {
+    super(message);
+
+    this.name =
+      "ProjectMembershipNotFoundError";
+  }
+}
+
+
+export class ProjectMembershipExpiredError
+  extends Error
+{
+  constructor(
+    message =
+      "The project membership has expired."
+  ) {
+    super(message);
+
+    this.name =
+      "ProjectMembershipExpiredError";
+  }
+}
+
+
+export class ActiveResponsibilitiesExistError
+  extends Error
+{
+  constructor(
+    message =
+      "The project member has active responsibilities that must be resolved first."
+  ) {
+    super(message);
+
+    this.name =
+      "ActiveResponsibilitiesExistError";
+  }
+}
+
+
+export class LastRequiredRoleHolderError
+  extends Error
+{
+  constructor(
+    message =
+      "The project member is the last required protected-role holder."
+  ) {
+    super(message);
+
+    this.name =
+      "LastRequiredRoleHolderError";
+  }
+}
+
+
+export class MemberRemovalNotPermittedError
+  extends Error
+{
+  constructor(
+    message =
+      "Project membership removal is not permitted in the current state."
+  ) {
+    super(message);
+
+    this.name =
+      "MemberRemovalNotPermittedError";
+  }
+}

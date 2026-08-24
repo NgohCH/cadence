@@ -5,6 +5,12 @@ export type TaskStatus =
   | "cancelled";
 
 
+export const ACTIONABLE_TASK_STATUSES = [
+  "open",
+  "in_progress",
+] as const satisfies readonly TaskStatus[];
+
+
 export type TaskPriority =
   | "low"
   | "normal"

@@ -1,5 +1,41 @@
 # Project Membership Module
 
+## VS002-06 Membership Lifecycle HTTP Contract
+
+Administrative removal uses:
+
+```text
+DELETE /api/v1/projects/:projectId/members/:membershipId
+```
+
+The optional body contains only `reason`. The authenticated stable Person,
+request correlation ID, and service-clock timestamp are supplied by the
+server. Self-removal is rejected; VS002-06 provides no voluntary leave flow.
+
+Authorization remains exclusively in `ProjectAuthorisationService` through
+`member.remove`. Projects supplies only mutable/operational/read-only lifecycle
+classification. Tasks supplies only whether the target stable Person has an
+actionable assigned responsibility in the project. Project Membership does
+not inspect either module's persistence or Task statuses.
+
+Administrative and expiry transitions pass exclusively through
+`ProjectMembershipLifecycleRepository`. They retain membership and role rows,
+close effective periods consistently, and persist immutable termination kind,
+actor, reason, correlation, and timestamp provenance. Owner continuity is
+mandatory; Manager continuity is mandatory for active and on-hold projects;
+draft Manager removal is allowed; Sponsor continuity is optional. Completed
+and cancelled projects are lifecycle read-only.
+
+Expiry materialisation preserves the original membership `effective_to`, uses
+`EXPIRY` with a null system actor, and is idempotent. New bounded Owner and
+Manager assignments are rejected without a continuity mechanism, while a
+bounded Sponsor remains valid.
+
+Migration `20260824120000_vs002_membership_lifecycle.sql` is applied remotely.
+Local PostgreSQL runtime/security/concurrency verification and controlled
+remote API/processor verification passed. The API suite passes 289/289 tests.
+Membership and role domain events remain deferred to VS002-07.
+
 ## VS002-05 Role Management HTTP Contract
 
 Immediate ordinary role changes and protected responsibility operations use:
@@ -269,10 +305,11 @@ membership project.
 `ProjectMembershipRepository` and `SupabaseProjectMembershipRepository`
 provide foundational create/read operations only. Atomic admission is owned by
 `ProjectMemberAdmissionRepository`; immediate ordinary changes and protected
-appointments/transfers are owned by `ProjectRoleManagementRepository`. These
-repositories do not authorize, expire memberships, or emit events. A new
-VS-002 membership leaves legacy `user_id` and `role_id` null; persisting it
-cannot silently activate the current VS-001 RBAC path.
+appointments/transfers are owned by `ProjectRoleManagementRepository`; and
+administrative termination plus expiry materialisation are owned by
+`ProjectMembershipLifecycleRepository`. These repositories do not authorize
+or emit events. A new VS-002 membership leaves legacy `user_id` and `role_id`
+null; persisting it cannot silently activate the current VS-001 RBAC path.
 
 Role management closes an effective assignment and inserts its successor. It
 never overwrites or deletes historical assignment identity or provenance.
@@ -300,11 +337,17 @@ The migration enforces:
 - only the three protected responsibility roles in the transfer ledger; and
 - immutable transfer-ledger history with mandatory incoming assignment,
   authoriser, reason, correlation, and effective time.
+- immutable termination provenance distinguishing actor-backed administrative
+  removal from system expiry;
+- mandatory Owner continuity and operational Manager continuity;
+- rejection of new bounded Owner and Manager assignments; and
+- no hard deletion of lifecycle history.
 
-Transactional service-role-only RPCs implement immediate ordinary role changes
-and protected first appointment/transfer. Membership-row locks serialize
-ordinary changes; project-row locks serialize protected operations. No SQL
-trigger implements automatic expiry or future authorization policy.
+Transactional service-role-only RPCs implement immediate ordinary role changes,
+protected first appointment/transfer, administrative termination, and expiry
+materialisation. Membership-row locks serialize ordinary and lifecycle changes;
+project-row locks serialize protected operations and continuity checks. The
+worker invokes expiry explicitly; API startup does not run it automatically.
 
 The migration is forward-only. It has no destructive down script; post-apply
 corrections must use a reviewed forward migration or an explicit backup/PITR
@@ -334,24 +377,23 @@ Their current permissions and access are preserved unchanged.
 ## Security
 
 `public.project_role_assignments` and `public.project_role_transfers` have RLS
-enabled with no browser mutation grants. The role-management RPCs are
-executable only by `service_role`. The existing
+enabled with no browser mutation grants. Role-management and lifecycle RPCs
+are executable only by `service_role`. The existing
 `memberships_select_project_member` policy is
 recreated under the same name so authenticated direct reads can see only rows
 with the complete VS-001 compatibility shape (`user_id` and `role_id` both
 non-null) after the existing project-membership check passes. Person-only
 VS-002 rows therefore remain server-side. Service-role repository access is
 unchanged. `ProjectAuthorisationService` remains the sole VS002 authorization
-boundary. Member admission and role management are exposed only through
-server-side HTTP services; no browser database mutation grant is added.
+boundary. Member admission, role management, and administrative lifecycle
+operations are exposed only through server-side services; no browser database
+mutation grant is added.
 
 ## Deliberately Deferred
 
 Later checkpoints own:
 
-- membership removal/expiry and protected-responsibility removal guards;
-- expiry workers and events;
+- membership and role domain events;
 - membership Audit projection;
-- Tasks integration;
 - Members frontend integration; and
 - cross-module adoption of the Project Authorisation service.
