@@ -22,23 +22,22 @@ Vertical Slice:
 
 Status:
 
-**VS002-03 implemented in the working tree; pending human review and
-source-control checkpoint.**
+**VS002-05 Role Assignment and Key-Role Transfer is complete and verified;
+the implementation remains uncommitted pending the source-control checkpoint.**
 
 Current checkpoint:
 
-**VS002-03 Project Authorisation Service is implemented with stable-Person
-membership and effective frozen-role decisions plus an explicit VS-001 RBAC
-fallback. Review the code and test evidence, then create the source-control
-checkpoint. Do not begin VS002-04 until VS002-03 is accepted.**
+**VS002-05 is closed. VS002-06 Membership Removal and Expiry is next. Do not
+begin VS002-06 until this checkpoint is accepted.**
 
-Latest VS002-03 validation:
+Latest VS002-05 validation:
 
 ```text
 API typecheck = passed
-API build = passed
-API test suite = 104 passed, 0 failed
-VS002-03 focused tests added = 11
+API test suite = 209 passed, 0 failed
+local PostgreSQL runtime/security/concurrency verification = passed
+remote migration 20260822120000 = applied
+controlled remote-backed live API verification = passed
 ```
 
 ---
@@ -259,18 +258,18 @@ preserve Person, identity, affiliation, membership, and role history. No SQL
 trigger implements protected-role transfer, expiry, or future permission
 policy.
 
-## Manual Supabase Action
+## VS002-02 Deployment Record
 
-The migration has not been pushed or applied to the linked remote project.
-After human review:
+The VS002-02 migration was subsequently reviewed and applied to the linked
+remote project using the established dry-run and push workflow:
 
 ```text
 npx supabase db push --dry-run
 npx supabase db push
 ```
 
-Then run `tests/schema_smoke.sql` and `tests/rls_manual_test.md` against the
-reviewed target. Do not reset or destroy remote data.
+The schema smoke and manual RLS checks were run against the reviewed target.
+Do not reset or destroy remote data.
 
 There is no destructive down migration. Confirm backup/PITR readiness before
 application. Any schema correction should be a new reviewed forward migration;
@@ -278,9 +277,11 @@ backup restoration is an explicit operational recovery action.
 
 ## Deliberately Deferred
 
-All VS002-03+ runtime authorization, member APIs, transfers, removal/expiry,
-Tasks responsibility guards, Audit projection, frontend, invitations, Entra,
-and organisational hierarchy remain incomplete.
+At VS002-02 closure, VS002-03+ runtime authorization, member APIs, transfers,
+removal/expiry, Tasks responsibility guards, Audit projection, frontend,
+invitations, Entra, and organisational hierarchy were deferred. VS002-03
+through VS002-05 have since completed the authorization, member API, and role
+management portions; the remaining work stays assigned to later checkpoints.
 
 ---
 
@@ -6756,7 +6757,7 @@ The text above records the completed VS-001 architecture state. VS-001 is comple
 
 # VS-002 Current Implementation State
 
-VS002-01 through VS002-04 are implemented.
+VS002-01 through VS002-05 are implemented.
 
 ## VS002-04 — Member Query and Add-Member Flow
 
@@ -6843,8 +6844,7 @@ VS002-04 live verification established:
   `PROJECT_MEMBERSHIP_ALREADY_ACTIVE`; and
 * publishable-key denial of direct RPC execution.
 
-The API currently passes 130 automated tests with zero failures, and API
-typecheck/build pass.
+VS002-04 closed with 130 automated tests and passing API typecheck/build.
 
 A transitional compatibility condition remains intentional: migrated VS-001
 members such as existing `PROJECT_LEAD`, `CONTRIBUTOR`, `REVIEWER`, or
@@ -6854,12 +6854,65 @@ Their existing permissions remain available through the explicit legacy RBAC
 fallback. Do not invent a frozen-role mapping merely to populate the display.
 
 VS002-04 does not implement member removal, automatic expiry processing,
-general role assignment/change, protected responsibility transfer, membership
-domain events, Audit membership projection, Tasks responsibility guards,
-Members frontend controls, or broad cross-module authorisation migration.
+membership domain events, Audit membership projection, Tasks responsibility
+guards, Members frontend controls, or broad cross-module authorisation
+migration. Role assignment and protected responsibility transfer were added
+subsequently by VS002-05.
 
-The next implementation checkpoint is VS002-05: Role Assignment and Key-Role
-Transfer.
+## VS002-05 — Role Assignment and Key-Role Transfer
+
+VS002-05 adds immediate ordinary role changes and protected responsibility
+appointments/transfers through the existing Project Membership HTTP boundary:
+
+```text
+PATCH /api/v1/projects/{projectId}/members/{membershipId}
+POST  /api/v1/projects/{projectId}/role-transfers
+  -> ProjectMembershipService
+  -> ProjectAuthorisationService
+  -> ProjectRoleManagementRepository
+  -> service-role-only transactional RPC
+```
+
+`ProjectAuthorisationService` remains the sole VS002 authorization boundary.
+Ordinary changes require `member.change_role`. Protected operations map
+`PROJECT_MANAGER`, `PROJECT_OWNER`, and `PROJECT_SPONSOR` to
+`member.assign_manager`, `member.assign_owner`, and `member.assign_sponsor`
+respectively. Persistence receives the already-authorised stable Person only
+for provenance and does not infer authority from roles or affiliation.
+
+Ordinary role changes close the prior effective ordinary assignment and insert
+the replacement. Zero prior frozen ordinary assignment remains valid for
+VS-001 compatibility. Protected operations transactionally determine whether
+the operation is a first appointment or a transfer, enforce one effective
+holder, close an outgoing assignment when present, and retain all assignments
+as readable history. `project_role_transfers` records the incoming and optional
+outgoing assignments, authorising Person, reason, effective time, and request
+correlation ID. No historical assignment or ledger row is overwritten or
+deleted.
+
+Migration:
+
+```text
+20260822120000_vs002_role_management.sql
+```
+
+is applied to the linked remote Supabase database, and local/remote migration
+history is synchronized. Local PostgreSQL verification passed clean migration,
+runtime semantics, rollback atomicity, immutability, browser-role denial,
+service-role access, legacy permission compatibility, and real concurrent
+ordinary/protected operations. Controlled remote-backed API verification
+passed ordinary history, denial and validation paths, protected first
+appointments and transfers, transfer-ledger correlation, and an EXTERNAL
+Project Manager while preserving the member's ordinary role.
+
+The API passes 209 automated tests with zero failures, and API typecheck
+passes.
+
+VS002-05 does not implement membership removal/expiry or responsibility-removal
+guards, membership/role domain events, frontend work, or broad cross-module
+Project Authorisation adoption.
+
+The next implementation checkpoint is VS002-06: Membership Removal and Expiry.
 
 ---
 
@@ -6911,17 +6964,13 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-start VS002-05
+start VS002-06
   ->
-implement ordinary role assignment
+implement membership removal and expiry
   ->
-implement protected Project Manager / Owner / Sponsor transfer rules
+apply protected-responsibility removal guards
   ->
-preserve independent role history
-  ->
-verify external Project Manager scenario
-  ->
-complete VS002-05 regression and documentation
+preserve role and membership history
 ```
 Do not bypass established module boundaries merely to complete the vertical slice more quickly.
 

@@ -19,12 +19,20 @@ import {
   ProjectMembershipAlreadyActiveError,
   ProjectMembershipPermissionDeniedError,
   ProjectMembershipValidationError,
+  ProjectRoleAssignmentInvalidError,
+  ProjectRoleTransferRequiredError,
 } from "./project-membership.errors";
 
 import type {
   AddProjectMemberInput,
+  ChangeOrdinaryRoleInput,
   ProjectMembershipService,
+  TransferProtectedRoleInput,
 } from "./project-membership.service";
+
+import type {
+  ProjectRoleAssignment,
+} from "./project-role.types";
 
 
 export function createProjectMembershipRouter(
@@ -289,7 +297,285 @@ export function createProjectMembershipRouter(
   );
 
 
+  router.patch(
+    "/projects/:projectId/members/:membershipId",
+    async (req, res, next) => {
+      try {
+        const authenticated =
+          res.locals.authenticated as
+            AuthenticatedRequestState;
+        const { context } = authenticated;
+        const projectId =
+          req.params.projectId;
+        const membershipId =
+          req.params.membershipId;
+        const input =
+          parseChangeOrdinaryRoleRequest(
+            req.body,
+            membershipId
+          );
+
+        const result =
+          await projectMembershipService
+            .changeOrdinaryRole(
+              context,
+              projectId,
+              input
+            );
+
+        res.status(200).json(
+          success(
+            {
+              closed_assignment:
+                result.closedAssignment === null
+                  ? null
+                  : mapRoleAssignment(
+                      result.closedAssignment
+                    ),
+              role_assignment:
+                mapRoleAssignment(
+                  result.roleAssignment
+                ),
+              effective_at:
+                result.effectiveAt,
+            },
+            {
+              correlation_id:
+                context.correlationId,
+              request_id:
+                context.requestId,
+              next_cursor:
+                null,
+            }
+          )
+        );
+      } catch (error) {
+        handleProjectMembershipError(
+          error,
+          res,
+          next
+        );
+      }
+    }
+  );
+
+
+  router.post(
+    "/projects/:projectId/role-transfers",
+    async (req, res, next) => {
+      try {
+        const authenticated =
+          res.locals.authenticated as
+            AuthenticatedRequestState;
+        const { context } = authenticated;
+        const projectId =
+          req.params.projectId;
+        const input =
+          parseTransferProtectedRoleRequest(
+            req.body
+          );
+
+        const result =
+          await projectMembershipService
+            .transferProtectedRole(
+              context,
+              projectId,
+              input
+            );
+
+        res.status(200).json(
+          success(
+            {
+              role:
+                result.roleAssignment.role,
+              operation:
+                result.operation,
+              outgoing_assignment:
+                result.outgoingAssignment === null
+                  ? null
+                  : mapRoleAssignment(
+                      result.outgoingAssignment
+                    ),
+              incoming_assignment:
+                mapRoleAssignment(
+                  result.roleAssignment
+                ),
+              effective_at:
+                result.effectiveAt,
+            },
+            {
+              correlation_id:
+                context.correlationId,
+              request_id:
+                context.requestId,
+              next_cursor:
+                null,
+            }
+          )
+        );
+      } catch (error) {
+        handleProjectMembershipError(
+          error,
+          res,
+          next
+        );
+      }
+    }
+  );
+
+
   return router;
+}
+
+
+function parseChangeOrdinaryRoleRequest(
+  body: unknown,
+  membershipId: string
+): ChangeOrdinaryRoleInput {
+  const request =
+    requireRequestObject(body);
+
+  assertAllowedRequestFields(
+    request,
+    ["role", "reason"]
+  );
+
+  const role = requireNonBlankString(
+    request.role,
+    "role"
+  );
+
+  return {
+    membershipId,
+    role:
+      role as ChangeOrdinaryRoleInput["role"],
+    reason:
+      optionalText(
+        request.reason,
+        "reason"
+      ),
+  };
+}
+
+
+function parseTransferProtectedRoleRequest(
+  body: unknown
+): TransferProtectedRoleInput {
+  const request =
+    requireRequestObject(body);
+
+  assertAllowedRequestFields(
+    request,
+    [
+      "role",
+      "new_membership_id",
+      "reason",
+    ]
+  );
+
+  return {
+    role:
+      requireNonBlankString(
+        request.role,
+        "role"
+      ) as TransferProtectedRoleInput["role"],
+    newMembershipId:
+      requireNonBlankString(
+        request.new_membership_id,
+        "new_membership_id"
+      ),
+    reason:
+      requireNonBlankString(
+        request.reason,
+        "reason"
+      ),
+  };
+}
+
+
+function requireRequestObject(
+  body: unknown
+): Record<string, unknown> {
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    Array.isArray(body)
+  ) {
+    throw new ProjectMembershipValidationError(
+      "Request body must be an object."
+    );
+  }
+
+  return body as Record<string, unknown>;
+}
+
+
+function assertAllowedRequestFields(
+  request: Record<string, unknown>,
+  allowed: readonly string[]
+): void {
+  const unexpected =
+    Object.keys(request).find(
+      (field) =>
+        !allowed.includes(field)
+    );
+
+  if (unexpected) {
+    throw new ProjectMembershipValidationError(
+      `${unexpected} is not permitted.`
+    );
+  }
+}
+
+
+function optionalText(
+  value: unknown,
+  fieldName: string
+): string | null {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    throw new ProjectMembershipValidationError(
+      `${fieldName} must be text or null.`
+    );
+  }
+
+  const normalized = value.trim();
+
+  return normalized.length === 0
+    ? null
+    : normalized;
+}
+
+
+function mapRoleAssignment(
+  assignment: ProjectRoleAssignment
+) {
+  return {
+    id:
+      assignment.id,
+    project_id:
+      assignment.projectId,
+    membership_id:
+      assignment.membershipId,
+    role:
+      assignment.role,
+    effective_from:
+      assignment.effectiveFrom,
+    effective_to:
+      assignment.effectiveTo,
+    assigned_by_person_id:
+      assignment.assignedBy,
+    change_reason:
+      assignment.changeReason,
+    created_at:
+      assignment.createdAt,
+  };
 }
 
 
@@ -465,6 +751,36 @@ function handleProjectMembershipError(
       failure(
         "VALIDATION_ERROR",
         error.message,
+        correlationId
+      )
+    );
+
+    return;
+  }
+
+  if (
+    error instanceof
+      ProjectRoleTransferRequiredError
+  ) {
+    res.status(409).json(
+      failure(
+        "PROJECT_ROLE_TRANSFER_REQUIRED",
+        "Protected project roles must use the role-transfer operation.",
+        correlationId
+      )
+    );
+
+    return;
+  }
+
+  if (
+    error instanceof
+      ProjectRoleAssignmentInvalidError
+  ) {
+    res.status(409).json(
+      failure(
+        "PROJECT_ROLE_ASSIGNMENT_INVALID",
+        "The requested project role assignment is invalid.",
         correlationId
       )
     );

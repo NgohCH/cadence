@@ -5,6 +5,70 @@ All notable changes to Cadence will be documented in this file.
 Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
+
+### VS002-05 - Role Assignment and Key-Role Transfer
+
+#### Added
+
+- Added immediate ordinary role changes for `PROJECT_MEMBER`,
+  `PROJECT_OBSERVER`, and `PROJECT_AUDITOR`.
+- Added first appointment and transfer operations for protected
+  `PROJECT_SPONSOR`, `PROJECT_OWNER`, and `PROJECT_MANAGER` responsibilities.
+- Added `ProjectRoleManagementRepository` and its transactional Supabase RPC
+  adapter as the exclusive mutation boundary for these operations.
+- Added immutable `project_role_transfers` history with assignment linkage,
+  stable-Person authoriser provenance, reason, effective time, and request
+  correlation ID.
+- Added the ordinary-role PATCH and protected-role POST API endpoints using the
+  standard Cadence response and error envelopes.
+
+#### Architecture
+
+- Kept `ProjectAuthorisationService` as the sole VS002 authorization boundary;
+  routes, application services, repositories, and SQL do not infer permissions
+  independently.
+- Mapped Manager, Owner, and Sponsor operations to their frozen
+  `member.assign_manager`, `member.assign_owner`, and `member.assign_sponsor`
+  permissions.
+- Made first protected appointment versus transfer a transactional persistence
+  decision rather than a caller or HTTP mode.
+- Preserved ordinary and protected assignment history by closing effective
+  periods and inserting new records instead of overwriting or deleting them.
+- Verified that an `EXTERNAL` project member may hold `PROJECT_MANAGER` and
+  that affiliation is not authorization evidence.
+
+#### Database and Security
+
+- Added and remotely applied forward migration
+  `20260822120000_vs002_role_management.sql`.
+- Restricted both role-management RPCs to the backend `service_role`; browser
+  roles cannot execute them or mutate the transfer ledger directly.
+- Added only the missing Manager/Sponsor assignment permission codes and
+  propagated them solely to legacy roles already holding
+  `member.assign_owner`.
+- Verified transaction rollback, immutable history, and real concurrent-session
+  serialization through membership-row and project-row locks in local
+  PostgreSQL.
+
+#### Verified
+
+- Local clean migration, RPC runtime, security, immutability, rollback, legacy
+  compatibility, and concurrency verification passed.
+- Controlled live API verification against the linked remote database passed
+  for ordinary changes, protected appointments/transfers, denial and invalid
+  state paths, transfer-ledger correlation, and the external Project Manager
+  scenario.
+- API typecheck passed.
+- Full API suite passed: 209 tests, 0 failures.
+
+#### Deferred
+
+- Membership removal/expiry and protected-responsibility removal guards remain
+  VS002-06.
+- Membership/role domain events remain VS002-07.
+- Members frontend integration remains VS002-08.
+- Broad cross-module Project Authorisation adoption remains VS002-09.
+
 ### VS002-04 - Member Query and Add-Member Flow
 
 #### Added

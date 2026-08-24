@@ -6,7 +6,7 @@ declare
   required_tables text[] := array[
     'users','persons','authentication_identities','organisational_affiliations',
     'roles','permissions','role_permissions','platform_role_assignments',
-    'projects','project_memberships','project_role_assignments',
+    'projects','project_memberships','project_role_assignments','project_role_transfers',
     'messages','message_versions','message_mentions','message_reactions',
     'topics','decisions','decision_supersedes','tasks','blockers','milestones','files','file_links',
     'entity_links','source_links','ai_prompt_versions','ai_runs','ai_proposals','alerts','notifications',
@@ -69,6 +69,18 @@ begin
     raise exception
       'Expected stable Person mappings for VS-001 memberships, found % invalid rows',
       unmapped_membership_count;
+  end if;
+
+  if to_regprocedure(
+    'public.change_project_ordinary_role(uuid,uuid,uuid,text,timestamptz,uuid,text,timestamptz)'
+  ) is null then
+    raise exception 'Missing VS002-05B ordinary role-change RPC';
+  end if;
+
+  if to_regprocedure(
+    'public.transfer_project_protected_role(uuid,uuid,uuid,uuid,text,timestamptz,uuid,text,uuid,timestamptz)'
+  ) is null then
+    raise exception 'Missing VS002-05B protected role-transfer RPC';
   end if;
 
   raise notice 'Cadence schema smoke test passed.';

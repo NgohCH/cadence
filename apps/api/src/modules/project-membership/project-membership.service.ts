@@ -25,11 +25,17 @@ import {
   ProjectMembershipAlreadyActiveError,
   ProjectMembershipPermissionDeniedError,
   ProjectMembershipValidationError,
+  ProjectRoleAssignmentInvalidError,
+  ProjectRoleTransferRequiredError,
 } from "./project-membership.errors";
 
 import type {
   ProjectMembershipRepository,
 } from "./project-membership.repository";
+
+import type {
+  ProjectRoleManagementRepository,
+} from "./project-role-management.repository";
 
 import {
   createProjectMembership,
@@ -42,9 +48,21 @@ import type {
 } from "./project-membership.types";
 
 import type {
+  OrdinaryProjectRole,
   ProjectRole,
   ProjectRoleAssignment,
+  ProtectedProjectRole,
 } from "./project-role.types";
+
+import {
+  isOrdinaryProjectRole,
+  isProtectedProjectRole,
+} from "./project-role.types";
+
+import {
+  getProtectedRolePermission,
+  ORDINARY_ROLE_CHANGE_PERMISSION,
+} from "./project-permissions";
 
 
 export interface ProjectAuthorisationPort {
@@ -83,6 +101,66 @@ export interface AddProjectMemberInput {
   effectiveFrom: string;
   effectiveTo: string | null;
 }
+
+
+/**
+ * Immediate ordinary-role change requested through the application service.
+ * The service clock supplies the effective timestamp; callers cannot schedule
+ * a future transition in VS002-05.
+ */
+export interface ChangeOrdinaryRoleInput {
+  membershipId: string;
+  role: OrdinaryProjectRole;
+  reason: string | null;
+}
+
+
+export interface ChangeOrdinaryRoleResult {
+  closedAssignment:
+    ProjectRoleAssignment | null;
+  roleAssignment:
+    ProjectRoleAssignment;
+  effectiveAt: string;
+}
+
+
+/**
+ * The same protected command covers first appointment and later transfer.
+ * Persistence determines which occurred while enforcing one effective holder
+ * per protected role and project.
+ */
+export interface TransferProtectedRoleInput {
+  role: ProtectedProjectRole;
+  newMembershipId: string;
+  reason: string;
+}
+
+
+export type ProtectedRoleOperationKind =
+  | "APPOINTMENT"
+  | "TRANSFER";
+
+
+export interface TransferProtectedRoleResult {
+  operation:
+    ProtectedRoleOperationKind;
+  outgoingAssignment:
+    ProjectRoleAssignment | null;
+  roleAssignment:
+    ProjectRoleAssignment;
+  effectiveAt: string;
+  correlationId: string;
+}
+
+
+/**
+ * Role commands require request correlation in addition to the stable Person
+ * fields used by ProjectAuthorisationService.
+ */
+export type ProjectRoleCommandContext =
+  ProjectAuthorisationContext & {
+    correlationId: string;
+  };
 
 
 export interface ProjectMemberView {
@@ -129,6 +207,9 @@ export class ProjectMembershipService {
 
     private readonly identityRepository:
       ProjectMemberIdentityPort,
+
+    private readonly roleManagementRepository:
+      ProjectRoleManagementRepository,
 
     private readonly currentTime:
       ProjectMembershipClock = () =>
@@ -353,6 +434,272 @@ export class ProjectMembershipService {
   }
 
 
+  async changeOrdinaryRole(
+    context: ProjectRoleCommandContext,
+    projectId: string,
+    input: ChangeOrdinaryRoleInput
+  ): Promise<ChangeOrdinaryRoleResult> {
+    assertRequiredText(
+      projectId,
+      "projectId"
+    );
+    assertRequiredText(
+      input.membershipId,
+      "membershipId"
+    );
+
+    if (
+      isProtectedProjectRole(
+        input.role as ProjectRole
+      )
+    ) {
+      throw new ProjectRoleTransferRequiredError();
+    }
+
+    if (
+      !isOrdinaryProjectRole(
+        input.role as ProjectRole
+      )
+    ) {
+      throw new ProjectRoleAssignmentInvalidError();
+    }
+
+    const reason =
+      normalizeOptionalReason(
+        input.reason
+      );
+
+    await this.requirePermission(
+      context,
+      projectId,
+      ORDINARY_ROLE_CHANGE_PERMISSION
+    );
+
+    const effectiveAt =
+      normalizeTimestamp(
+        this.currentTime(),
+        "current time"
+      );
+
+    const membership =
+      await this.requireEffectiveMembership(
+        input.membershipId,
+        projectId,
+        effectiveAt
+      );
+
+    const assignments =
+      await this.membershipRepository
+        .listRoleAssignments(
+          membership.id
+        );
+
+    const effectiveOrdinaryAssignments =
+      assignments.filter(
+        (assignment) =>
+          assignment.projectId === projectId &&
+          isOrdinaryProjectRole(
+            assignment.role
+          ) &&
+          isRoleAssignmentEffectiveAt(
+            assignment,
+            effectiveAt
+          )
+      );
+
+    if (
+      effectiveOrdinaryAssignments.length > 1
+    ) {
+      throw new ProjectRoleAssignmentInvalidError(
+        "A project membership cannot have more than one effective ordinary role."
+      );
+    }
+
+    if (
+      effectiveOrdinaryAssignments[0]
+        ?.role === input.role
+    ) {
+      throw new ProjectRoleAssignmentInvalidError(
+        "The requested ordinary project role is already effective."
+      );
+    }
+
+    const result =
+      await this.mapRolePersistenceFailure(
+        this.roleManagementRepository
+          .changeOrdinaryRole({
+          assignmentId:
+            this.generateId(),
+          projectId,
+          membershipId:
+            membership.id,
+          role:
+            input.role,
+          effectiveAt,
+          assignedByPersonId:
+            context.actorPersonId,
+          changeReason:
+            reason,
+          createdAt:
+            effectiveAt,
+        })
+      );
+
+    return {
+      closedAssignment:
+        result.closedAssignment,
+      roleAssignment:
+        result.roleAssignment,
+      effectiveAt,
+    };
+  }
+
+
+  async transferProtectedRole(
+    context: ProjectRoleCommandContext,
+    projectId: string,
+    input: TransferProtectedRoleInput
+  ): Promise<TransferProtectedRoleResult> {
+    assertRequiredText(
+      projectId,
+      "projectId"
+    );
+    assertRequiredText(
+      input.newMembershipId,
+      "newMembershipId"
+    );
+    assertRequiredText(
+      context.correlationId,
+      "correlationId"
+    );
+
+    if (
+      !isProtectedProjectRole(
+        input.role as ProjectRole
+      )
+    ) {
+      throw new ProjectRoleAssignmentInvalidError(
+        "A protected-role operation requires Sponsor, Owner, or Manager."
+      );
+    }
+
+    const reason =
+      normalizeRequiredReason(
+        input.reason
+      );
+
+    await this.requirePermission(
+      context,
+      projectId,
+      getProtectedRolePermission(
+        input.role
+      )
+    );
+
+    const effectiveAt =
+      normalizeTimestamp(
+        this.currentTime(),
+        "current time"
+      );
+
+    const membership =
+      await this.requireEffectiveMembership(
+        input.newMembershipId,
+        projectId,
+        effectiveAt
+      );
+
+    const result =
+      await this.mapRolePersistenceFailure(
+        this.roleManagementRepository
+          .transferProtectedRole({
+          transferId:
+            this.generateId(),
+          incomingAssignmentId:
+            this.generateId(),
+          projectId,
+          incomingMembershipId:
+            membership.id,
+          role:
+            input.role,
+          effectiveAt,
+          authorisedByPersonId:
+            context.actorPersonId,
+          reason,
+          correlationId:
+            context.correlationId,
+          createdAt:
+            effectiveAt,
+        })
+      );
+
+    return {
+      operation:
+        result.outgoingAssignment === null
+          ? "APPOINTMENT"
+          : "TRANSFER",
+      outgoingAssignment:
+        result.outgoingAssignment,
+      roleAssignment:
+        result.roleAssignment,
+      effectiveAt,
+      correlationId:
+        result.transfer.correlationId,
+    };
+  }
+
+
+  private async requireEffectiveMembership(
+    membershipId: string,
+    projectId: string,
+    effectiveAt: string
+  ): Promise<ProjectMembership> {
+    const membership =
+      await this.membershipRepository
+        .findMembershipById(
+          membershipId
+        );
+
+    if (
+      membership === null ||
+      membership.projectId !== projectId ||
+      membership.status !== "ACTIVE" ||
+      !isProjectMembershipEffectiveAt(
+        membership,
+        effectiveAt
+      )
+    ) {
+      throw new ProjectRoleAssignmentInvalidError(
+        "The target project membership is not effective for this operation."
+      );
+    }
+
+    return membership;
+  }
+
+
+  private async mapRolePersistenceFailure<T>(
+    operation: Promise<T>
+  ): Promise<T> {
+    try {
+      return await operation;
+    } catch (error) {
+      if (
+        error instanceof
+          ProjectRoleAssignmentInvalidError ||
+        error instanceof
+          ProjectRoleTransferRequiredError
+      ) {
+        throw error;
+      }
+
+      throw new ProjectRoleAssignmentInvalidError(
+        "Project role persistence rejected the requested transition."
+      );
+    }
+  }
+
+
   private async requirePermission(
     context: ProjectAuthorisationContext,
     projectId: string,
@@ -370,6 +717,92 @@ export class ProjectMembershipService {
       throw new ProjectMembershipPermissionDeniedError();
     }
   }
+}
+
+
+function isRoleAssignmentEffectiveAt(
+  assignment: ProjectRoleAssignment,
+  effectiveAt: string
+): boolean {
+  const evaluated =
+    parseTimestamp(
+      effectiveAt,
+      "effectiveAt"
+    );
+  const from =
+    parseTimestamp(
+      assignment.effectiveFrom,
+      "role effectiveFrom"
+    );
+  const to =
+    assignment.effectiveTo === null
+      ? null
+      : parseTimestamp(
+          assignment.effectiveTo,
+          "role effectiveTo"
+        );
+
+  return (
+    evaluated >= from &&
+    (to === null || evaluated < to)
+  );
+}
+
+
+function assertRequiredText(
+  value: string,
+  fieldName: string
+): void {
+  if (
+    typeof value !== "string" ||
+    value.trim().length === 0
+  ) {
+    throw new ProjectRoleAssignmentInvalidError(
+      `${fieldName} is required.`
+    );
+  }
+}
+
+
+function normalizeOptionalReason(
+  reason: string | null
+): string | null {
+  if (reason === null) {
+    return null;
+  }
+
+  if (typeof reason !== "string") {
+    throw new ProjectRoleAssignmentInvalidError(
+      "An ordinary role-change reason must be text or null."
+    );
+  }
+
+  const normalized = reason.trim();
+
+  return normalized.length === 0
+    ? null
+    : normalized;
+}
+
+
+function normalizeRequiredReason(
+  reason: string
+): string {
+  if (typeof reason !== "string") {
+    throw new ProjectRoleAssignmentInvalidError(
+      "A protected role operation requires a reason."
+    );
+  }
+
+  const normalized = reason.trim();
+
+  if (normalized.length === 0) {
+    throw new ProjectRoleAssignmentInvalidError(
+      "A protected role operation requires a reason."
+    );
+  }
+
+  return normalized;
 }
 
 

@@ -32,6 +32,14 @@ import type {
   ProjectMembershipRepository,
 } from "./project-membership.repository";
 
+import type {
+  ChangeOrdinaryRolePersistenceInput,
+  ChangeOrdinaryRolePersistenceResult,
+  ProjectRoleManagementRepository,
+  TransferProtectedRolePersistenceInput,
+  TransferProtectedRolePersistenceResult,
+} from "./project-role-management.repository";
+
 import {
   createProjectMembershipRouter,
 } from "./project-membership.routes";
@@ -204,6 +212,101 @@ class InMemoryAdmissionRepository
 }
 
 
+class FakeRoleManagementRepository
+  implements ProjectRoleManagementRepository
+{
+  public ordinaryCalls:
+    ChangeOrdinaryRolePersistenceInput[] = [];
+  public protectedCalls:
+    TransferProtectedRolePersistenceInput[] = [];
+  public ordinaryError: unknown = null;
+  public protectedError: unknown = null;
+  public ordinaryClosed:
+    ProjectRoleAssignment | null = null;
+  public protectedOutgoing:
+    ProjectRoleAssignment | null = null;
+
+
+  async changeOrdinaryRole(
+    input: ChangeOrdinaryRolePersistenceInput
+  ): Promise<ChangeOrdinaryRolePersistenceResult> {
+    this.ordinaryCalls.push(input);
+
+    if (this.ordinaryError !== null) {
+      throw this.ordinaryError;
+    }
+
+    return {
+      closedAssignment:
+        this.ordinaryClosed,
+      roleAssignment:
+        assignmentFromOrdinaryInput(input),
+    };
+  }
+
+
+  async transferProtectedRole(
+    input: TransferProtectedRolePersistenceInput
+  ): Promise<TransferProtectedRolePersistenceResult> {
+    this.protectedCalls.push(input);
+
+    if (this.protectedError !== null) {
+      throw this.protectedError;
+    }
+
+    const roleAssignment: ProjectRoleAssignment = {
+      id:
+        input.incomingAssignmentId,
+      projectId:
+        input.projectId,
+      membershipId:
+        input.incomingMembershipId,
+      role:
+        input.role,
+      effectiveFrom:
+        input.effectiveAt,
+      effectiveTo:
+        null,
+      assignedBy:
+        input.authorisedByPersonId,
+      changeReason:
+        input.reason,
+      createdAt:
+        input.createdAt,
+    };
+
+    return {
+      outgoingAssignment:
+        this.protectedOutgoing,
+      roleAssignment,
+      transfer: {
+        id:
+          input.transferId,
+        projectId:
+          input.projectId,
+        role:
+          input.role,
+        outgoingAssignmentId:
+          this.protectedOutgoing
+            ?.id ?? null,
+        incomingAssignmentId:
+          roleAssignment.id,
+        authorisedByPersonId:
+          input.authorisedByPersonId,
+        reason:
+          input.reason,
+        correlationId:
+          input.correlationId,
+        effectiveAt:
+          input.effectiveAt,
+        createdAt:
+          input.createdAt,
+      },
+    };
+  }
+}
+
+
 class FakeIdentityRepository
   implements ProjectMemberIdentityPort
 {
@@ -346,10 +449,39 @@ function createMembership(
 }
 
 
+function createAssignment(
+  overrides:
+    Partial<ProjectRoleAssignment> = {}
+): ProjectRoleAssignment {
+  return {
+    id:
+      "abababab-abab-4bab-8bab-abababababab",
+    projectId,
+    membershipId,
+    role:
+      "PROJECT_MEMBER",
+    effectiveFrom:
+      "2026-09-01T00:00:00.000Z",
+    effectiveTo:
+      null,
+    assignedBy:
+      actorPersonId,
+    changeReason:
+      "Existing assignment",
+    createdAt:
+      "2026-09-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+
 function createService(
   options: {
     memberships?:
       ProjectMembership[];
+
+    assignments?:
+      ProjectRoleAssignment[];
 
     persons?:
       CadencePerson[];
@@ -369,14 +501,21 @@ function createService(
 
   admissionRepository:
     InMemoryAdmissionRepository;
+
+  roleManagementRepository:
+    FakeRoleManagementRepository;
 } {
   const membershipRepository =
     new InMemoryMembershipRepository(
-      options.memberships ?? []
+      options.memberships ?? [],
+      options.assignments ?? []
     );
 
   const admissionRepository =
     new InMemoryAdmissionRepository();
+
+  const roleManagementRepository =
+    new FakeRoleManagementRepository();
 
   const identityRepository =
     new FakeIdentityRepository(
@@ -423,6 +562,7 @@ function createService(
   const ids = [
     membershipId,
     roleAssignmentId,
+    "99999999-9999-4999-8999-999999999999",
   ];
 
   let nextId =
@@ -435,6 +575,7 @@ function createService(
         membershipRepository,
         admissionRepository,
         identityRepository,
+        roleManagementRepository,
         () =>
           evaluatedAt,
         () => {
@@ -454,6 +595,33 @@ function createService(
       ),
 
     admissionRepository,
+    roleManagementRepository,
+  };
+}
+
+
+function assignmentFromOrdinaryInput(
+  input: ChangeOrdinaryRolePersistenceInput
+): ProjectRoleAssignment {
+  return {
+    id:
+      input.assignmentId,
+    projectId:
+      input.projectId,
+    membershipId:
+      input.membershipId,
+    role:
+      input.role,
+    effectiveFrom:
+      input.effectiveAt,
+    effectiveTo:
+      null,
+    assignedBy:
+      input.assignedByPersonId,
+    changeReason:
+      input.changeReason,
+    createdAt:
+      input.createdAt,
   };
 }
 
@@ -464,7 +632,9 @@ async function request(
 
   path: string,
 
-  init?: RequestInit
+  init?: RequestInit,
+
+  authenticated = true
 ): Promise<{
   status: number;
   body: JsonObject;
@@ -482,6 +652,24 @@ async function request(
       res,
       next
     ) => {
+      if (!authenticated) {
+        res.status(401).json({
+          success:
+            false,
+          error: {
+            code:
+              "UNAUTHENTICATED",
+            message:
+              "Authentication is required.",
+            correlation_id:
+              correlationId,
+            details: {},
+          },
+        });
+
+        return;
+      }
+
       res.locals.authenticated = {
         user: {
           id:
@@ -1144,6 +1332,793 @@ test(
     assert.equal(
       meta.next_cursor,
       null
+    );
+  }
+);
+
+
+test(
+  "PATCH member lets Owner change Member to Observer using route and request context",
+  async () => {
+    const {
+      service,
+      roleManagementRepository,
+    } = createService({
+      memberships: [
+        createMembership(),
+      ],
+      assignments: [
+        createAssignment(),
+      ],
+      permissions: {
+        "member.change_role":
+          true,
+      },
+    });
+
+    const response = await request(
+      service,
+      `/api/v1/projects/${projectId}/members/${membershipId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          role:
+            "PROJECT_OBSERVER",
+          reason:
+            "Oversight period",
+        }),
+      }
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.success, true);
+    assert.deepEqual(
+      roleManagementRepository.ordinaryCalls,
+      [{
+        assignmentId:
+          membershipId,
+        projectId,
+        membershipId,
+        role:
+          "PROJECT_OBSERVER",
+        effectiveAt:
+          evaluatedAt,
+        assignedByPersonId:
+          actorPersonId,
+        changeReason:
+          "Oversight period",
+        createdAt:
+          evaluatedAt,
+      }]
+    );
+
+    const data =
+      response.body.data as JsonObject;
+    const assignment =
+      data.role_assignment as JsonObject;
+    assert.equal(
+      assignment.role,
+      "PROJECT_OBSERVER"
+    );
+    assert.equal(
+      assignment.assigned_by_person_id,
+      actorPersonId
+    );
+    assert.equal(
+      data.effective_at,
+      evaluatedAt
+    );
+    assert.equal(
+      data.closed_assignment,
+      null
+    );
+
+    const meta =
+      response.body.meta as JsonObject;
+    assert.equal(
+      meta.correlation_id,
+      correlationId
+    );
+  }
+);
+
+
+test(
+  "PATCH member lets Manager change Observer to Auditor with closed history",
+  async () => {
+    const existing = createAssignment({
+      role:
+        "PROJECT_OBSERVER",
+    });
+    const {
+      service,
+      roleManagementRepository,
+    } = createService({
+      memberships: [createMembership()],
+      assignments: [existing],
+      permissions: {
+        "member.change_role": true,
+      },
+    });
+    roleManagementRepository.ordinaryClosed = {
+      ...existing,
+      effectiveTo:
+        evaluatedAt,
+    };
+
+    const response = await request(
+      service,
+      `/api/v1/projects/${projectId}/members/${membershipId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "PROJECT_AUDITOR",
+          reason: null,
+        }),
+      }
+    );
+
+    assert.equal(response.status, 200);
+    const data =
+      response.body.data as JsonObject;
+    const closed =
+      data.closed_assignment as JsonObject;
+    assert.equal(
+      closed.role,
+      "PROJECT_OBSERVER"
+    );
+    assert.equal(
+      closed.effective_to,
+      evaluatedAt
+    );
+  }
+);
+
+
+test(
+  "PATCH member rejects unauthenticated and denied actors",
+  async () => {
+    const unauthenticated = createService();
+    const unauthenticatedResponse =
+      await request(
+        unauthenticated.service,
+        `/api/v1/projects/${projectId}/members/${membershipId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            role: "PROJECT_OBSERVER",
+          }),
+        },
+        false
+      );
+    assert.equal(
+      unauthenticatedResponse.status,
+      401
+    );
+    assert.equal(
+      (unauthenticatedResponse.body.error as JsonObject).code,
+      "UNAUTHENTICATED"
+    );
+
+    const denied = createService({
+      permissions: {
+        "member.change_role": false,
+      },
+    });
+    const deniedResponse = await request(
+      denied.service,
+      `/api/v1/projects/${projectId}/members/${membershipId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "PROJECT_OBSERVER",
+        }),
+      }
+    );
+    assert.equal(deniedResponse.status, 403);
+    assert.equal(
+      (deniedResponse.body.error as JsonObject).code,
+      "PROJECT_ACCESS_DENIED"
+    );
+    assert.equal(
+      denied.roleManagementRepository
+        .ordinaryCalls.length,
+      0
+    );
+  }
+);
+
+
+test(
+  "PATCH member maps protected and invalid roles to stable errors",
+  async () => {
+    const protectedAttempt = createService();
+    const protectedResponse = await request(
+      protectedAttempt.service,
+      `/api/v1/projects/${projectId}/members/${membershipId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "PROJECT_MANAGER",
+        }),
+      }
+    );
+    assert.equal(protectedResponse.status, 409);
+    assert.equal(
+      (protectedResponse.body.error as JsonObject).code,
+      "PROJECT_ROLE_TRANSFER_REQUIRED"
+    );
+
+    const invalidAttempt = createService();
+    const invalidResponse = await request(
+      invalidAttempt.service,
+      `/api/v1/projects/${projectId}/members/${membershipId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "PROJECT_UNKNOWN",
+        }),
+      }
+    );
+    assert.equal(invalidResponse.status, 409);
+    assert.equal(
+      (invalidResponse.body.error as JsonObject).code,
+      "PROJECT_ROLE_ASSIGNMENT_INVALID"
+    );
+  }
+);
+
+
+test(
+  "PATCH member rejects malformed and caller-controlled fields",
+  async () => {
+    for (const body of [
+      [],
+      {},
+      {
+        role: "PROJECT_OBSERVER",
+        effective_at:
+          "2030-01-01T00:00:00.000Z",
+      },
+      {
+        role: "PROJECT_OBSERVER",
+        actor_person_id:
+          "not-the-actor",
+      },
+    ]) {
+      const harness = createService();
+      const response = await request(
+        harness.service,
+        `/api/v1/projects/${projectId}/members/${membershipId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        }
+      );
+      assert.equal(response.status, 400);
+      assert.equal(
+        (response.body.error as JsonObject).code,
+        "VALIDATION_ERROR"
+      );
+      assert.equal(
+        harness.roleManagementRepository
+          .ordinaryCalls.length,
+        0
+      );
+    }
+  }
+);
+
+
+test(
+  "PATCH member maps wrong-project future ended and persistence failures without raw details",
+  async () => {
+    const cases = [
+      createMembership({
+        projectId:
+          "aaaaaaaa-0000-4000-8000-000000000001",
+      }),
+      createMembership({
+        effectiveFrom:
+          "2026-10-01T00:00:00.000Z",
+      }),
+      createMembership({
+        status: "ENDED",
+        effectiveTo:
+          "2026-10-01T00:00:00.000Z",
+        terminationReason: "Ended",
+      }),
+    ];
+
+    for (const membership of cases) {
+      const harness = createService({
+        memberships: [membership],
+        permissions: {
+          "member.change_role": true,
+        },
+      });
+      const response = await request(
+        harness.service,
+        `/api/v1/projects/${projectId}/members/${membershipId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            role: "PROJECT_OBSERVER",
+          }),
+        }
+      );
+      assert.equal(response.status, 409);
+      assert.equal(
+        (response.body.error as JsonObject).code,
+        "PROJECT_ROLE_ASSIGNMENT_INVALID"
+      );
+    }
+
+    const failed = createService({
+      memberships: [createMembership()],
+      permissions: {
+        "member.change_role": true,
+      },
+    });
+    failed.roleManagementRepository.ordinaryError =
+      new Error("sensitive postgres detail");
+    const failureResponse = await request(
+      failed.service,
+      `/api/v1/projects/${projectId}/members/${membershipId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "PROJECT_OBSERVER",
+        }),
+      }
+    );
+    const error =
+      failureResponse.body.error as JsonObject;
+    assert.equal(failureResponse.status, 409);
+    assert.equal(
+      error.code,
+      "PROJECT_ROLE_ASSIGNMENT_INVALID"
+    );
+    assert.doesNotMatch(
+      String(error.message),
+      /postgres|sensitive/i
+    );
+  }
+);
+
+
+test(
+  "POST role-transfers creates external Manager first appointment with request context",
+  async () => {
+    const {
+      service,
+      roleManagementRepository,
+    } = createService({
+      memberships: [
+        createMembership({
+          personId: targetPersonId,
+        }),
+      ],
+      affiliations: [{
+        personId: targetPersonId,
+        classification: "EXTERNAL",
+        organisationName: "Delivery Ltd",
+        effectiveFrom:
+          "2026-01-01T00:00:00.000Z",
+        effectiveTo: null,
+      }],
+      permissions: {
+        "member.assign_manager": true,
+      },
+    });
+
+    const response = await request(
+      service,
+      `/api/v1/projects/${projectId}/role-transfers`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "PROJECT_MANAGER",
+          new_membership_id: membershipId,
+          reason: "External delivery lead",
+        }),
+      }
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      roleManagementRepository.protectedCalls,
+      [{
+        transferId: membershipId,
+        incomingAssignmentId:
+          roleAssignmentId,
+        projectId,
+        incomingMembershipId:
+          membershipId,
+        role: "PROJECT_MANAGER",
+        effectiveAt: evaluatedAt,
+        authorisedByPersonId:
+          actorPersonId,
+        reason:
+          "External delivery lead",
+        correlationId,
+        createdAt: evaluatedAt,
+      }]
+    );
+    const data =
+      response.body.data as JsonObject;
+    assert.equal(data.role, "PROJECT_MANAGER");
+    assert.equal(data.operation, "APPOINTMENT");
+    assert.equal(data.outgoing_assignment, null);
+    assert.equal(data.effective_at, evaluatedAt);
+    const incoming =
+      data.incoming_assignment as JsonObject;
+    assert.equal(
+      incoming.membership_id,
+      membershipId
+    );
+    assert.equal(
+      incoming.assigned_by_person_id,
+      actorPersonId
+    );
+    assert.equal(
+      (response.body.meta as JsonObject)
+        .correlation_id,
+      correlationId
+    );
+  }
+);
+
+
+test(
+  "POST role-transfers returns Manager transfer history",
+  async () => {
+    const existing = createAssignment({
+      role: "PROJECT_MANAGER",
+      effectiveTo: evaluatedAt,
+    });
+    const harness = createService({
+      memberships: [createMembership()],
+      permissions: {
+        "member.assign_manager": true,
+      },
+    });
+    harness.roleManagementRepository
+      .protectedOutgoing = existing;
+
+    const response = await request(
+      harness.service,
+      `/api/v1/projects/${projectId}/role-transfers`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "PROJECT_MANAGER",
+          new_membership_id: membershipId,
+          reason: "Manager succession",
+        }),
+      }
+    );
+
+    assert.equal(response.status, 200);
+    const data =
+      response.body.data as JsonObject;
+    assert.equal(data.operation, "TRANSFER");
+    assert.equal(
+      (data.outgoing_assignment as JsonObject).role,
+      "PROJECT_MANAGER"
+    );
+  }
+);
+
+
+test(
+  "POST role-transfers supports Owner and Sponsor operations",
+  async () => {
+    for (const item of [
+      {
+        role: "PROJECT_OWNER",
+        permission: "member.assign_owner",
+      },
+      {
+        role: "PROJECT_SPONSOR",
+        permission: "member.assign_sponsor",
+      },
+    ]) {
+      const harness = createService({
+        memberships: [createMembership()],
+        permissions: {
+          [item.permission]: true,
+        },
+      });
+      const response = await request(
+        harness.service,
+        `/api/v1/projects/${projectId}/role-transfers`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            role: item.role,
+            new_membership_id: membershipId,
+            reason: "Governance succession",
+          }),
+        }
+      );
+      assert.equal(response.status, 200);
+      assert.equal(
+        (response.body.data as JsonObject).role,
+        item.role
+      );
+    }
+  }
+);
+
+
+test(
+  "POST role-transfers rejects unauthenticated and denied Manager Member Observer Auditor actors",
+  async () => {
+    const unauthenticated = createService();
+    const unauthenticatedResponse =
+      await request(
+        unauthenticated.service,
+        `/api/v1/projects/${projectId}/role-transfers`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            role: "PROJECT_MANAGER",
+            new_membership_id: membershipId,
+            reason: "Denied",
+          }),
+        },
+        false
+      );
+    assert.equal(
+      unauthenticatedResponse.status,
+      401
+    );
+
+    for (const actorRole of [
+      "PROJECT_MANAGER",
+      "PROJECT_MEMBER",
+      "PROJECT_OBSERVER",
+      "PROJECT_AUDITOR",
+    ]) {
+      const harness = createService({
+        permissions: {
+          "member.assign_manager": false,
+        },
+      });
+      const response = await request(
+        harness.service,
+        `/api/v1/projects/${projectId}/role-transfers`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-role": actorRole,
+          },
+          body: JSON.stringify({
+            role: "PROJECT_MANAGER",
+            new_membership_id: membershipId,
+            reason: "Denied",
+          }),
+        }
+      );
+      assert.equal(response.status, 403);
+      assert.equal(
+        (response.body.error as JsonObject).code,
+        "PROJECT_ACCESS_DENIED"
+      );
+      assert.equal(
+        harness.roleManagementRepository
+          .protectedCalls.length,
+        0
+      );
+    }
+  }
+);
+
+
+test(
+  "POST role-transfers rejects ordinary role malformed body and caller-controlled state",
+  async () => {
+    const cases = [
+      {
+        body: {
+          role: "PROJECT_MEMBER",
+          new_membership_id: membershipId,
+          reason: "Invalid role",
+        },
+        status: 409,
+        code: "PROJECT_ROLE_ASSIGNMENT_INVALID",
+      },
+      {
+        body: {
+          role: "PROJECT_MANAGER",
+          new_membership_id: membershipId,
+          reason: "",
+        },
+        status: 400,
+        code: "VALIDATION_ERROR",
+      },
+      {
+        body: {
+          role: "PROJECT_MANAGER",
+          new_membership_id: membershipId,
+        },
+        status: 400,
+        code: "VALIDATION_ERROR",
+      },
+      {
+        body: {
+          role: "PROJECT_MANAGER",
+          new_membership_id: membershipId,
+          reason: "Invalid control",
+          outgoing_assignment_id:
+            "caller-controlled",
+        },
+        status: 400,
+        code: "VALIDATION_ERROR",
+      },
+      {
+        body: {
+          role: "PROJECT_MANAGER",
+          new_membership_id: membershipId,
+          reason: "Invalid control",
+          effective_at:
+            "2030-01-01T00:00:00.000Z",
+        },
+        status: 400,
+        code: "VALIDATION_ERROR",
+      },
+    ];
+
+    for (const item of cases) {
+      const harness = createService();
+      const response = await request(
+        harness.service,
+        `/api/v1/projects/${projectId}/role-transfers`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(item.body),
+        }
+      );
+      assert.equal(response.status, item.status);
+      assert.equal(
+        (response.body.error as JsonObject).code,
+        item.code
+      );
+      assert.equal(
+        harness.roleManagementRepository
+          .protectedCalls.length,
+        0
+      );
+    }
+  }
+);
+
+
+test(
+  "POST role-transfers maps invalid membership state and persistence failure safely",
+  async () => {
+    for (const membership of [
+      createMembership({
+        projectId:
+          "aaaaaaaa-0000-4000-8000-000000000001",
+      }),
+      createMembership({
+        effectiveFrom:
+          "2026-10-01T00:00:00.000Z",
+      }),
+      createMembership({
+        status: "ENDED",
+        effectiveTo:
+          "2026-10-01T00:00:00.000Z",
+        terminationReason: "Ended",
+      }),
+    ]) {
+      const harness = createService({
+        memberships: [membership],
+        permissions: {
+          "member.assign_manager": true,
+        },
+      });
+      const response = await request(
+        harness.service,
+        `/api/v1/projects/${projectId}/role-transfers`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            role: "PROJECT_MANAGER",
+            new_membership_id: membershipId,
+            reason: "Invalid membership",
+          }),
+        }
+      );
+      assert.equal(response.status, 409);
+      assert.equal(
+        (response.body.error as JsonObject).code,
+        "PROJECT_ROLE_ASSIGNMENT_INVALID"
+      );
+    }
+
+    const failed = createService({
+      memberships: [createMembership()],
+      permissions: {
+        "member.assign_manager": true,
+      },
+    });
+    failed.roleManagementRepository.protectedError =
+      new Error("sensitive supabase conflict");
+    const response = await request(
+      failed.service,
+      `/api/v1/projects/${projectId}/role-transfers`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "PROJECT_MANAGER",
+          new_membership_id: membershipId,
+          reason: "Persistence conflict",
+        }),
+      }
+    );
+    const error =
+      response.body.error as JsonObject;
+    assert.equal(response.status, 409);
+    assert.equal(
+      error.code,
+      "PROJECT_ROLE_ASSIGNMENT_INVALID"
+    );
+    assert.doesNotMatch(
+      String(error.message),
+      /supabase|sensitive/i
     );
   }
 );

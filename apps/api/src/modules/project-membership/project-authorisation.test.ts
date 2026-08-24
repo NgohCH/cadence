@@ -14,6 +14,10 @@ import {
   ProjectAuthorisationService,
 } from "./project-authorisation.service";
 
+import {
+  ProjectRoleAssignmentInvalidError,
+} from "./project-membership.errors";
+
 import type {
   LegacyProjectAuthorisation,
 } from "./project-authorisation.service";
@@ -25,6 +29,10 @@ import type {
 import type {
   ProjectRole,
   ProjectRoleAssignment,
+} from "./project-role.types";
+
+import {
+  PROJECT_ROLES,
 } from "./project-role.types";
 
 
@@ -383,14 +391,21 @@ test(
 
 
 test(
-  "Sponsor and Owner can authorise protected transfers while Manager cannot",
+  "ordinary role changes follow the frozen Owner and Manager permission matrix",
   async () => {
-    for (
-      const role of [
-        "PROJECT_SPONSOR",
-        "PROJECT_OWNER",
-      ] as const
-    ) {
+    const expectations = {
+      PROJECT_SPONSOR: false,
+      PROJECT_OWNER: true,
+      PROJECT_MANAGER: true,
+      PROJECT_MEMBER: false,
+      PROJECT_OBSERVER: false,
+      PROJECT_AUDITOR: false,
+    } as const satisfies Record<
+      ProjectRole,
+      boolean
+    >;
+
+    for (const role of PROJECT_ROLES) {
       const service =
         createService(
           new InMemoryProjectMembershipRepository(
@@ -403,13 +418,63 @@ test(
         await service.hasProjectPermission(
           context,
           projectId,
-          "member.assign_manager"
+          "member.change_role"
         ),
-        true
+        expectations[role],
+        `${role} ordinary-role permission must match the frozen matrix.`
       );
     }
+  }
+);
 
-    const managerService =
+
+test(
+  "protected appointments and transfers follow the frozen permission matrix",
+  async () => {
+    const protectedPermissions = [
+      "member.assign_manager",
+      "member.assign_owner",
+      "member.assign_sponsor",
+    ] as const;
+
+    const permittedActors =
+      new Set<ProjectRole>([
+        "PROJECT_SPONSOR",
+        "PROJECT_OWNER",
+      ]);
+
+    for (const permission of protectedPermissions) {
+      for (const role of PROJECT_ROLES) {
+        const service =
+          createService(
+            new InMemoryProjectMembershipRepository(
+              [createMembership()],
+              [createAssignment(role)]
+            )
+          );
+
+        assert.equal(
+          await service.hasProjectPermission(
+            context,
+            projectId,
+            permission
+          ),
+          permittedActors.has(role),
+          `${role} permission for ${permission} must match the frozen matrix.`
+        );
+      }
+    }
+  }
+);
+
+
+test(
+  "legacy fallback cannot widen an effective frozen-role decision",
+  async () => {
+    const legacy =
+      new FakeLegacyAuthorisation(true);
+
+    const service =
       createService(
         new InMemoryProjectMembershipRepository(
           [createMembership()],
@@ -418,28 +483,22 @@ test(
               "PROJECT_MANAGER"
             ),
           ]
-        )
+        ),
+        legacy
       );
 
     assert.equal(
-      await managerService
-        .hasProjectPermission(
-          context,
-          projectId,
-          "member.assign_manager"
-        ),
+      await service.hasProjectPermission(
+        context,
+        projectId,
+        "member.assign_owner"
+      ),
       false
     );
 
-    assert.equal(
-      await managerService
-        .hasProjectPermission(
-          context,
-          projectId,
-          "audit.view"
-        ),
-      false,
-      "Specialised audit access requires explicit Auditor authority."
+    assert.deepEqual(
+      legacy.calls,
+      []
     );
   }
 );
@@ -565,7 +624,7 @@ test(
 
 
 test(
-  "multiple effective roles combine permissions without duplication",
+  "one ordinary role can coexist with a protected role",
   async () => {
     const service =
       createService(
@@ -573,7 +632,7 @@ test(
           [createMembership()],
           [
             createAssignment(
-              "PROJECT_OBSERVER"
+              "PROJECT_MANAGER"
             ),
             createAssignment(
               "PROJECT_MEMBER",
@@ -592,8 +651,8 @@ test(
         projectId
       ),
       [
+        "PROJECT_MANAGER",
         "PROJECT_MEMBER",
-        "PROJECT_OBSERVER",
       ]
     );
 
@@ -604,6 +663,39 @@ test(
         "task.create"
       ),
       true
+    );
+  }
+);
+
+
+test(
+  "multiple effective ordinary roles on one membership are invalid",
+  async () => {
+    const service =
+      createService(
+        new InMemoryProjectMembershipRepository(
+          [createMembership()],
+          [
+            createAssignment(
+              "PROJECT_MEMBER"
+            ),
+            createAssignment(
+              "PROJECT_OBSERVER",
+              {
+                id:
+                  "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+              }
+            ),
+          ]
+        )
+      );
+
+    await assert.rejects(
+      service.getEffectiveProjectRoles(
+        personId,
+        projectId
+      ),
+      ProjectRoleAssignmentInvalidError
     );
   }
 );

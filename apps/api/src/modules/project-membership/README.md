@@ -1,5 +1,43 @@
 # Project Membership Module
 
+## VS002-05 Role Management HTTP Contract
+
+Immediate ordinary role changes and protected responsibility operations use:
+
+```text
+PATCH /api/v1/projects/:projectId/members/:membershipId
+POST  /api/v1/projects/:projectId/role-transfers
+```
+
+The PATCH body accepts `role` and optional `reason`. The protected POST body
+accepts `role`, `new_membership_id`, and a required nonblank `reason`. Neither
+endpoint accepts caller-supplied effective time, actor identity, correlation
+identity, outgoing holder, or appointment/transfer mode.
+
+Both return HTTP 200 in the standard Cadence envelope. Role assignment
+history is returned using `closed_assignment`/`role_assignment` for ordinary
+changes and `outgoing_assignment`/`incoming_assignment` for protected
+operations. Protected results also identify `APPOINTMENT` or `TRANSFER` as
+determined by transactional persistence.
+
+The routes call `ProjectMembershipService` only. Authorization remains owned
+by `ProjectAuthorisationService`, and mutations pass exclusively through the
+service-role-only `ProjectRoleManagementRepository` RPC adapter. Affiliation
+does not participate; an EXTERNAL member may hold PROJECT_MANAGER.
+
+```text
+PROJECT_ACCESS_DENIED             -> 403
+PROJECT_ROLE_TRANSFER_REQUIRED    -> 409
+PROJECT_ROLE_ASSIGNMENT_INVALID   -> 409
+request validation failure        -> 400
+```
+
+VS002-05 is complete. Migration
+`20260822120000_vs002_role_management.sql` is applied remotely. Local
+PostgreSQL runtime, rollback, security, immutability, and real concurrency
+verification passed, as did controlled remote-backed live API verification.
+The final API suite passes 209/209 tests and API typecheck passes.
+
 ## VS002-04 — Member Query and Add-Member Flow
 
 VS002-04 adds the first HTTP member-management surface on top of the
@@ -21,8 +59,8 @@ context only and does not participate in project authorisation.
 
 Ordinary admission requires `member.invite`. VS002-04 accepts only the initial
 `PROJECT_MEMBER` role. General role assignment, role changes, Observer/Auditor
-assignment, and protected Sponsor/Owner/Manager transfer remain VS002-05
-responsibilities.
+assignment, and protected Sponsor/Owner/Manager transfer are exposed by the
+VS002-05 role-management endpoints above.
 
 Admission requires an existing stable Cadence Person. The flow does not create
 an authentication identity, login account, or organisational affiliation.
@@ -91,8 +129,9 @@ Live verification against the remote Supabase project proved:
 - duplicate overlapping membership rejection; and
 - successful retrieval of both new members through the HTTP API.
 
-The automated API suite passes 130 tests with zero failures, including eight
-HTTP contract tests for the member routes.
+VS002-04 closed with 130 passing automated API tests, including eight HTTP
+contract tests for the member routes. The current VS002-05 total is recorded
+above.
 
 Existing migrated VS-001 members may appear in the VS002 member listing with
 an empty frozen-role array because historical `PROJECT_LEAD`, `CONTRIBUTOR`,
@@ -101,10 +140,11 @@ role meanings. Their existing authority continues through the explicit legacy
 RBAC fallback in `ProjectAuthorisationService`. This is a transitional
 compatibility condition, not loss of access.
 
-VS002-04 deliberately does not implement membership removal, automatic expiry
-processing, general role assignment/change, protected-role transfer,
+At its closure, VS002-04 deliberately excluded membership removal, automatic
+expiry processing, general role assignment/change, protected-role transfer,
 membership domain events, Audit projection, Tasks responsibility guards,
-Members frontend controls, or broad cross-module authorisation migration.
+Members frontend controls, and broad cross-module authorisation migration.
+VS002-05 subsequently added role changes and protected appointments/transfers.
 
 
 ## VS002-03 Project Authorisation
@@ -200,11 +240,12 @@ does not erase its historical effective interval.
 
 ## Persistence
 
-Project Membership owns both persistence structures:
+Project Membership owns these persistence structures:
 
 ```text
 public.project_memberships
 public.project_role_assignments
+public.project_role_transfers
 ```
 
 `public.project_memberships` is the evolved VS-001 table, not a duplicate.
@@ -226,10 +267,19 @@ composite FK guarantees that an assignment's `project_id` matches its
 membership project.
 
 `ProjectMembershipRepository` and `SupabaseProjectMembershipRepository`
-provide foundational create/read operations only. They do not implement
-duplicate handling, lifecycle commands, transfer, expiry, authorisation, or
-events. A new VS-002 membership leaves legacy `user_id` and `role_id` null;
-persisting it cannot silently activate the current VS-001 RBAC path.
+provide foundational create/read operations only. Atomic admission is owned by
+`ProjectMemberAdmissionRepository`; immediate ordinary changes and protected
+appointments/transfers are owned by `ProjectRoleManagementRepository`. These
+repositories do not authorize, expire memberships, or emit events. A new
+VS-002 membership leaves legacy `user_id` and `role_id` null; persisting it
+cannot silently activate the current VS-001 RBAC path.
+
+Role management closes an effective assignment and inserts its successor. It
+never overwrites or deletes historical assignment identity or provenance.
+Protected first appointments have no outgoing assignment; later transfers
+close and link the outgoing assignment. The immutable transfer ledger retains
+the incoming assignment, optional outgoing assignment, stable-Person
+authoriser, reason, effective time, and request correlation ID.
 
 ## Database Invariants
 
@@ -246,10 +296,15 @@ The migration enforces:
 - nonblank optional reasons;
 - indexes for Person/project/period and role-history reads;
 - one active VS-001 compatibility membership per project/user; and
-- no hard deletion of membership or role-assignment history.
+- no hard deletion of membership or role-assignment history;
+- only the three protected responsibility roles in the transfer ledger; and
+- immutable transfer-ledger history with mandatory incoming assignment,
+  authoriser, reason, correlation, and effective time.
 
-No SQL trigger implements protected-role transfer, automatic expiry, or future
-authorization policy.
+Transactional service-role-only RPCs implement immediate ordinary role changes
+and protected first appointment/transfer. Membership-row locks serialize
+ordinary changes; project-row locks serialize protected operations. No SQL
+trigger implements automatic expiry or future authorization policy.
 
 The migration is forward-only. It has no destructive down script; post-apply
 corrections must use a reviewed forward migration or an explicit backup/PITR
@@ -278,20 +333,23 @@ Their current permissions and access are preserved unchanged.
 
 ## Security
 
-`public.project_role_assignments` has RLS enabled and no browser grants in this
-checkpoint. The existing `memberships_select_project_member` policy is
+`public.project_role_assignments` and `public.project_role_transfers` have RLS
+enabled with no browser mutation grants. The role-management RPCs are
+executable only by `service_role`. The existing
+`memberships_select_project_member` policy is
 recreated under the same name so authenticated direct reads can see only rows
 with the complete VS-001 compatibility shape (`user_id` and `role_id` both
 non-null) after the existing project-membership check passes. Person-only
 VS-002 rows therefore remain server-side. Service-role repository access is
-unchanged. Authoritative VS002-03 decisions remain server-side. VS002-04 exposes member HTTP routes through server-side services only; no browser database mutation grant is added.
+unchanged. `ProjectAuthorisationService` remains the sole VS002 authorization
+boundary. Member admission and role management are exposed only through
+server-side HTTP services; no browser database mutation grant is added.
 
 ## Deliberately Deferred
 
 Later checkpoints own:
 
-- member update/remove flows;
-- protected-role transfer and responsibility guards;
+- membership removal/expiry and protected-responsibility removal guards;
 - expiry workers and events;
 - membership Audit projection;
 - Tasks integration;

@@ -1,6 +1,38 @@
 import type {
   ProjectRole,
+  ProtectedProjectRole,
 } from "./project-role.types";
+
+
+export const ORDINARY_ROLE_CHANGE_PERMISSION =
+  "member.change_role";
+
+
+export const PROTECTED_ROLE_PERMISSIONS = {
+  PROJECT_MANAGER:
+    "member.assign_manager",
+  PROJECT_OWNER:
+    "member.assign_owner",
+  PROJECT_SPONSOR:
+    "member.assign_sponsor",
+} as const satisfies Record<
+  ProtectedProjectRole,
+  string
+>;
+
+export type ProtectedRolePermission =
+  typeof PROTECTED_ROLE_PERMISSIONS[
+    ProtectedProjectRole
+  ];
+
+
+export function getProtectedRolePermission(
+  role: ProtectedProjectRole
+): ProtectedRolePermission {
+  return PROTECTED_ROLE_PERMISSIONS[
+    role
+  ];
+}
 
 
 const ordinaryReadPermissions = [
@@ -48,7 +80,7 @@ const managerPermissions = [
   "project.export",
   "member.invite",
   "member.remove",
-  "member.change_role",
+  ORDINARY_ROLE_CHANGE_PERMISSION,
   "message.moderate",
   "topic.change_status",
   "decision.approve",
@@ -72,18 +104,24 @@ const managerPermissions = [
 
 const ownerPermissions = [
   ...managerPermissions,
-  "member.assign_manager",
-  "member.assign_owner",
-  "member.assign_sponsor",
+  PROTECTED_ROLE_PERMISSIONS
+    .PROJECT_MANAGER,
+  PROTECTED_ROLE_PERMISSIONS
+    .PROJECT_OWNER,
+  PROTECTED_ROLE_PERMISSIONS
+    .PROJECT_SPONSOR,
 ] as const;
 
 
 const permissionBaseline = {
   PROJECT_SPONSOR: [
     ...ordinaryReadPermissions,
-    "member.assign_manager",
-    "member.assign_owner",
-    "member.assign_sponsor",
+    PROTECTED_ROLE_PERMISSIONS
+      .PROJECT_MANAGER,
+    PROTECTED_ROLE_PERMISSIONS
+      .PROJECT_OWNER,
+    PROTECTED_ROLE_PERMISSIONS
+      .PROJECT_SPONSOR,
   ],
   PROJECT_OWNER:
     ownerPermissions,

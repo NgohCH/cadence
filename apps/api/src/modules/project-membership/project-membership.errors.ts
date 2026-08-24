@@ -55,3 +55,33 @@ export class ProjectMemberPersonNotFoundError
       "ProjectMemberPersonNotFoundError";
   }
 }
+
+
+export class ProjectRoleTransferRequiredError
+  extends Error
+{
+  constructor(
+    message =
+      "Protected project roles must be changed through the protected-role operation."
+  ) {
+    super(message);
+
+    this.name =
+      "ProjectRoleTransferRequiredError";
+  }
+}
+
+
+export class ProjectRoleAssignmentInvalidError
+  extends Error
+{
+  constructor(
+    message =
+      "The project role assignment or transition is invalid."
+  ) {
+    super(message);
+
+    this.name =
+      "ProjectRoleAssignmentInvalidError";
+  }
+}

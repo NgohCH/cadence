@@ -11,6 +11,16 @@ export type ProjectRole =
   typeof PROJECT_ROLES[number];
 
 
+export const ORDINARY_PROJECT_ROLES = [
+  "PROJECT_MEMBER",
+  "PROJECT_OBSERVER",
+  "PROJECT_AUDITOR",
+] as const satisfies readonly ProjectRole[];
+
+export type OrdinaryProjectRole =
+  typeof ORDINARY_PROJECT_ROLES[number];
+
+
 export const PROTECTED_PROJECT_ROLES = [
   "PROJECT_SPONSOR",
   "PROJECT_OWNER",
@@ -30,6 +40,16 @@ export type ReadOnlyProjectRole =
   typeof READ_ONLY_PROJECT_ROLES[number];
 
 
+export function isOrdinaryProjectRole(
+  role: ProjectRole
+): role is OrdinaryProjectRole {
+  return (
+    ORDINARY_PROJECT_ROLES as
+      readonly ProjectRole[]
+  ).includes(role);
+}
+
+
 export function isProtectedProjectRole(
   role: ProjectRole
 ): role is ProtectedProjectRole {
@@ -41,8 +61,8 @@ export function isProtectedProjectRole(
 
 
 /**
- * Classifies the baseline read-only roles without implementing permission
- * enforcement. Project authorisation remains deferred to VS002-03.
+ * Classifies the baseline read-only roles. Permission enforcement remains
+ * owned by ProjectAuthorisationService.
  */
 export function isReadOnlyProjectRole(
   role: ProjectRole
@@ -56,8 +76,9 @@ export function isReadOnlyProjectRole(
 
 /**
  * A role assignment is separate from the membership that authorises a
- * Person's relationship with a Project. VS002-02 persists this history;
- * transfer behaviour remains deliberately deferred to VS002-05.
+ * Person's relationship with a Project. Assignments are historical records;
+ * changing authority closes the old effective period rather than overwriting
+ * or deleting the row.
  */
 export interface ProjectRoleAssignment {
   id: string;

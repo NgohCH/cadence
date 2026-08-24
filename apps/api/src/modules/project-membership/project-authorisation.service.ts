@@ -10,6 +10,10 @@ import {
   getProjectPermissionsForRoles,
 } from "./project-permissions";
 
+import {
+  ProjectRoleAssignmentInvalidError,
+} from "./project-membership.errors";
+
 import type {
   EffectiveProjectAuthorisation,
   ProjectAuthorisationContext,
@@ -18,6 +22,10 @@ import type {
 import type {
   ProjectRole,
   ProjectRoleAssignment,
+} from "./project-role.types";
+
+import {
+  isOrdinaryProjectRole,
 } from "./project-role.types";
 
 
@@ -85,6 +93,10 @@ export class ProjectAuthorisationService {
       return true;
     }
 
+    if (authorisation.roles.length > 0) {
+      return false;
+    }
+
     return this.legacyAuthorisation
       .hasPermission(
         context.actorUserId,
@@ -147,23 +159,30 @@ export class ProjectAuthorisationService {
         )
       );
 
+    const effectiveAssignments =
+      assignments
+        .flat()
+        .filter(
+          (assignment) =>
+            assignment.projectId === projectId &&
+            effectiveMemberships.some(
+              (membership) =>
+                membership.id ===
+                  assignment.membershipId
+            ) &&
+            isRoleAssignmentEffectiveAt(
+              assignment,
+              evaluatedAt
+            )
+        );
+
+    assertOrdinaryRoleCardinality(
+      effectiveAssignments
+    );
+
     const roles =
       uniqueRoles(
-        assignments
-          .flat()
-          .filter(
-            (assignment) =>
-              assignment.projectId === projectId &&
-              effectiveMemberships.some(
-                (membership) =>
-                  membership.id ===
-                    assignment.membershipId
-              ) &&
-              isRoleAssignmentEffectiveAt(
-                assignment,
-                evaluatedAt
-              )
-          )
+        effectiveAssignments
           .map(
             (assignment) =>
               assignment.role
@@ -184,6 +203,43 @@ export class ProjectAuthorisationService {
         ),
       evaluatedAt,
     };
+  }
+}
+
+
+function assertOrdinaryRoleCardinality(
+  assignments:
+    readonly ProjectRoleAssignment[]
+): void {
+  const ordinaryCountsByMembership =
+    new Map<string, number>();
+
+  for (const assignment of assignments) {
+    if (
+      !isOrdinaryProjectRole(
+        assignment.role
+      )
+    ) {
+      continue;
+    }
+
+    const count =
+      (
+        ordinaryCountsByMembership.get(
+          assignment.membershipId
+        ) ?? 0
+      ) + 1;
+
+    if (count > 1) {
+      throw new ProjectRoleAssignmentInvalidError(
+        "A project membership cannot have more than one effective ordinary role."
+      );
+    }
+
+    ordinaryCountsByMembership.set(
+      assignment.membershipId,
+      count
+    );
   }
 }
 

@@ -37,6 +37,10 @@ import {
 } from "./infrastructure/database/supabase-project-member-admission.repository";
 
 import {
+  SupabaseProjectRoleManagementRepository,
+} from "./infrastructure/database/supabase-project-role-management.repository";
+
+import {
   SupabaseRbacRepository,
 } from "./infrastructure/database/supabase-rbac.repository";
 
@@ -264,6 +268,11 @@ const projectMemberAdmissionRepository =
     databaseClient
   );
 
+const projectRoleManagementRepository =
+  new SupabaseProjectRoleManagementRepository(
+    databaseClient
+  );
+
 const rbacRepository =
   new SupabaseRbacRepository(
     databaseClient
@@ -334,7 +343,8 @@ const projectMembershipService =
     projectAuthorisationService,
     projectMembershipRepository,
     projectMemberAdmissionRepository,
-    identityPersistenceRepository
+    identityPersistenceRepository,
+    projectRoleManagementRepository
   );
 
 

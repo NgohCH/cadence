@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  ProjectRoleAssignmentInvalidError,
+  ProjectRoleTransferRequiredError,
   ProjectMembershipValidationError,
 } from "./project-membership.errors";
+
+import {
+  getProtectedRolePermission,
+} from "./project-permissions";
 
 import {
   createProjectMembership,
@@ -16,7 +22,9 @@ import type {
 } from "./project-membership.types";
 
 import {
+  ORDINARY_PROJECT_ROLES,
   PROJECT_ROLES,
+  isOrdinaryProjectRole,
   isProtectedProjectRole,
   isReadOnlyProjectRole,
 } from "./project-role.types";
@@ -117,6 +125,29 @@ test(
 
 
 test(
+  "Member Observer and Auditor are exactly the ordinary project roles",
+  () => {
+    assert.deepEqual(
+      ORDINARY_PROJECT_ROLES,
+      [
+        "PROJECT_MEMBER",
+        "PROJECT_OBSERVER",
+        "PROJECT_AUDITOR",
+      ]
+    );
+
+    for (const role of PROJECT_ROLES) {
+      assert.equal(
+        isOrdinaryProjectRole(role),
+        !isProtectedProjectRole(role),
+        `${role} must be classified as either ordinary or protected.`
+      );
+    }
+  }
+);
+
+
+test(
   "Member Observer and Auditor are not protected responsibility roles",
   () => {
     assert.equal(
@@ -138,6 +169,51 @@ test(
         "PROJECT_AUDITOR"
       ),
       false
+    );
+  }
+);
+
+
+test(
+  "protected roles map to their exact frozen permission codes",
+  () => {
+    assert.equal(
+      getProtectedRolePermission(
+        "PROJECT_MANAGER"
+      ),
+      "member.assign_manager"
+    );
+
+    assert.equal(
+      getProtectedRolePermission(
+        "PROJECT_OWNER"
+      ),
+      "member.assign_owner"
+    );
+
+    assert.equal(
+      getProtectedRolePermission(
+        "PROJECT_SPONSOR"
+      ),
+      "member.assign_sponsor"
+    );
+  }
+);
+
+
+test(
+  "VS002-05 role errors retain stable application identities",
+  () => {
+    assert.equal(
+      new ProjectRoleTransferRequiredError()
+        .name,
+      "ProjectRoleTransferRequiredError"
+    );
+
+    assert.equal(
+      new ProjectRoleAssignmentInvalidError()
+        .name,
+      "ProjectRoleAssignmentInvalidError"
     );
   }
 );
