@@ -1135,6 +1135,12 @@ test(
       1
     );
 
+    assert.equal(
+      admissionRepository.calls[0]
+        ?.correlationId,
+      correlationId
+    );
+
     const data =
       response.body.data as
         JsonObject;
@@ -1531,6 +1537,7 @@ test(
           actorPersonId,
         changeReason:
           "Oversight period",
+        correlationId,
         createdAt:
           evaluatedAt,
       }]

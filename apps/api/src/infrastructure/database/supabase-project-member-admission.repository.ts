@@ -111,6 +111,9 @@ export class SupabaseProjectMemberAdmissionRepository
 
         p_role_created_at:
           roleAssignment.createdAt,
+
+        p_correlation_id:
+          input.correlationId,
       }
     );
 

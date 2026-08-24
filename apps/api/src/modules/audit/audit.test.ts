@@ -282,3 +282,95 @@ test(
     );
   }
 );
+
+
+test(
+  "AuditDomainEventHandler accepts all six VS002 membership v1 events with Person and system provenance",
+  async () => {
+    const repository =
+      new FakeAuditRepository();
+    const handler =
+      new AuditDomainEventHandler(
+        new AuditService(
+          repository
+        )
+      );
+
+    const eventTypes = [
+      "ProjectMemberAdded",
+      "ProjectMemberRemoved",
+      "ProjectMembershipExpired",
+      "ProjectRoleAssigned",
+      "ProjectRoleRevoked",
+      "ProjectRoleTransferred",
+    ] as const;
+
+    for (const [index, eventType]
+      of eventTypes.entries()) {
+      const expiry =
+        eventType ===
+          "ProjectMembershipExpired";
+
+      await handler.handle(
+        createEvent({
+          eventId:
+            `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          eventType,
+          actorType:
+            expiry
+              ? "system"
+              : "person",
+          actorId:
+            expiry
+              ? null
+              : "44444444-4444-4444-8444-444444444444",
+        })
+      );
+    }
+
+    assert.equal(
+      repository.eventIds.length,
+      6
+    );
+  }
+);
+
+
+test(
+  "AuditDomainEventHandler rejects unsupported versions for every VS002 membership event",
+  async () => {
+    const repository =
+      new FakeAuditRepository();
+    const handler =
+      new AuditDomainEventHandler(
+        new AuditService(
+          repository
+        )
+      );
+
+    for (const eventType of [
+      "ProjectMemberAdded",
+      "ProjectMemberRemoved",
+      "ProjectMembershipExpired",
+      "ProjectRoleAssigned",
+      "ProjectRoleRevoked",
+      "ProjectRoleTransferred",
+    ]) {
+      await assert.rejects(
+        () =>
+          handler.handle(
+            createEvent({
+              eventType,
+              eventVersion: 2,
+            })
+          ),
+        /unsupported domain-event version/
+      );
+    }
+
+    assert.equal(
+      repository.eventIds.length,
+      0
+    );
+  }
+);

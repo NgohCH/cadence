@@ -82,9 +82,11 @@ const evaluatedAt =
 
 
 const context:
-  ProjectAuthorisationContext = {
+  ProjectRoleCommandContext = {
     actorUserId,
     actorPersonId,
+    correlationId:
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   };
 
 const roleContext:
@@ -823,6 +825,12 @@ test(
     );
 
     assert.equal(
+      admissionRepository.calls[0]
+        ?.correlationId,
+      context.correlationId
+    );
+
+    assert.equal(
       result.membership.personId,
       internalPersonId
     );
@@ -1551,6 +1559,8 @@ test(
           actorPersonId,
         changeReason:
           "Oversight period",
+        correlationId:
+          roleContext.correlationId,
         createdAt:
           evaluatedAt,
       }]

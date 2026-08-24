@@ -13,10 +13,11 @@ export interface DomainEvent<TPayload = unknown> {
 
   actorType:
     | "human"
+    | "person"
     | "agent"
     | "system";
 
-  actorId?: string;
+  actorId?: string | null;
 
   projectId?: string;
 

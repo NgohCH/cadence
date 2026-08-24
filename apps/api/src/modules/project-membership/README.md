@@ -1,5 +1,19 @@
 # Project Membership Module
 
+## VS002-07 Membership and Role Events
+
+Admission, ordinary-role replacement, protected appointment/transfer,
+administrative removal, and expiry emit the frozen membership/role v1 events
+atomically with their authoritative mutation. Human events use stable Person
+actors; expiry uses a system/null actor. The cutover is prospective with no
+historical backfill.
+
+Audit consumes self-contained payloads without membership persistence
+reconstruction and projects at most one row per `event_id`. Local end-to-end
+and isolated remote verification passed, including 8 QA events, 8 Audit rows,
+and idempotent isolated expiry. Migrations `20260825120000` and
+`20260826120000` are applied remotely; the API suite passes 309/309 tests.
+
 ## VS002-06 Membership Lifecycle HTTP Contract
 
 Administrative removal uses:
@@ -34,7 +48,8 @@ bounded Sponsor remains valid.
 Migration `20260824120000_vs002_membership_lifecycle.sql` is applied remotely.
 Local PostgreSQL runtime/security/concurrency verification and controlled
 remote API/processor verification passed. The API suite passes 289/289 tests.
-Membership and role domain events remain deferred to VS002-07.
+Membership and role events and their Audit projection are implemented by
+VS002-07.
 
 ## VS002-05 Role Management HTTP Contract
 
@@ -393,7 +408,5 @@ mutation grant is added.
 
 Later checkpoints own:
 
-- membership and role domain events;
-- membership Audit projection;
 - Members frontend integration; and
 - cross-module adoption of the Project Authorisation service.

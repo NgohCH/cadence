@@ -159,6 +159,7 @@ test(
       effectiveAt,
       assignedByPersonId: actorPersonId,
       changeReason: "Role changed",
+      correlationId,
       createdAt,
     });
 
@@ -172,6 +173,7 @@ test(
         p_effective_at: effectiveAt,
         p_assigned_by_person_id: actorPersonId,
         p_change_reason: "Role changed",
+        p_correlation_id: correlationId,
         p_created_at: createdAt,
       },
     }]);
@@ -212,6 +214,7 @@ test(
       effectiveAt,
       assignedByPersonId: actorPersonId,
       changeReason: null,
+      correlationId,
       createdAt,
     });
 
@@ -372,6 +375,7 @@ test(
         effectiveAt,
         assignedByPersonId: actorPersonId,
         changeReason: null,
+        correlationId,
         createdAt,
       }),
       ProjectRoleTransferRequiredError

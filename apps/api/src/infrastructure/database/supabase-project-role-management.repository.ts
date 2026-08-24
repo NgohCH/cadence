@@ -91,6 +91,7 @@ export class SupabaseProjectRoleManagementRepository
           p_assigned_by_person_id:
             input.assignedByPersonId,
           p_change_reason: input.changeReason,
+          p_correlation_id: input.correlationId,
           p_created_at: input.createdAt,
         }
       );

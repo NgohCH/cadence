@@ -13,6 +13,7 @@ export interface ChangeOrdinaryRolePersistenceInput {
   effectiveAt: string;
   assignedByPersonId: string;
   changeReason: string | null;
+  correlationId: string;
   createdAt: string;
 }
 

@@ -22,22 +22,23 @@ Vertical Slice:
 
 Status:
 
-**VS002-06 Membership Removal and Expiry is complete and verified;
+**VS002-07 Membership and Role Audit Events is complete and verified;
 the implementation remains uncommitted pending the source-control checkpoint.**
 
 Current checkpoint:
 
-**VS002-06 is closed. VS002-07 Membership and Role Audit Events is next. Do not
-begin VS002-07 until this checkpoint is accepted.**
+**VS002-07 is closed. VS002-08 Members Frontend Integration is next. Do not
+begin VS002-08 until this checkpoint is accepted.**
 
-Latest VS002-06 validation:
+Latest VS002-07 validation:
 
 ```text
 API typecheck = passed
-API test suite = 289 passed, 0 failed
-local PostgreSQL runtime/security/concurrency verification = passed
-remote migration 20260824120000 = applied
-controlled remote-backed live API verification = passed
+API test suite = 309 passed, 0 failed
+local end-to-end mutation/outbox/delivery/Audit verification = passed
+remote migrations 20260825120000 and 20260826120000 = applied
+isolated remote live verification = 8 events / 8 Audit rows
+expiry isolation and idempotency = passed
 ```
 
 ---
@@ -6963,8 +6964,31 @@ Final validation: API typecheck passed and all **289/289** API tests passed.
 VS002-06 does not add membership/role domain events, Audit consumption,
 frontend work, or broad cross-module Project Authorisation adoption.
 
-The next implementation checkpoint is VS002-07: Membership and Role Audit
-Events.
+## VS002-07 - Membership and Role Audit Events
+
+VS002-07 adds the frozen `ProjectMemberAdded.v1`,
+`ProjectMemberRemoved.v1`, `ProjectMembershipExpired.v1`,
+`ProjectRoleAssigned.v1`, `ProjectRoleRevoked.v1`, and
+`ProjectRoleTransferred.v1` contracts. Producers insert the required event set
+in the same transaction as the authoritative membership or role mutation.
+Human events identify the stable Person actor; expiry uses a system/null actor.
+The cutover is prospective and performs no backfill.
+
+Audit consumes only the event envelope and self-contained payload snapshots;
+it does not query membership persistence to reconstruct facts. The existing
+projection writes one Audit row per event and preserves `event_id` as its
+idempotency boundary. Existing VS-001 subscriptions and projections remain
+intact.
+
+Migrations `20260825120000_vs002_membership_domain_events.sql` and
+`20260826120000_vs002_membership_audit_projection.sql` are applied remotely.
+Local end-to-end verification passed mutation, transactional outbox/fan-out,
+delivery retry, worker processing, Audit projection, rollback, history, and
+expiry idempotency. Isolated remote verification produced exactly eight QA
+membership events and eight matching Audit rows. API typecheck and all
+**309/309** tests pass.
+
+VS002-08 Members Frontend Integration is next.
 
 ---
 
@@ -7016,13 +7040,9 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-start VS002-07
+start VS002-08
   ->
-emit membership and role domain events
-  ->
-consume them through Audit
-  ->
-preserve lifecycle and transfer correlation
+integrate the Members frontend with the completed membership API
 ```
 Do not bypass established module boundaries merely to complete the vertical slice more quickly.
 

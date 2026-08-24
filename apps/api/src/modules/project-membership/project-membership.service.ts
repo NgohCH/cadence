@@ -343,7 +343,7 @@ export class ProjectMembershipService {
 
 
   async addProjectMember(
-    context: ProjectAuthorisationContext,
+    context: ProjectRoleCommandContext,
     projectId: string,
     input: AddProjectMemberInput
   ): Promise<ProjectMemberAdmissionResult> {
@@ -464,6 +464,8 @@ export class ProjectMembershipService {
 
     return this.admissionRepository
       .addProjectMember({
+        correlationId:
+          context.correlationId,
         membership,
         roleAssignment,
       });
@@ -576,6 +578,8 @@ export class ProjectMembershipService {
             context.actorPersonId,
           changeReason:
             reason,
+          correlationId:
+            context.correlationId,
           createdAt:
             effectiveAt,
         })

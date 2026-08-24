@@ -26,6 +26,7 @@ type ClaimedDomainEventRow = {
 
   actor_type:
     | "human"
+    | "person"
     | "agent"
     | "system";
 
@@ -116,10 +117,8 @@ export class SupabaseDomainEventRepository
         row.causation_id;
     }
 
-    if (row.actor_id) {
-      event.actorId =
-        row.actor_id;
-    }
+    event.actorId =
+      row.actor_id;
 
     if (row.project_id) {
       event.projectId =

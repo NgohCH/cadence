@@ -9,6 +9,8 @@ import type {
 
 
 export interface ProjectMemberAdmissionInput {
+  correlationId: string;
+
   membership:
     CreateProjectMembershipInput;
 

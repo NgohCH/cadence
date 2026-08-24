@@ -6,6 +6,23 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### VS002-07 - Membership and Role Audit Events
+
+- Added the six frozen membership/role v1 events and transactional outbox
+  emission alongside authoritative admission, role, removal, and expiry
+  mutations.
+- Human events use stable Person actors; expiry uses a system/null actor. The
+  cutover is prospective only, with no event backfill or replay.
+- Extended Audit to consume self-contained event payloads without membership
+  persistence reconstruction. `event_id` remains the one-row-per-event
+  idempotency boundary and correlation/history provenance is preserved.
+- Applied remote migrations `20260825120000` and `20260826120000`.
+- Passed local end-to-end verification and isolated remote verification with
+  exactly 8 QA events and 8 Audit rows, including idempotent isolated expiry.
+  VS-001 event/Audit behavior remains intact.
+- API typecheck passed; full API suite passed: 309 tests, 0 failures.
+- VS002-08 Members Frontend Integration is next.
+
 ### VS002-06 - Membership Removal and Expiry
 
 #### Added

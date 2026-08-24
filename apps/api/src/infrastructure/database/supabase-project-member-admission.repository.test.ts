@@ -44,6 +44,9 @@ const effectiveTo =
 const createdAt =
   "2026-08-21T14:00:00.000Z";
 
+const correlationId =
+  "66666666-6666-4666-8666-666666666666";
+
 
 type RpcResponse = {
   data: unknown;
@@ -94,6 +97,8 @@ function asSupabaseClient(
 function createInput():
   ProjectMemberAdmissionInput {
   return {
+    correlationId,
+
     membership: {
       id:
         membershipId,
@@ -262,6 +267,9 @@ test(
 
             p_role_created_at:
               createdAt,
+
+            p_correlation_id:
+              correlationId,
           },
         },
       ]

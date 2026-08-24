@@ -45,6 +45,12 @@ export class AuditDomainEventHandler
       case "AIProposalEdited":
       case "AIProposalRejected":
       case "TaskCreated":
+      case "ProjectMemberAdded":
+      case "ProjectMemberRemoved":
+      case "ProjectMembershipExpired":
+      case "ProjectRoleAssigned":
+      case "ProjectRoleRevoked":
+      case "ProjectRoleTransferred":
         break;
 
       default:
@@ -56,7 +62,7 @@ export class AuditDomainEventHandler
 
     if (!event.projectId) {
       throw new Error(
-        "Auditable VS-001 domain event is missing projectId."
+        "Auditable domain event is missing projectId."
       );
     }
 
