@@ -1,4 +1,7 @@
 import {
+  validateCadenceEnvironmentSafety,
+} from "./bootstrap/environment-safety";
+import {
   createClient,
 } from "@supabase/supabase-js";
 
@@ -79,6 +82,16 @@ if (
 /*
  * Infrastructure
  */
+
+validateCadenceEnvironmentSafety({
+  cadenceEnv:
+    process.env.CADENCE_ENV,
+
+  supabaseUrl,
+
+  supabaseProjectRef:
+    process.env.CADENCE_SUPABASE_PROJECT_REF,
+});
 
 const databaseClient =
   createClient(

@@ -1,3 +1,6 @@
+import {
+  validateCadenceEnvironmentSafety,
+} from "./bootstrap/environment-safety";
 import express from "express";
 import cors from "cors";
 
@@ -234,11 +237,21 @@ if (
  * Infrastructure
  */
 
+validateCadenceEnvironmentSafety({
+  cadenceEnv:
+    process.env.CADENCE_ENV,
+
+  supabaseUrl,
+
+  supabaseProjectRef:
+    process.env.CADENCE_SUPABASE_PROJECT_REF,
+});
 const authProvider =
   new SupabaseAuthProvider(
     supabaseUrl,
     supabasePublishableKey
   );
+
 
 
 const databaseClient =

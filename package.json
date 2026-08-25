@@ -4,7 +4,21 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "api:test": "npm --prefix apps/api test",
+    "api:typecheck": "npm --prefix apps/api run typecheck",
+    "web:lint": "npm --prefix apps/web run lint",
+    "web:build": "npm --prefix apps/web run build",
+    "db:local:start": "npx supabase start",
+    "db:local:status": "npx supabase status",
+    "db:local:reset": "npm --prefix apps/api run env:local:check && npx supabase db reset",
+    "db:qa:check": "node --env-file=apps/api/.env.qa scripts/assert-supabase-link.cjs qa",
+    "db:qa:preflight": "npm run db:qa:check && npx supabase db push --dry-run",
+    "db:qa:push": "npm run db:qa:check && npx supabase db push",
+    "db:local:bootstrap": "npm --prefix apps/api run local:bootstrap",
+    "db:local:rebuild": "npm run db:local:reset && npm run db:local:bootstrap",
+    "web:build:ci": "npm --prefix apps/web run build:ci",
+    "quality": "npm run api:typecheck && npm run api:test && npm run web:lint && npm run web:build:ci",
+    "test": "npm run quality"
   },
   "repository": {
     "type": "git",
