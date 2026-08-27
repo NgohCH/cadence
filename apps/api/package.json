@@ -18,7 +18,12 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "node --import tsx --test src/**/*.test.ts",
-    "local:bootstrap": "npm run env:local:check && node --env-file=.env.local --import tsx scripts/bootstrap-local-dev.ts"
+    "local:bootstrap": "npm run env:local:check && node --env-file=.env.local --import tsx scripts/bootstrap-local-dev.ts",
+    "env:beta:check": "node --env-file=.env.beta --import tsx scripts/assert-environment.ts beta",
+    "dev:beta": "npm run env:beta:check && node --env-file=.env.beta --watch --import tsx src/server.ts",
+    "start:beta": "npm run env:beta:check && node --env-file=.env.beta --import tsx src/server.ts",
+    "worker:beta:once": "npm run env:beta:check && node --env-file=.env.beta --import tsx src/worker.ts",
+    "beta:verify": "npm run env:beta:check && node --env-file=.env.beta --import tsx scripts/verify-beta-runtime.ts"
   },
   "keywords": [],
   "author": "",

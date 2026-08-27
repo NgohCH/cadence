@@ -15,7 +15,10 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "env:ci:check": "node --env-file=.env.ci scripts/assert-environment.cjs local",
-    "build:ci": "npm run env:ci:check && tsc -b && vite build --mode ci"
+    "build:ci": "npm run env:ci:check && tsc -b && vite build --mode ci",
+    "env:beta:check": "node --env-file=.env.beta.local scripts/assert-environment.cjs beta",
+    "dev:beta": "npm run env:beta:check && vite --mode beta",
+    "build:beta": "npm run env:beta:check && tsc -b && vite build --mode beta"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

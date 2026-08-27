@@ -1,6 +1,7 @@
 export type CadenceBrowserEnvironment =
   | 'local'
   | 'qa'
+  | 'beta'
 
 export type BrowserEnvironment = {
   cadenceEnvironment: CadenceBrowserEnvironment
@@ -37,7 +38,8 @@ function readCadenceEnvironment():
 
   if (
     value !== 'local' &&
-    value !== 'qa'
+    value !== 'qa' &&
+    value !== 'beta'
   ) {
     throw new Error(
       `Unsupported Cadence browser environment: ${value}`,
@@ -83,24 +85,18 @@ function validateBrowserEnvironment(
     const localSupabase =
       supabaseUrl.protocol === 'http:' &&
       (
-        supabaseUrl.hostname ===
-          '127.0.0.1' ||
-        supabaseUrl.hostname ===
-          'localhost'
+        supabaseUrl.hostname === '127.0.0.1' ||
+        supabaseUrl.hostname === 'localhost'
       ) &&
-      supabaseUrl.port ===
-        '54321'
+      supabaseUrl.port === '54321'
 
     const localApi =
       apiUrl.protocol === 'http:' &&
       (
-        apiUrl.hostname ===
-          '127.0.0.1' ||
-        apiUrl.hostname ===
-          'localhost'
+        apiUrl.hostname === '127.0.0.1' ||
+        apiUrl.hostname === 'localhost'
       ) &&
-      apiUrl.port ===
-        '3000'
+      apiUrl.port === '3000'
 
     if (!localSupabase) {
       throw new Error(
@@ -114,9 +110,7 @@ function validateBrowserEnvironment(
       )
     }
 
-    if (
-      environment.supabaseProjectRef
-    ) {
+    if (environment.supabaseProjectRef) {
       throw new Error(
         'Local browser mode must not declare a hosted Supabase project ref.',
       )
@@ -130,18 +124,37 @@ function validateBrowserEnvironment(
 
   if (!projectRef) {
     throw new Error(
-      'QA browser mode requires VITE_SUPABASE_PROJECT_REF.',
+      `${environment.cadenceEnvironment.toUpperCase()} browser mode requires VITE_SUPABASE_PROJECT_REF.`,
     )
   }
 
   if (
-    supabaseUrl.protocol !==
-      'https:' ||
+    supabaseUrl.protocol !== 'https:' ||
     supabaseUrl.hostname !==
       `${projectRef}.supabase.co`
   ) {
     throw new Error(
-      'QA browser Supabase URL does not match its declared project ref.',
+      `${environment.cadenceEnvironment.toUpperCase()} browser Supabase URL does not match its declared project ref.`,
+    )
+  }
+
+  const validLocalApi =
+    apiUrl.protocol === 'http:' &&
+    (
+      apiUrl.hostname === '127.0.0.1' ||
+      apiUrl.hostname === 'localhost'
+    ) &&
+    apiUrl.port === '3000'
+
+  const validHostedApi =
+    apiUrl.protocol === 'https:'
+
+  if (
+    !validLocalApi &&
+    !validHostedApi
+  ) {
+    throw new Error(
+      'Hosted browser modes require either the local development API on port 3000 or an HTTPS API endpoint.',
     )
   }
 }
