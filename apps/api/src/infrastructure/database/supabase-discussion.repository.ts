@@ -12,7 +12,6 @@ import type {
 
 import {
   DiscussionParentMessageNotFoundError,
-  DiscussionPermissionDeniedError,
   DiscussionValidationError,
 } from "../../modules/discussion/discussion.errors";
 
@@ -216,14 +215,6 @@ export class SupabaseDiscussionRepository
   private throwMappedError(
     message: string
   ): never {
-    if (
-      message.includes(
-        "DISCUSSION_PERMISSION_DENIED"
-      )
-    ) {
-      throw new DiscussionPermissionDeniedError();
-    }
-
     if (
       message.includes(
         "DISCUSSION_PARENT_MESSAGE_NOT_FOUND"

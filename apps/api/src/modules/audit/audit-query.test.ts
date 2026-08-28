@@ -5,6 +5,10 @@ import type {
   RequestContext,
 } from "../../bootstrap/request-context";
 
+import type {
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
+
 import {
   AuditJourneyNotFoundError,
   AuditPermissionDeniedError,
@@ -34,7 +38,7 @@ const context =
       "11111111-1111-4111-8111-111111111111",
 
     actorPersonId:
-      "11111111-1111-4111-8111-111111111111",
+      "aaaaaaaa-1111-4111-8111-111111111111",
 
     requestId:
       "22222222-2222-4222-8222-222222222222",
@@ -49,6 +53,9 @@ const projectId =
 
 const taskId =
   "55555555-5555-4555-8555-555555555555";
+
+const membershipId =
+  "aaaaaaaa-5555-4555-8555-555555555555";
 
 
 const events:
@@ -281,22 +288,56 @@ class FakeAuthorizationService
   public accessible =
     true;
 
+  public calls: Array<{
+    personId: string;
+    projectId: string;
+  }> = [];
 
-  async getProjectAccess(
-    _userId: string,
-    _projectId: string
-  ) {
-    if (!this.accessible) {
-      return null;
-    }
+
+  async getEffectiveProjectAuthorisation(
+    requestedPersonId: string,
+    requestedProjectId: string
+  ): Promise<EffectiveProjectAuthorisation> {
+    this.calls.push({
+      personId:
+        requestedPersonId,
+
+      projectId:
+        requestedProjectId,
+    });
+
 
     return {
+      personId:
+        requestedPersonId,
+
+      projectId:
+        requestedProjectId,
+
+      membershipIds:
+        this.accessible
+          ? [
+              membershipId,
+            ]
+          : [],
+
+      roles:
+        this.accessible
+          ? [
+              "PROJECT_AUDITOR",
+            ]
+          : [],
+
       permissions:
-        this.permissions,
+        this.accessible
+          ? this.permissions
+          : [],
+
+      evaluatedAt:
+        "2026-08-27T13:00:00.000Z",
     };
   }
 }
-
 
 class FakeAuditQueryRepository
   implements AuditQueryRepository
@@ -308,14 +349,12 @@ class FakeAuditQueryRepository
   public calls: {
     projectId: string;
     taskId: string;
-    requestingUserId: string;
   }[] = [];
 
 
   async getTaskJourney(
     requestedProjectId: string,
-    requestedTaskId: string,
-    requestingUserId: string
+    requestedTaskId: string
   ): Promise<AuditJourneyEvent[] | null> {
     this.calls.push({
       projectId:
@@ -324,7 +363,6 @@ class FakeAuditQueryRepository
       taskId:
         requestedTaskId,
 
-      requestingUserId,
     });
 
     return this.result;
@@ -369,14 +407,24 @@ test(
       ]
     );
 
-    assert.deepEqual(
+        assert.deepEqual(
+      authorization.calls,
+      [
+        {
+          personId:
+            context.actorPersonId,
+
+          projectId,
+        },
+      ]
+    );
+
+assert.deepEqual(
       repository.calls,
       [
         {
           projectId,
           taskId,
-          requestingUserId:
-            context.actorUserId,
         },
       ]
     );

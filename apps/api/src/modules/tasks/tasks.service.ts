@@ -2,10 +2,9 @@ import type {
   RequestContext,
 } from "../../bootstrap/request-context";
 
-import {
-  RbacService,
-} from "../rbac/rbac.service";
-
+import type {
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
 import {
   TasksPermissionDeniedError,
   TasksProjectNotFoundError,
@@ -24,10 +23,17 @@ import type {
 } from "./tasks.types";
 
 
+export interface TasksAuthorisationService {
+  getEffectiveProjectAuthorisation(
+    personId: string,
+    projectId: string
+  ): Promise<EffectiveProjectAuthorisation>;
+}
+
 export class TasksService {
   constructor(
-    private readonly rbacService:
-      RbacService,
+    private readonly authorisationService:
+      TasksAuthorisationService,
 
     private readonly repository:
       TasksRepository
@@ -174,15 +180,17 @@ export class TasksService {
     /*
      * Resolve project membership before authorising the command.
      */
-    const access =
-      await this.rbacService
-        .getProjectAccess(
-          context.actorUserId,
+    const authorisation =
+      await this.authorisationService
+        .getEffectiveProjectAuthorisation(
+          context.actorPersonId,
           input.projectId
         );
 
 
-    if (!access) {
+    if (
+      authorisation.membershipIds.length === 0
+    ) {
       throw new TasksProjectNotFoundError();
     }
 
@@ -191,7 +199,7 @@ export class TasksService {
      * Creating an authoritative Task always requires task.create.
      */
     if (
-      !access.permissions.includes(
+      !authorisation.permissions.includes(
         "task.create"
       )
     ) {
@@ -207,7 +215,7 @@ export class TasksService {
      */
     if (
       assignedTo !== null &&
-      !access.permissions.includes(
+      !authorisation.permissions.includes(
         "task.assign"
       )
     ) {
@@ -254,24 +262,106 @@ export class TasksService {
   }
 
 
-    async listMyTasks(
-      context: RequestContext
-    ): Promise<Task[]> {
-      /*
-      * /me/tasks is self-scoped.
-      *
-      * The caller does not supply a user ID. The authenticated
-      * RequestContext is the sole identity source.
-      *
-      * Repository persistence/query logic additionally limits
-      * visibility to projects where this user currently holds
-      * task.view.
-      */
-      return this.repository
+  async listMyTasks(
+    context: RequestContext
+  ): Promise<Task[]> {
+    /*
+     * /me/tasks is self-scoped.
+     *
+     * actorUserId determines whose Tasks are assigned.
+     * actorPersonId determines project authority.
+     *
+     * The repository returns only current actionable Tasks
+     * assigned to the authenticated Cadence user. It does not
+     * decide project authorization.
+     */
+    const candidates =
+      await this.repository
         .listMyTasks(
           context.actorUserId
         );
+
+
+    if (
+      candidates.length === 0
+    ) {
+      return [];
     }
+
+
+    /*
+     * Authorize once per distinct project rather than once per Task.
+     *
+     * ProjectAuthorisationService is the sole project permission
+     * authority. Assignment alone does not grant task.view.
+     */
+    const projectIds =
+      [
+        ...new Set(
+          candidates.map(
+            (task) =>
+              task.projectId
+          )
+        ),
+      ];
+
+
+    const decisions =
+      await Promise.all(
+        projectIds.map(
+          async (
+            projectId
+          ) => {
+            const authorisation =
+              await this.authorisationService
+                .getEffectiveProjectAuthorisation(
+                  context.actorPersonId,
+                  projectId
+                );
+
+
+            const allowed =
+              authorisation
+                .membershipIds
+                .length > 0 &&
+              authorisation
+                .permissions
+                .includes(
+                  "task.view"
+                );
+
+
+            return {
+              projectId,
+              allowed,
+            };
+          }
+        )
+      );
+
+
+    const visibleProjectIds =
+      new Set(
+        decisions
+          .filter(
+            (decision) =>
+              decision.allowed
+          )
+          .map(
+            (decision) =>
+              decision.projectId
+          )
+      );
+
+
+    return candidates.filter(
+      (task) =>
+        visibleProjectIds.has(
+          task.projectId
+        )
+    );
+  }
+
   private isTaskPriority(
     value: string
   ): value is TaskPriority {

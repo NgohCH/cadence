@@ -75,7 +75,6 @@ const evaluatedAt = "2026-08-24T12:00:00.000Z";
 const correlationId = "66666666-6666-4666-8666-666666666666";
 
 const context: ProjectRoleCommandContext = {
-  actorUserId: "77777777-7777-4777-8777-777777777777",
   actorPersonId,
   correlationId,
 };

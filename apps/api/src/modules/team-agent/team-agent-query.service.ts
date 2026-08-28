@@ -2,9 +2,9 @@ import type {
   RequestContext,
 } from "../../bootstrap/request-context";
 
-import {
-  RbacService,
-} from "../rbac/rbac.service";
+import type {
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
 
 import {
   TeamAgentPermissionDeniedError,
@@ -20,10 +20,18 @@ import type {
 } from "./team-agent.types";
 
 
+export interface TeamAgentQueryAuthorisationService {
+  getEffectiveProjectAuthorisation(
+    personId: string,
+    projectId: string
+  ): Promise<EffectiveProjectAuthorisation>;
+}
+
+
 export class TeamAgentQueryService {
   constructor(
-    private readonly rbacService:
-      RbacService,
+    private readonly authorisationService:
+      TeamAgentQueryAuthorisationService,
 
     private readonly repository:
       TeamAgentQueryRepository
@@ -34,15 +42,17 @@ export class TeamAgentQueryService {
     context: RequestContext,
     projectId: string
   ): Promise<PendingTaskProposal[]> {
-    const access =
-      await this.rbacService
-        .getProjectAccess(
-          context.actorUserId,
+    const authorisation =
+      await this.authorisationService
+        .getEffectiveProjectAuthorisation(
+          context.actorPersonId,
           projectId
         );
 
 
-    if (!access) {
+    if (
+      authorisation.membershipIds.length === 0
+    ) {
       throw new TeamAgentProjectNotFoundError();
     }
 
@@ -55,7 +65,7 @@ export class TeamAgentQueryService {
      * perform that review.
      */
     if (
-      !access.permissions.includes(
+      !authorisation.permissions.includes(
         "agent.approve"
       )
     ) {

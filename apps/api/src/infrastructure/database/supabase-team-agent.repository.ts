@@ -7,7 +7,6 @@ import type {
 } from "../../modules/team-agent/team-agent.repository";
 
 import {
-  TeamAgentPermissionDeniedError,
   TeamAgentProposalAlreadyReviewedError,
   TeamAgentProposalNotFoundError,
   TeamAgentValidationError,
@@ -222,14 +221,6 @@ export class SupabaseTeamAgentRepository
   private throwMappedReviewError(
     message: string
   ): never {
-    if (
-      message.includes(
-        "TEAM_AGENT_REVIEW_PERMISSION_DENIED"
-      )
-    ) {
-      throw new TeamAgentPermissionDeniedError();
-    }
-
 
     if (
       message.includes(

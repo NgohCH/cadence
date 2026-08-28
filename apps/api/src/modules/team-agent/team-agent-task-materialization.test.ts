@@ -6,16 +6,8 @@ import type {
 } from "../../bootstrap/request-context";
 
 import type {
-  RbacRepository,
-} from "../rbac/rbac.repository";
-
-import {
-  RbacService,
-} from "../rbac/rbac.service";
-
-import type {
-  ProjectAccess,
-} from "../rbac/rbac.types";
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
 
 import type {
   CreateTaskInput,
@@ -37,9 +29,16 @@ import {
   TeamAgentTaskMaterializationService,
 } from "./team-agent-task-materialization.service";
 
+import type {
+  TeamAgentTaskMaterializationAuthorisationService,
+} from "./team-agent-task-materialization.service";
+
 
 const actorUserId =
   "11111111-1111-4111-8111-111111111111";
+
+const actorPersonId =
+  "aaaaaaaa-1111-4111-8111-111111111111";
 
 const projectId =
   "22222222-2222-4222-8222-222222222222";
@@ -62,15 +61,10 @@ const assigneeUserId =
 const membershipId =
   "88888888-8888-4888-8888-888888888888";
 
-const roleId =
-  "99999999-9999-4999-8999-999999999999";
-
-
 const context:
   RequestContext = {
     actorUserId,
-    actorPersonId:
-      actorUserId,
+    actorPersonId,
 
     projectId,
 
@@ -88,23 +82,36 @@ const context:
   };
 
 
-class FakeRbacRepository
-  implements RbacRepository
+class FakeMaterializationAuthorisationService
+  implements TeamAgentTaskMaterializationAuthorisationService
 {
+  public readonly calls: Array<{
+    personId: string;
+    projectId: string;
+  }> = [];
+
+
   constructor(
-    public access:
-      ProjectAccess | null
+    private readonly result:
+      EffectiveProjectAuthorisation
   ) {}
 
 
-  async getProjectAccess(
-    _userId: string,
-    _projectId: string
-  ): Promise<ProjectAccess | null> {
-    return this.access;
+  async getEffectiveProjectAuthorisation(
+    requestedPersonId: string,
+    requestedProjectId: string
+  ): Promise<EffectiveProjectAuthorisation> {
+    this.calls.push({
+      personId:
+        requestedPersonId,
+
+      projectId:
+        requestedProjectId,
+    });
+
+    return this.result;
   }
 }
-
 
 class FakeMaterializationRepository
   implements TeamAgentTaskMaterializationRepository
@@ -229,29 +236,38 @@ class FakeTasksService {
 }
 
 
-function createProjectAccess():
-ProjectAccess {
+function createAuthorisation(
+  overrides:
+    Partial<EffectiveProjectAuthorisation> = {}
+): EffectiveProjectAuthorisation {
   return {
-    membershipId,
+    personId:
+      actorPersonId,
 
     projectId,
 
-    userId:
-      actorUserId,
+    membershipIds: [
+      membershipId,
+    ],
 
-    roleId,
+    roles: [
+      "PROJECT_MEMBER",
+    ],
 
-    roleCode:
-      "PROJECT_LEAD",
-
+    /*
+     * Materialization itself requires membership only.
+     * Task permissions remain enforced by TasksService.
+     */
     permissions: [
       "project.view",
-      "task.create",
-      "task.assign",
     ],
+
+    evaluatedAt:
+      "2026-08-27T12:45:00.000Z",
+
+    ...overrides,
   };
 }
-
 
 function createProposal(
   status:
@@ -308,9 +324,9 @@ function createService(
   proposal:
     ReviewedTaskProposalForMaterialization | null,
 
-  access:
-    ProjectAccess | null =
-      createProjectAccess()
+  authorisation:
+    EffectiveProjectAuthorisation | null =
+      createAuthorisation()
 ): {
   service:
     TeamAgentTaskMaterializationService;
@@ -320,7 +336,28 @@ function createService(
 
   tasksService:
     FakeTasksService;
+
+  authorisationService:
+    FakeMaterializationAuthorisationService;
 } {
+  const effectiveAuthorisation =
+    authorisation ??
+    createAuthorisation({
+      membershipIds:
+        [],
+
+      roles:
+        [],
+
+      permissions:
+        [],
+    });
+
+  const authorisationService =
+    new FakeMaterializationAuthorisationService(
+      effectiveAuthorisation
+    );
+
   const repository =
     new FakeMaterializationRepository(
       proposal
@@ -333,23 +370,49 @@ function createService(
   return {
     service:
       new TeamAgentTaskMaterializationService(
-        new RbacService(
-          new FakeRbacRepository(
-            access
-          )
-        ),
-
+        authorisationService,
         repository,
-
         tasksService
       ),
 
     repository,
-
     tasksService,
+    authorisationService,
   };
 }
 
+test(
+  "materialization uses Person identity to establish project membership",
+  async () => {
+    const {
+      service,
+      authorisationService,
+    } = createService(
+      createProposal()
+    );
+
+
+    await service
+      .createTaskFromReviewedProposal(
+        context,
+        projectId,
+        proposalId
+      );
+
+
+    assert.deepEqual(
+      authorisationService.calls,
+      [
+        {
+          personId:
+            actorPersonId,
+
+          projectId,
+        },
+      ]
+    );
+  }
+);
 
 test(
   "confirmed proposal uses reviewed payload and review provenance",

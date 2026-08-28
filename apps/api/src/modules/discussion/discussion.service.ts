@@ -2,7 +2,9 @@ import type {
   RequestContext,
 } from "../../bootstrap/request-context";
 
-import { RbacService } from "../rbac/rbac.service";
+import type {
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
 
 import type {
   DiscussionRepository,
@@ -19,11 +21,24 @@ import {
   DiscussionValidationError,
 } from "./discussion.errors";
 
+
+export interface DiscussionAuthorisationService {
+  getEffectiveProjectAuthorisation(
+    personId: string,
+    projectId: string
+  ): Promise<EffectiveProjectAuthorisation>;
+}
+
+
 export class DiscussionService {
   constructor(
-    private readonly rbacService: RbacService,
-    private readonly repository: DiscussionRepository
+    private readonly authorisationService:
+      DiscussionAuthorisationService,
+
+    private readonly repository:
+      DiscussionRepository
   ) {}
+
 
   async postMessage(
     context: RequestContext,
@@ -46,35 +61,53 @@ export class DiscussionService {
       );
     }
 
-    const access =
-      await this.rbacService.getProjectAccess(
-        context.actorUserId,
-        projectId
-      );
+    const authorisation =
+      await this.authorisationService
+        .getEffectiveProjectAuthorisation(
+          context.actorPersonId,
+          projectId
+        );
 
-    if (!access) {
+    /*
+     * Preserve the existing concealment behaviour.
+     */
+    if (
+      authorisation.membershipIds.length === 0
+    ) {
       throw new DiscussionProjectNotFoundError();
     }
 
     if (
-      !access.permissions.includes(
+      !authorisation.permissions.includes(
         "message.create"
       )
     ) {
       throw new DiscussionPermissionDeniedError();
     }
 
+    /*
+     * Messages remain User-oriented application records.
+     * actorUserId is attribution, not authorization evidence.
+     */
     return this.repository.createMessage({
       projectId,
+
       authorUserId:
         context.actorUserId,
-      content: trimmedContent,
+
+      content:
+        trimmedContent,
+
       threadParentId,
+
       correlationId:
         context.correlationId,
-      causationId: null,
+
+      causationId:
+        null,
     });
   }
+
 
   async getMessageVersion(
     projectId: string,

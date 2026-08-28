@@ -18,16 +18,16 @@ import {
 } from "./infrastructure/database/supabase-domain-event.repository";
 
 import {
-  SupabaseRbacRepository,
-} from "./infrastructure/database/supabase-rbac.repository";
-
-import {
   SupabaseTeamAgentRepository,
 } from "./infrastructure/database/supabase-team-agent.repository";
 
 import {
   SupabaseProjectMembershipLifecycleRepository,
 } from "./infrastructure/database/supabase-project-membership-lifecycle.repository";
+
+import {
+  SupabaseProjectMembershipRepository,
+} from "./infrastructure/database/supabase-project-membership.repository";
 
 import {
   DomainEventProcessor,
@@ -46,12 +46,12 @@ import {
 } from "./modules/discussion/discussion.service";
 
 import {
-  RbacService,
-} from "./modules/rbac/rbac.service";
-
-import {
   ProjectMembershipExpiryProcessor,
 } from "./modules/project-membership/project-membership-expiry.processor";
+
+import {
+  ProjectAuthorisationService,
+} from "./modules/project-membership/project-authorisation.service";
 
 import {
   MessageCreatedV1Handler,
@@ -122,11 +122,6 @@ const discussionRepository =
     databaseClient
   );
 
-const rbacRepository =
-  new SupabaseRbacRepository(
-    databaseClient
-  );
-
 const teamAgentRepository =
   new SupabaseTeamAgentRepository(
     databaseClient
@@ -134,6 +129,11 @@ const teamAgentRepository =
 
 const projectMembershipLifecycleRepository =
   new SupabaseProjectMembershipLifecycleRepository(
+    databaseClient
+  );
+
+const projectMembershipRepository =
+  new SupabaseProjectMembershipRepository(
     databaseClient
   );
 
@@ -147,20 +147,20 @@ const auditService =
     auditRepository
   );
 
-const rbacService =
-  new RbacService(
-    rbacRepository
+const projectAuthorisationService =
+  new ProjectAuthorisationService(
+    projectMembershipRepository
   );
 
 const discussionService =
   new DiscussionService(
-    rbacService,
+    projectAuthorisationService,
     discussionRepository
   );
 
 const teamAgentService =
   new TeamAgentService(
-    rbacService,
+    projectAuthorisationService,
     teamAgentRepository
   );
 

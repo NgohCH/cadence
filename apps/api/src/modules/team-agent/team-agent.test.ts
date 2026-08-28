@@ -10,6 +10,13 @@ import type {
 } from "../../infrastructure/events/domain-event";
 
 import type {
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
+
+import type {
+  DiscussionAuthorisationService,
+} from "../discussion/discussion.service";
+import type {
   DiscussionRepository,
 } from "../discussion/discussion.repository";
 
@@ -22,18 +29,6 @@ import type {
   DiscussionMessage,
   DiscussionMessageVersion,
 } from "../discussion/discussion.types";
-
-import type {
-  RbacRepository,
-} from "../rbac/rbac.repository";
-
-import {
-  RbacService,
-} from "../rbac/rbac.service";
-
-import type {
-  ProjectAccess,
-} from "../rbac/rbac.types";
 
 import {
   TeamAgentPermissionDeniedError,
@@ -51,6 +46,10 @@ import type {
 
 import {
   TeamAgentService,
+} from "./team-agent.service";
+
+import type {
+  TeamAgentAuthorisationService,
 } from "./team-agent.service";
 
 import type {
@@ -89,6 +88,9 @@ const proposalId =
 const reviewerUserId =
   "99999999-9999-4999-8999-999999999999";
 
+const reviewerPersonId =
+  "eeeeeeee-9999-4999-8999-999999999999";
+
 const reviewRequestId =
   "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
@@ -97,9 +99,6 @@ const reviewCorrelationId =
 
 const membershipId =
   "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-
-const roleId =
-  "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
 const occurredAt =
   "2026-08-15T13:13:38.000Z";
@@ -111,23 +110,36 @@ const messageContent =
   "Daniel, please finalise the syllabus by Friday.";
 
 
-class FakeRbacRepository
-  implements RbacRepository
+class FakeTeamAgentAuthorisationService
+  implements TeamAgentAuthorisationService
 {
+  public readonly calls: Array<{
+    personId: string;
+    projectId: string;
+  }> = [];
+
+
   constructor(
-    public access:
-      ProjectAccess | null = null
+    private readonly result:
+      EffectiveProjectAuthorisation
   ) {}
 
 
-  async getProjectAccess(
-    _userId: string,
-    _projectId: string
-  ): Promise<ProjectAccess | null> {
-    return this.access;
+  async getEffectiveProjectAuthorisation(
+    requestedPersonId: string,
+    requestedProjectId: string
+  ): Promise<EffectiveProjectAuthorisation> {
+    this.calls.push({
+      personId:
+        requestedPersonId,
+
+      projectId:
+        requestedProjectId,
+    });
+
+    return this.result;
   }
 }
-
 
 class FakeDiscussionRepository
   implements DiscussionRepository
@@ -318,6 +330,37 @@ DomainEvent {
 }
 
 
+class FakeDiscussionAuthorisationService
+  implements DiscussionAuthorisationService
+{
+  async getEffectiveProjectAuthorisation(
+    personId: string,
+    projectId: string
+  ): Promise<EffectiveProjectAuthorisation> {
+    return {
+      personId,
+      projectId,
+
+      membershipIds: [
+        "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      ],
+
+      roles: [
+        "PROJECT_MEMBER",
+      ],
+
+      permissions: [
+        "project.view",
+        "message.view",
+        "message.create",
+      ],
+
+      evaluatedAt:
+        "2026-08-27T08:00:00.000Z",
+    };
+  }
+}
+
 function createHandler(
   version:
     DiscussionMessageVersion | null =
@@ -331,18 +374,9 @@ function createHandler(
     new FakeDiscussionRepository(
       version
     );
-
-  const rbacRepository =
-    new FakeRbacRepository();
-
-  const rbacService =
-    new RbacService(
-      rbacRepository
-    );
-
-  const discussionService =
+const discussionService =
     new DiscussionService(
-      rbacService,
+      new FakeDiscussionAuthorisationService(),
       discussionRepository
     );
 
@@ -351,7 +385,7 @@ function createHandler(
 
   const teamAgentService =
     new TeamAgentService(
-      rbacService,
+      new FakeTeamAgentAuthorisationService(createAuthorisation()),
       teamAgentRepository
     );
 
@@ -375,7 +409,7 @@ RequestContext {
       reviewerUserId,
 
     actorPersonId:
-      reviewerUserId,
+      reviewerPersonId,
 
     projectId,
 
@@ -394,29 +428,37 @@ RequestContext {
 }
 
 
-function createProjectAccess(
+function createAuthorisation(
   permissions:
     string[] = [
       "agent.approve",
-    ]
-): ProjectAccess {
+    ],
+
+  overrides:
+    Partial<EffectiveProjectAuthorisation> = {}
+): EffectiveProjectAuthorisation {
   return {
-    membershipId,
+    personId:
+      reviewerPersonId,
 
     projectId,
 
-    userId:
-      reviewerUserId,
+    membershipIds: [
+      membershipId,
+    ],
 
-    roleId,
-
-    roleCode:
-      "TEST_REVIEWER",
+    roles: [
+      "PROJECT_MANAGER",
+    ],
 
     permissions,
+
+    evaluatedAt:
+      "2026-08-27T12:30:00.000Z",
+
+    ...overrides,
   };
 }
-
 
 function createReviewedPayload():
 TaskProposalPayload {
@@ -443,16 +485,35 @@ TaskProposalPayload {
 
 
 function createReviewService(
-  access:
-    ProjectAccess | null =
-      createProjectAccess()
+  authorisation:
+    EffectiveProjectAuthorisation | null =
+      createAuthorisation()
 ): {
-  service: TeamAgentService;
-  repository: FakeTeamAgentRepository;
+  service:
+    TeamAgentService;
+
+  repository:
+    FakeTeamAgentRepository;
+
+  authorisationService:
+    FakeTeamAgentAuthorisationService;
 } {
-  const rbacRepository =
-    new FakeRbacRepository(
-      access
+  const effectiveAuthorisation =
+    authorisation ??
+    createAuthorisation(
+      [],
+      {
+        membershipIds:
+          [],
+
+        roles:
+          [],
+      }
+    );
+
+  const authorisationService =
+    new FakeTeamAgentAuthorisationService(
+      effectiveAuthorisation
     );
 
   const repository =
@@ -460,9 +521,7 @@ function createReviewService(
 
   const service =
     new TeamAgentService(
-      new RbacService(
-        rbacRepository
-      ),
+      authorisationService,
       repository
     );
 
@@ -470,9 +529,49 @@ function createReviewService(
   return {
     service,
     repository,
+    authorisationService,
   };
 }
 
+test(
+  "proposal review uses Person identity for project authorization",
+  async () => {
+    const {
+      service,
+      authorisationService,
+    } = createReviewService(
+      createAuthorisation(
+        []
+      )
+    );
+
+
+    await assert.rejects(
+      () =>
+        service.reviewTaskProposal(
+          createReviewContext(),
+          projectId,
+          proposalId,
+          "confirm"
+        ),
+
+      TeamAgentPermissionDeniedError
+    );
+
+
+    assert.deepEqual(
+      authorisationService.calls,
+      [
+        {
+          personId:
+            reviewerPersonId,
+
+          projectId,
+        },
+      ]
+    );
+  }
+);
 
 /*
  * VS001-05
@@ -966,7 +1065,7 @@ test(
       service,
       repository,
     } = createReviewService(
-      createProjectAccess(
+      createAuthorisation(
         [
           "message.create",
         ]

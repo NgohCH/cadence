@@ -118,7 +118,6 @@ const evaluatedAt =
 
 const context:
   ProjectAuthorisationContext = {
-    actorUserId,
     actorPersonId,
   };
 
@@ -833,7 +832,7 @@ async function request(
 
         context: {
           ...context,
-
+          actorUserId,
           correlationId,
           requestId,
 

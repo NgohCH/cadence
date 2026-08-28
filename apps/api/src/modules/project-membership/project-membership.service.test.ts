@@ -83,7 +83,6 @@ const evaluatedAt =
 
 const context:
   ProjectRoleCommandContext = {
-    actorUserId,
     actorPersonId,
     correlationId:
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",

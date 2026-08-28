@@ -2,6 +2,10 @@ import type {
   RequestContext,
 } from "../../bootstrap/request-context";
 
+import type {
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
+
 import {
   AuditJourneyNotFoundError,
   AuditPermissionDeniedError,
@@ -18,17 +22,11 @@ import type {
 } from "./audit.types";
 
 
-interface AuditProjectAccess {
-  permissions:
-    string[];
-}
-
-
 export interface AuditAuthorizationService {
-  getProjectAccess(
-    userId: string,
+  getEffectiveProjectAuthorisation(
+    personId: string,
     projectId: string
-  ): Promise<AuditProjectAccess | null>;
+  ): Promise<EffectiveProjectAuthorisation>;
 }
 
 
@@ -65,23 +63,26 @@ export class AuditQueryService {
 
 
     /*
-     * Resolve project access before revealing project audit data.
+     * Resolve effective project authorisation before revealing
+     * project audit data.
      */
-    const access =
+    const authorisation =
       await this.authorizationService
-        .getProjectAccess(
-          context.actorUserId,
+        .getEffectiveProjectAuthorisation(
+          context.actorPersonId,
           projectId
         );
 
 
-    if (!access) {
+    if (
+      authorisation.membershipIds.length === 0
+    ) {
       throw new AuditProjectNotFoundError();
     }
 
 
     if (
-      !access.permissions.includes(
+      !authorisation.permissions.includes(
         "audit.view"
       )
     ) {
@@ -89,16 +90,11 @@ export class AuditQueryService {
     }
 
 
-    /*
-     * The repository passes actor identity to the database RPC,
-     * which independently revalidates audit.view.
-     */
     const events =
       await this.repository
         .getTaskJourney(
           projectId,
-          taskId,
-          context.actorUserId
+          taskId
         );
 
 

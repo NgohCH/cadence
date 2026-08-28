@@ -3,7 +3,6 @@ import type {
 } from "@supabase/supabase-js";
 
 import {
-  AuditPermissionDeniedError,
   AuditValidationError,
 } from "../../modules/audit/audit.errors";
 
@@ -115,8 +114,7 @@ export class SupabaseAuditRepository
 
   async getTaskJourney(
     projectId: string,
-    taskId: string,
-    requestingUserId: string
+    taskId: string
   ): Promise<AuditJourneyEvent[] | null> {
     const {
       data,
@@ -130,8 +128,6 @@ export class SupabaseAuditRepository
         p_task_id:
           taskId,
 
-        p_requesting_user_id:
-          requestingUserId,
       }
     );
 
@@ -217,13 +213,6 @@ export class SupabaseAuditRepository
   private throwQueryError(
     message: string
   ): never {
-    if (
-      message.includes(
-        "AUDIT_VIEW_PERMISSION_DENIED"
-      )
-    ) {
-      throw new AuditPermissionDeniedError();
-    }
 
 
     if (

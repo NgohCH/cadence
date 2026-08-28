@@ -6,16 +6,8 @@ import type {
 } from "../../bootstrap/request-context";
 
 import type {
-  RbacRepository,
-} from "../rbac/rbac.repository";
-
-import {
-  RbacService,
-} from "../rbac/rbac.service";
-
-import type {
-  ProjectAccess,
-} from "../rbac/rbac.types";
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
 
 import {
   TeamAgentPermissionDeniedError,
@@ -31,6 +23,10 @@ import {
 } from "./team-agent-query.service";
 
 import type {
+  TeamAgentQueryAuthorisationService,
+} from "./team-agent-query.service";
+
+import type {
   PendingTaskProposal,
 } from "./team-agent.types";
 
@@ -41,11 +37,11 @@ const projectId =
 const userId =
   "22222222-2222-4222-8222-222222222222";
 
+const personId =
+  "aaaaaaaa-2222-4222-8222-222222222222";
+
 const membershipId =
   "33333333-3333-4333-8333-333333333333";
-
-const roleId =
-  "44444444-4444-4444-8444-444444444444";
 
 const requestId =
   "55555555-5555-4555-8555-555555555555";
@@ -66,20 +62,34 @@ const sourceMessageVersionId =
   "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 
-class FakeRbacRepository
-  implements RbacRepository
+class FakeTeamAgentQueryAuthorisationService
+  implements TeamAgentQueryAuthorisationService
 {
+  public readonly calls: Array<{
+    personId: string;
+    projectId: string;
+  }> = [];
+
+
   constructor(
-    public access:
-      ProjectAccess | null
+    private readonly result:
+      EffectiveProjectAuthorisation
   ) {}
 
 
-  async getProjectAccess(
-    _userId: string,
-    _projectId: string
-  ): Promise<ProjectAccess | null> {
-    return this.access;
+  async getEffectiveProjectAuthorisation(
+    requestedPersonId: string,
+    requestedProjectId: string
+  ): Promise<EffectiveProjectAuthorisation> {
+    this.calls.push({
+      personId:
+        requestedPersonId,
+
+      projectId:
+        requestedProjectId,
+    });
+
+    return this.result;
   }
 }
 
@@ -114,7 +124,7 @@ RequestContext {
       userId,
 
     actorPersonId:
-      userId,
+      personId,
 
     projectId,
 
@@ -131,25 +141,34 @@ RequestContext {
 }
 
 
-function createProjectAccess(
+function createAuthorisation(
   permissions:
     string[] = [
       "agent.approve",
-    ]
-): ProjectAccess {
+    ],
+
+  overrides:
+    Partial<EffectiveProjectAuthorisation> = {}
+): EffectiveProjectAuthorisation {
   return {
-    membershipId,
+    personId,
 
     projectId,
 
-    userId,
+    membershipIds: [
+      membershipId,
+    ],
 
-    roleId,
-
-    roleCode:
-      "TEST_REVIEWER",
+    roles: [
+      "PROJECT_MANAGER",
+    ],
 
     permissions,
+
+    evaluatedAt:
+      "2026-08-27T09:30:00.000Z",
+
+    ...overrides,
   };
 }
 
@@ -200,15 +219,21 @@ PendingTaskProposal {
 
 
 function createService(
-  access:
-    ProjectAccess | null
+  authorisation:
+    EffectiveProjectAuthorisation
 ): {
-  service: TeamAgentQueryService;
-  repository: FakeTeamAgentQueryRepository;
+  service:
+    TeamAgentQueryService;
+
+  repository:
+    FakeTeamAgentQueryRepository;
+
+  authorisationService:
+    FakeTeamAgentQueryAuthorisationService;
 } {
-  const rbacRepository =
-    new FakeRbacRepository(
-      access
+  const authorisationService =
+    new FakeTeamAgentQueryAuthorisationService(
+      authorisation
     );
 
   const repository =
@@ -216,10 +241,7 @@ function createService(
 
   const service =
     new TeamAgentQueryService(
-      new RbacService(
-        rbacRepository
-      ),
-
+      authorisationService,
       repository
     );
 
@@ -227,6 +249,7 @@ function createService(
   return {
     service,
     repository,
+    authorisationService,
   };
 }
 
@@ -244,8 +267,9 @@ test(
     const {
       service,
       repository,
+      authorisationService,
     } = createService(
-      createProjectAccess()
+      createAuthorisation()
     );
 
 
@@ -260,6 +284,17 @@ test(
           createContext(),
           projectId
         );
+
+
+    assert.deepEqual(
+      authorisationService.calls,
+      [
+        {
+          personId,
+          projectId,
+        },
+      ]
+    );
 
 
     assert.equal(
@@ -302,7 +337,16 @@ test(
       service,
       repository,
     } = createService(
-      null
+      createAuthorisation(
+        [],
+        {
+          membershipIds:
+            [],
+
+          roles:
+            [],
+        }
+      )
     );
 
 
@@ -333,7 +377,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess(
+      createAuthorisation(
         [
           "message.create",
           "project.view",

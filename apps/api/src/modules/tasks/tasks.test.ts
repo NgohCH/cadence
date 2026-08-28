@@ -6,17 +6,12 @@ import type {
 } from "../../bootstrap/request-context";
 
 import type {
-  RbacRepository,
-} from "../rbac/rbac.repository";
-
-import {
-  RbacService,
-} from "../rbac/rbac.service";
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
 
 import type {
-  ProjectAccess,
-} from "../rbac/rbac.types";
-
+  TasksAuthorisationService,
+} from "./tasks.service";
 import {
   TasksPermissionDeniedError,
   TasksProjectNotFoundError,
@@ -43,6 +38,9 @@ import type {
 const actorUserId =
   "11111111-1111-4111-8111-111111111111";
 
+const actorPersonId =
+  "aaaaaaaa-1111-4111-8111-111111111111";
+
 const projectId =
   "22222222-2222-4222-8222-222222222222";
 
@@ -64,15 +62,10 @@ const causationId =
 const membershipId =
   "88888888-8888-4888-8888-888888888888";
 
-const roleId =
-  "99999999-9999-4999-8999-999999999999";
-
-
 const context:
   RequestContext = {
     actorUserId,
-    actorPersonId:
-      actorUserId,
+    actorPersonId,
 
     projectId,
 
@@ -89,23 +82,36 @@ const context:
   };
 
 
-class FakeRbacRepository
-  implements RbacRepository
+class FakeTasksAuthorisationService
+  implements TasksAuthorisationService
 {
+  public readonly calls: Array<{
+    personId: string;
+    projectId: string;
+  }> = [];
+
+
   constructor(
-    public access:
-      ProjectAccess | null
+    private readonly result:
+      EffectiveProjectAuthorisation
   ) {}
 
 
-  async getProjectAccess(
-    _userId: string,
-    _projectId: string
-  ): Promise<ProjectAccess | null> {
-    return this.access;
+  async getEffectiveProjectAuthorisation(
+    requestedPersonId: string,
+    requestedProjectId: string
+  ): Promise<EffectiveProjectAuthorisation> {
+    this.calls.push({
+      personId:
+        requestedPersonId,
+
+      projectId:
+        requestedProjectId,
+    });
+
+    return this.result;
   }
 }
-
 
 class FakeTasksRepository
   implements TasksRepository
@@ -192,27 +198,35 @@ class FakeTasksRepository
 }
 
 
-function createProjectAccess(
+function createAuthorisation(
   permissions:
-    string[]
-): ProjectAccess {
+    string[],
+
+  overrides:
+    Partial<EffectiveProjectAuthorisation> = {}
+): EffectiveProjectAuthorisation {
   return {
-    membershipId,
+    personId:
+      actorPersonId,
 
     projectId,
 
-    userId:
-      actorUserId,
+    membershipIds: [
+      membershipId,
+    ],
 
-    roleId,
-
-    roleCode:
-      "TEST_ROLE",
+    roles: [
+      "PROJECT_MEMBER",
+    ],
 
     permissions,
+
+    evaluatedAt:
+      "2026-08-27T09:00:00.000Z",
+
+    ...overrides,
   };
 }
-
 
 function createInput():
 CreateTaskInput {
@@ -245,18 +259,34 @@ CreateTaskInput {
 
 
 function createService(
-  access:
-    ProjectAccess | null
+  authorisation:
+    EffectiveProjectAuthorisation | null
 ): {
   service:
     TasksService;
 
   repository:
     FakeTasksRepository;
+
+  authorisationService:
+    FakeTasksAuthorisationService;
 } {
-  const rbacRepository =
-    new FakeRbacRepository(
-      access
+  const effectiveAuthorisation =
+    authorisation ??
+    createAuthorisation(
+      [],
+      {
+        membershipIds:
+          [],
+
+        roles:
+          [],
+      }
+    );
+
+  const authorisationService =
+    new FakeTasksAuthorisationService(
+      effectiveAuthorisation
     );
 
   const repository =
@@ -266,17 +296,14 @@ function createService(
   return {
     service:
       new TasksService(
-        new RbacService(
-          rbacRepository
-        ),
-
+        authorisationService,
         repository
       ),
 
     repository,
+    authorisationService,
   };
 }
-
 
 /*
  * VS001-07A
@@ -290,13 +317,53 @@ function createService(
  * Tasks-owned persistence boundary
  */
 test(
+  "task creation uses Person for project authority and User for creator attribution",
+  async () => {
+    const {
+      service,
+      repository,
+      authorisationService,
+    } = createService(
+      createAuthorisation([
+        "task.create",
+      ])
+    );
+
+
+    await service.createTask(
+      context,
+      createInput()
+    );
+
+
+    assert.deepEqual(
+      authorisationService.calls,
+      [
+        {
+          personId:
+            actorPersonId,
+
+          projectId,
+        },
+      ]
+    );
+
+
+    assert.equal(
+      repository.calls[0].createdByUserId,
+      actorUserId
+    );
+  }
+);
+
+test(
   "authorised user creates an authoritative task",
   async () => {
     const {
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "task.create",
       ])
     );
@@ -380,7 +447,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "task.create",
       ])
     );
@@ -419,7 +486,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "task.create",
       ])
     );
@@ -458,7 +525,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "task.create",
         "task.assign",
       ])
@@ -528,7 +595,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "project.view",
       ])
     );
@@ -560,7 +627,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "task.create",
       ])
     );
@@ -599,7 +666,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "task.create",
       ])
     );
@@ -633,7 +700,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "task.create",
       ])
     );
@@ -667,7 +734,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "task.create",
       ])
     );
@@ -707,7 +774,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "task.create",
       ])
     );
@@ -741,7 +808,7 @@ test(
       service,
       repository,
     } = createService(
-      createProjectAccess([
+      createAuthorisation([
         "task.create",
       ])
     );
@@ -774,27 +841,29 @@ test(
 
 
 /*
- * VS001-08A
+ * R02E - canonical My Tasks authorization
  *
- * Authenticated user
- *   ->
- * TasksService.listMyTasks()
- *   ->
- * authenticated actor identity
- *   ->
- * Tasks-owned read boundary
+ * User identity scopes assignment.
+ * Person identity scopes project authority.
  */
 test(
-  "my tasks uses the authenticated actor identity",
+  "my tasks uses User identity for assignment and Person identity for authorization",
   async () => {
-    const {
-      service,
-      repository,
-    } = createService(
-      createProjectAccess([
-        "task.view",
-      ])
-    );
+    const authorisationService =
+      new FakeTasksAuthorisationService(
+        createAuthorisation([
+          "task.view",
+        ])
+      );
+
+    const repository =
+      new FakeTasksRepository();
+
+    const service =
+      new TasksService(
+        authorisationService,
+        repository
+      );
 
 
     repository.listMyTasksResult = [
@@ -853,6 +922,18 @@ test(
       ]
     );
 
+    assert.deepEqual(
+      authorisationService.calls,
+      [
+        {
+          personId:
+            actorPersonId,
+
+          projectId,
+        },
+      ]
+    );
+
     assert.equal(
       result.length,
       1
@@ -862,26 +943,199 @@ test(
       result[0].id,
       taskId
     );
+  }
+);
 
-    assert.equal(
-      result[0].assignedTo,
-      actorUserId
+
+test(
+  "my tasks excludes assigned tasks when Person lacks task.view",
+  async () => {
+    const authorisationService =
+      new FakeTasksAuthorisationService(
+        createAuthorisation([])
+      );
+
+    const repository =
+      new FakeTasksRepository();
+
+    const service =
+      new TasksService(
+        authorisationService,
+        repository
+      );
+
+
+    repository.listMyTasksResult = [
+      {
+        id:
+          taskId,
+
+        projectId,
+
+        title:
+          "Finalise syllabus",
+
+        description:
+          null,
+
+        assignedTo:
+          actorUserId,
+
+        status:
+          "open",
+
+        priority:
+          "normal",
+
+        dueDate:
+          null,
+
+        completedAt:
+          null,
+
+        createdBy:
+          actorUserId,
+
+        createdByType:
+          "human",
+
+        createdAt:
+          "2026-08-16T12:00:00.000Z",
+
+        updatedAt:
+          "2026-08-16T12:00:00.000Z",
+      },
+    ];
+
+
+    const result =
+      await service.listMyTasks(
+        context
+      );
+
+
+    assert.deepEqual(
+      result,
+      []
+    );
+
+    assert.deepEqual(
+      authorisationService.calls,
+      [
+        {
+          personId:
+            actorPersonId,
+
+          projectId,
+        },
+      ]
     );
   }
 );
 
 
 test(
-  "my tasks returns an empty list when repository finds no visible tasks",
+  "my tasks excludes assigned tasks when Person has no effective membership",
   async () => {
-    const {
-      service,
-      repository,
-    } = createService(
-      createProjectAccess([
-        "task.view",
-      ])
+    const authorisationService =
+      new FakeTasksAuthorisationService(
+        createAuthorisation(
+          [
+            "task.view",
+          ],
+
+          {
+            membershipIds:
+              [],
+          }
+        )
+      );
+
+    const repository =
+      new FakeTasksRepository();
+
+    const service =
+      new TasksService(
+        authorisationService,
+        repository
+      );
+
+
+    repository.listMyTasksResult = [
+      {
+        id:
+          taskId,
+
+        projectId,
+
+        title:
+          "Finalise syllabus",
+
+        description:
+          null,
+
+        assignedTo:
+          actorUserId,
+
+        status:
+          "open",
+
+        priority:
+          "normal",
+
+        dueDate:
+          null,
+
+        completedAt:
+          null,
+
+        createdBy:
+          actorUserId,
+
+        createdByType:
+          "human",
+
+        createdAt:
+          "2026-08-16T12:00:00.000Z",
+
+        updatedAt:
+          "2026-08-16T12:00:00.000Z",
+      },
+    ];
+
+
+    const result =
+      await service.listMyTasks(
+        context
+      );
+
+
+    assert.deepEqual(
+      result,
+      []
     );
+  }
+);
+
+
+test(
+  "my tasks does not query project authorization when no assigned actionable tasks exist",
+  async () => {
+    const authorisationService =
+      new FakeTasksAuthorisationService(
+        createAuthorisation([
+          "task.view",
+        ])
+      );
+
+    const repository =
+      new FakeTasksRepository();
+
+    const service =
+      new TasksService(
+        authorisationService,
+        repository
+      );
 
 
     repository.listMyTasksResult =
@@ -899,6 +1153,11 @@ test(
       [
         actorUserId,
       ]
+    );
+
+    assert.deepEqual(
+      authorisationService.calls,
+      []
     );
 
     assert.deepEqual(

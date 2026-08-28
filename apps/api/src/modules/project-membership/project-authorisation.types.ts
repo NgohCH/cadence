@@ -8,14 +8,16 @@ import type {
 
 
 /**
- * The authenticated actor fields required for a project-authorisation
- * decision. The stable Person drives VS-002 access. actorUserId is retained
- * only for the explicit VS-001 RBAC compatibility path.
+ * Identity required for a project-authorisation decision.
+ *
+ * Project authority is derived only from stable Person identity.
+ * The wider RequestContext may still contain actorUserId for legacy
+ * application data and attribution, but it is not authorization evidence.
  */
 export type ProjectAuthorisationContext =
   Pick<
     RequestContext,
-    "actorPersonId" | "actorUserId"
+    "actorPersonId"
   >;
 
 

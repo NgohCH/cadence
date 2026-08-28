@@ -2,9 +2,9 @@ import type {
   RequestContext,
 } from "../../bootstrap/request-context";
 
-import {
-  RbacService,
-} from "../rbac/rbac.service";
+import type {
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
 
 import type {
   TasksService,
@@ -25,10 +25,18 @@ import type {
 } from "./team-agent-materialization.repository";
 
 
+export interface TeamAgentTaskMaterializationAuthorisationService {
+  getEffectiveProjectAuthorisation(
+    personId: string,
+    projectId: string
+  ): Promise<EffectiveProjectAuthorisation>;
+}
+
+
 export class TeamAgentTaskMaterializationService {
   constructor(
-    private readonly rbacService:
-      RbacService,
+    private readonly authorisationService:
+      TeamAgentTaskMaterializationAuthorisationService,
 
     private readonly repository:
       TeamAgentTaskMaterializationRepository,
@@ -47,20 +55,23 @@ export class TeamAgentTaskMaterializationService {
     proposalId: string
   ): Promise<TaskCreationResult> {
     /*
-     * Check project membership before revealing proposal state.
+     * Check effective project membership before revealing
+     * proposal state.
      *
      * Task-specific permission enforcement remains the
      * responsibility of TasksService.
      */
-    const access =
-      await this.rbacService
-        .getProjectAccess(
-          context.actorUserId,
+    const authorisation =
+      await this.authorisationService
+        .getEffectiveProjectAuthorisation(
+          context.actorPersonId,
           projectId
         );
 
 
-    if (!access) {
+    if (
+      authorisation.membershipIds.length === 0
+    ) {
       throw new TeamAgentProjectNotFoundError();
     }
 

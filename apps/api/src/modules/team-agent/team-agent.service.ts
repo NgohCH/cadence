@@ -2,10 +2,9 @@ import type {
   RequestContext,
 } from "../../bootstrap/request-context";
 
-import {
-  RbacService,
-} from "../rbac/rbac.service";
-
+import type {
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
 import type {
   TeamAgentRepository,
 } from "./team-agent.repository";
@@ -26,10 +25,17 @@ import {
 } from "./team-agent.errors";
 
 
+export interface TeamAgentAuthorisationService {
+  getEffectiveProjectAuthorisation(
+    personId: string,
+    projectId: string
+  ): Promise<EffectiveProjectAuthorisation>;
+}
+
 export class TeamAgentService {
   constructor(
-    private readonly rbacService:
-      RbacService,
+    private readonly authorisationService:
+      TeamAgentAuthorisationService,
 
     private readonly repository:
       TeamAgentRepository
@@ -167,15 +173,17 @@ export class TeamAgentService {
      * receives the same project-not-found behaviour used by other
      * Cadence project-scoped services.
      */
-    const access =
-      await this.rbacService
-        .getProjectAccess(
-          context.actorUserId,
+    const authorisation =
+      await this.authorisationService
+        .getEffectiveProjectAuthorisation(
+          context.actorPersonId,
           projectId
         );
 
 
-    if (!access) {
+    if (
+      authorisation.membershipIds.length === 0
+    ) {
       throw new TeamAgentProjectNotFoundError();
     }
 
@@ -186,7 +194,7 @@ export class TeamAgentService {
      * Roles may change over time without changing this module.
      */
     if (
-      !access.permissions.includes(
+      !authorisation.permissions.includes(
         "agent.approve"
       )
     ) {

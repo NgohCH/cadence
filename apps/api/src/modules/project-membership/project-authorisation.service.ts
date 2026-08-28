@@ -29,15 +29,6 @@ import {
 } from "./project-role.types";
 
 
-export interface LegacyProjectAuthorisation {
-  hasPermission(
-    userId: string,
-    projectId: string,
-    permissionCode: string
-  ): Promise<boolean>;
-}
-
-
 export type ProjectAuthorisationClock =
   () => string;
 
@@ -45,17 +36,15 @@ export type ProjectAuthorisationClock =
 /**
  * The single VS-002 project-authorisation decision boundary.
  *
- * Stable Person membership and frozen role history are authoritative for new
- * VS-002 access. The legacy RBAC dependency is an explicit, temporary fallback
- * for existing VS-001 memberships whose role codes cannot be truthfully
- * translated into the frozen role vocabulary.
+ * Stable Person membership and frozen role history are authoritative.
+ *
+ * Legacy users/roles are not consulted here. A caller with no effective
+ * frozen VS-002 role fails closed.
  */
 export class ProjectAuthorisationService {
   constructor(
     private readonly repository:
       ProjectMembershipRepository,
-    private readonly legacyAuthorisation:
-      LegacyProjectAuthorisation,
     private readonly currentTime:
       ProjectAuthorisationClock = () =>
         new Date().toISOString()
@@ -85,24 +74,9 @@ export class ProjectAuthorisationService {
         projectId
       );
 
-    if (
-      authorisation.permissions.includes(
-        permission
-      )
-    ) {
-      return true;
-    }
-
-    if (authorisation.roles.length > 0) {
-      return false;
-    }
-
-    return this.legacyAuthorisation
-      .hasPermission(
-        context.actorUserId,
-        projectId,
-        permission
-      );
+    return authorisation.permissions.includes(
+      permission
+    );
   }
 
 
@@ -176,69 +150,96 @@ export class ProjectAuthorisationService {
             )
         );
 
-    assertOrdinaryRoleCardinality(
+    assertProjectRoleCardinality(
       effectiveAssignments
     );
 
     const roles =
       uniqueRoles(
-        effectiveAssignments
-          .map(
-            (assignment) =>
-              assignment.role
-          )
+        effectiveAssignments.map(
+          (assignment) =>
+            assignment.role
+        )
       );
 
     return {
       personId,
       projectId,
+
       membershipIds:
         effectiveMemberships.map(
-          (membership) => membership.id
+          (membership) =>
+            membership.id
         ),
+
       roles,
+
       permissions:
         getProjectPermissionsForRoles(
           roles
         ),
+
       evaluatedAt,
     };
   }
 }
 
 
-function assertOrdinaryRoleCardinality(
+function assertProjectRoleCardinality(
   assignments:
     readonly ProjectRoleAssignment[]
 ): void {
   const ordinaryCountsByMembership =
     new Map<string, number>();
 
+  const protectedCountsByRole =
+    new Map<ProjectRole, number>();
+
+
   for (const assignment of assignments) {
     if (
-      !isOrdinaryProjectRole(
+      isOrdinaryProjectRole(
         assignment.role
       )
     ) {
+      const count =
+        (
+          ordinaryCountsByMembership.get(
+            assignment.membershipId
+          ) ?? 0
+        ) + 1;
+
+      if (count > 1) {
+        throw new ProjectRoleAssignmentInvalidError(
+          "A project membership cannot have more than one effective ordinary role."
+        );
+      }
+
+      ordinaryCountsByMembership.set(
+        assignment.membershipId,
+        count
+      );
+
       continue;
     }
 
-    const count =
+
+    const protectedCount =
       (
-        ordinaryCountsByMembership.get(
-          assignment.membershipId
+        protectedCountsByRole.get(
+          assignment.role
         ) ?? 0
       ) + 1;
 
-    if (count > 1) {
+    if (protectedCount > 1) {
       throw new ProjectRoleAssignmentInvalidError(
-        "A project membership cannot have more than one effective ordinary role."
+        "Effective project authorisation cannot contain more than one assignment for the same protected role."
       );
     }
 
-    ordinaryCountsByMembership.set(
-      assignment.membershipId,
-      count
+    protectedCountsByRole.set(
+      assignment.role,
+      protectedCount
     );
   }
 }
@@ -252,19 +253,27 @@ function isRoleAssignmentEffectiveAt(
     Date.parse(evaluatedAt);
 
   const effectiveFrom =
-    Date.parse(assignment.effectiveFrom);
+    Date.parse(
+      assignment.effectiveFrom
+    );
 
   const effectiveTo =
     assignment.effectiveTo === null
       ? null
-      : Date.parse(assignment.effectiveTo);
+      : Date.parse(
+          assignment.effectiveTo
+        );
 
   return (
-    Number.isFinite(effectiveFrom) &&
+    Number.isFinite(
+      effectiveFrom
+    ) &&
     (
       effectiveTo === null ||
       (
-        Number.isFinite(effectiveTo) &&
+        Number.isFinite(
+          effectiveTo
+        ) &&
         effectiveTo > effectiveFrom
       )
     ) &&
@@ -280,7 +289,11 @@ function isRoleAssignmentEffectiveAt(
 function uniqueRoles(
   roles: readonly ProjectRole[]
 ): ProjectRole[] {
-  return [...new Set(roles)].sort();
+  return [
+    ...new Set(
+      roles
+    ),
+  ].sort();
 }
 
 
@@ -288,13 +301,21 @@ function normalizeEvaluationTime(
   value: string
 ): string {
   const timestamp =
-    Date.parse(value);
+    Date.parse(
+      value
+    );
 
-  if (!Number.isFinite(timestamp)) {
+  if (
+    !Number.isFinite(
+      timestamp
+    )
+  ) {
     throw new Error(
       "Project authorisation clock returned an invalid timestamp."
     );
   }
 
-  return new Date(timestamp).toISOString();
+  return new Date(
+    timestamp
+  ).toISOString();
 }

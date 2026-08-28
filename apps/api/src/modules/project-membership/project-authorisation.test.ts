@@ -19,10 +19,6 @@ import {
 } from "./project-membership.errors";
 
 import type {
-  LegacyProjectAuthorisation,
-} from "./project-authorisation.service";
-
-import type {
   ProjectAuthorisationContext,
 } from "./project-authorisation.types";
 
@@ -61,8 +57,6 @@ const evaluatedAt =
 
 const context:
   ProjectAuthorisationContext = {
-    actorUserId:
-      userId,
     actorPersonId:
       personId,
   };
@@ -141,40 +135,6 @@ class InMemoryProjectMembershipRepository
 }
 
 
-class FakeLegacyAuthorisation
-  implements LegacyProjectAuthorisation
-{
-  public calls: Array<{
-    userId: string;
-    projectId: string;
-    permission: string;
-  }> = [];
-
-
-  constructor(
-    public allowed = false
-  ) {}
-
-
-  async hasPermission(
-    requestedUserId: string,
-    requestedProjectId: string,
-    permissionCode: string
-  ): Promise<boolean> {
-    this.calls.push({
-      userId:
-        requestedUserId,
-      projectId:
-        requestedProjectId,
-      permission:
-        permissionCode,
-    });
-
-    return this.allowed;
-  }
-}
-
-
 function createMembership(
   overrides: Partial<ProjectMembership> = {}
 ): ProjectMembership {
@@ -227,17 +187,13 @@ function createAssignment(
 
 function createService(
   repository:
-    InMemoryProjectMembershipRepository,
-  legacy =
-    new FakeLegacyAuthorisation()
+    InMemoryProjectMembershipRepository
 ): ProjectAuthorisationService {
   return new ProjectAuthorisationService(
     repository,
-    legacy,
     () => evaluatedAt
   );
 }
-
 
 test(
   "effective frozen role authorises project access and returns stable Person authority",
@@ -511,11 +467,8 @@ test(
 
 
 test(
-  "legacy fallback cannot widen an effective frozen-role decision",
+  "an effective frozen-role decision fails closed when the permission is absent",
   async () => {
-    const legacy =
-      new FakeLegacyAuthorisation(true);
-
     const service =
       createService(
         new InMemoryProjectMembershipRepository(
@@ -525,8 +478,7 @@ test(
               "PROJECT_MANAGER"
             ),
           ]
-        ),
-        legacy
+        )
       );
 
     assert.equal(
@@ -537,14 +489,8 @@ test(
       ),
       false
     );
-
-    assert.deepEqual(
-      legacy.calls,
-      []
-    );
   }
 );
-
 
 test(
   "project membership does not authorise a different project",
@@ -744,15 +690,13 @@ test(
 
 
 test(
-  "legacy RBAC remains an explicit fallback for unmigrated VS-001 roles",
+  "active membership without an effective frozen role fails closed",
   async () => {
-    const legacy =
-      new FakeLegacyAuthorisation(true);
-
     const service =
       createService(
-        new InMemoryProjectMembershipRepository(),
-        legacy
+        new InMemoryProjectMembershipRepository(
+          [createMembership()]
+        )
       );
 
     assert.equal(
@@ -761,19 +705,40 @@ test(
         projectId,
         "project.view"
       ),
-      true
+      false
     );
+  }
+);
 
-    assert.deepEqual(
-      legacy.calls,
-      [
-        {
-          userId,
-          projectId,
-          permission:
-            "project.view",
-        },
-      ]
+
+test(
+  "multiple effective assignments for the same protected role are invalid",
+  async () => {
+    const service =
+      createService(
+        new InMemoryProjectMembershipRepository(
+          [createMembership()],
+          [
+            createAssignment(
+              "PROJECT_OWNER"
+            ),
+            createAssignment(
+              "PROJECT_OWNER",
+              {
+                id:
+                  "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+              }
+            ),
+          ]
+        )
+      );
+
+    await assert.rejects(
+      service.getEffectiveProjectRoles(
+        personId,
+        projectId
+      ),
+      ProjectRoleAssignmentInvalidError
     );
   }
 );

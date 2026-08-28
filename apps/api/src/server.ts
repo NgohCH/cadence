@@ -56,10 +56,6 @@ import {
 } from "./infrastructure/database/supabase-tasks-membership-responsibility.repository";
 
 import {
-  SupabaseRbacRepository,
-} from "./infrastructure/database/supabase-rbac.repository";
-
-import {
   SupabaseProjectsRepository,
 } from "./infrastructure/database/supabase-projects.repository";
 
@@ -109,11 +105,6 @@ import {
 import {
   createIdentityRouter,
 } from "./modules/identity/identity.routes";
-
-
-import {
-  RbacService,
-} from "./modules/rbac/rbac.service";
 
 
 import {
@@ -321,12 +312,6 @@ const tasksMembershipResponsibilityRepository =
     databaseClient
   );
 
-const rbacRepository =
-  new SupabaseRbacRepository(
-    databaseClient
-  );
-
-
 const projectsRepository =
   new SupabaseProjectsRepository(
     databaseClient
@@ -373,16 +358,9 @@ const identityService =
   );
 
 
-const rbacService =
-  new RbacService(
-    rbacRepository
-  );
-
-
 const projectAuthorisationService =
   new ProjectAuthorisationService(
-    projectMembershipRepository,
-    rbacService
+    projectMembershipRepository
   );
 
 const projectsMembershipLifecycleService =
@@ -416,49 +394,49 @@ const projectMembershipService =
 
 const auditQueryService =
   new AuditQueryService(
-    rbacService,
+    projectAuthorisationService,
     auditRepository
   );
 
 
 const projectsService =
   new ProjectsService(
-    rbacService,
+    projectAuthorisationService,
     projectsRepository
   );
 
 
 const discussionService =
   new DiscussionService(
-    rbacService,
+    projectAuthorisationService,
     discussionRepository
   );
 
 
 const tasksService =
   new TasksService(
-    rbacService,
+    projectAuthorisationService,
     tasksRepository
   );
 
 
 const teamAgentService =
   new TeamAgentService(
-    rbacService,
+    projectAuthorisationService,
     teamAgentRepository
   );
 
 
 const teamAgentQueryService =
   new TeamAgentQueryService(
-    rbacService,
+    projectAuthorisationService,
     teamAgentQueryRepository
   );
 
 
 const teamAgentTaskMaterializationService =
   new TeamAgentTaskMaterializationService(
-    rbacService,
+    projectAuthorisationService,
     teamAgentMaterializationRepository,
     tasksService
   );

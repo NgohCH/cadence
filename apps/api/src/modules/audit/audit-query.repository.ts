@@ -6,7 +6,6 @@ import type {
 export interface AuditQueryRepository {
   getTaskJourney(
     projectId: string,
-    taskId: string,
-    requestingUserId: string
+    taskId: string
   ): Promise<AuditJourneyEvent[] | null>;
 }

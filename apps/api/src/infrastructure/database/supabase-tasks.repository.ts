@@ -3,7 +3,6 @@ import type {
 } from "@supabase/supabase-js";
 
 import {
-  TasksPermissionDeniedError,
   TasksValidationError,
 } from "../../modules/tasks/tasks.errors";
 
@@ -230,17 +229,6 @@ export class SupabaseTasksRepository
   private throwMappedCreateError(
     message: string
   ): never {
-    if (
-      message.includes(
-        "TASK_CREATE_PERMISSION_DENIED"
-      ) ||
-      message.includes(
-        "TASK_ASSIGN_PERMISSION_DENIED"
-      )
-    ) {
-      throw new TasksPermissionDeniedError();
-    }
-
 
     if (
       message.includes(

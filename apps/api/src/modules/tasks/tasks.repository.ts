@@ -18,11 +18,11 @@ export interface TasksRepository {
 
 
   /*
-   * Return the current actionable Tasks assigned to one Cadence user.
+   * Return current actionable Tasks assigned to one Cadence user.
    *
-   * The concrete repository is responsible for ensuring Tasks are
-   * returned only from projects where the user currently has
-   * task.view.
+   * This is a data-scoping boundary, not an authorization boundary.
+   * Project visibility is determined by TasksService through the
+   * canonical project authorization service.
    */
   listMyTasks(
     userId: string

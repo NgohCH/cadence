@@ -6,16 +6,8 @@ import type {
 } from "../../bootstrap/request-context";
 
 import type {
-  ProjectAccess,
-} from "../rbac/rbac.types";
-
-import type {
-  RbacRepository,
-} from "../rbac/rbac.repository";
-
-import {
-  RbacService,
-} from "../rbac/rbac.service";
+  EffectiveProjectAuthorisation,
+} from "../project-membership/project-authorisation.types";
 
 import type {
   DiscussionRepository,
@@ -37,13 +29,36 @@ import {
   DiscussionService,
 } from "./discussion.service";
 
+import type {
+  DiscussionAuthorisationService,
+} from "./discussion.service";
+
+
+const userId =
+  "11111111-1111-4111-8111-111111111111";
+
+const personId =
+  "aaaaaaaa-1111-4111-8111-111111111111";
+
+const projectId =
+  "44444444-4444-4444-8444-444444444444";
+
+const membershipId =
+  "66666666-6666-4666-8666-666666666666";
+
+const parentMessageId =
+  "55555555-5555-4555-8555-555555555555";
+
+const evaluatedAt =
+  "2026-08-27T06:00:00.000Z";
+
 
 const context: RequestContext = {
   actorUserId:
-    "11111111-1111-4111-8111-111111111111",
+    userId,
 
   actorPersonId:
-    "11111111-1111-4111-8111-111111111111",
+    personId,
 
   correlationId:
     "22222222-2222-4222-8222-222222222222",
@@ -51,55 +66,70 @@ const context: RequestContext = {
   requestId:
     "33333333-3333-4333-8333-333333333333",
 
-  source: "web",
+  source:
+    "web",
 
-  identityProvider: "local",
+  identityProvider:
+    "local",
 };
 
 
-const projectId =
-  "44444444-4444-4444-8444-444444444444";
-
-const parentMessageId =
-  "55555555-5555-4555-8555-555555555555";
-
-
-function createProjectAccess(
-  permissions: string[]
-): ProjectAccess {
+function authorisation(
+  overrides:
+    Partial<EffectiveProjectAuthorisation> = {}
+): EffectiveProjectAuthorisation {
   return {
-    membershipId:
-      "66666666-6666-4666-8666-666666666666",
-
+    personId,
     projectId,
 
-    userId:
-      context.actorUserId,
+    membershipIds:
+      [membershipId],
 
-    roleId:
-      "77777777-7777-4777-8777-777777777777",
+    roles:
+      ["PROJECT_MEMBER"],
 
-    roleCode:
-      "CONTRIBUTOR",
+    permissions: [
+      "project.view",
+      "message.view",
+      "message.create",
+    ],
 
-    permissions,
+    evaluatedAt,
+
+    ...overrides,
   };
 }
 
 
-class FakeRbacRepository
-  implements RbacRepository
+class FakeDiscussionAuthorisationService
+  implements DiscussionAuthorisationService
 {
+  public readonly calls:
+    Array<{
+      personId: string;
+      projectId: string;
+    }> = [];
+
+
   constructor(
-    private readonly access:
-      ProjectAccess | null
+    private readonly result:
+      EffectiveProjectAuthorisation
   ) {}
 
-  async getProjectAccess(
-    _userId: string,
-    _projectId: string
-  ): Promise<ProjectAccess | null> {
-    return this.access;
+
+  async getEffectiveProjectAuthorisation(
+    requestedPersonId: string,
+    requestedProjectId: string
+  ): Promise<EffectiveProjectAuthorisation> {
+    this.calls.push({
+      personId:
+        requestedPersonId,
+
+      projectId:
+        requestedProjectId,
+    });
+
+    return this.result;
   }
 }
 
@@ -135,7 +165,8 @@ class FakeDiscussionRepository
       threadParentId:
         input.threadParentId,
 
-      currentVersion: 1,
+      currentVersion:
+        1,
 
       content:
         input.content,
@@ -143,7 +174,8 @@ class FakeDiscussionRepository
       createdAt:
         "2026-08-14T00:00:00.000Z",
 
-      editedAt: null,
+      editedAt:
+        null,
     };
   }
 
@@ -169,20 +201,17 @@ class FakeDiscussionRepository
 
 
 function createService(
-  access:
-    ProjectAccess | null
+  result:
+    EffectiveProjectAuthorisation = authorisation()
 ): {
   service: DiscussionService;
   repository: FakeDiscussionRepository;
+  authorisationService:
+    FakeDiscussionAuthorisationService;
 } {
-  const rbacRepository =
-    new FakeRbacRepository(
-      access
-    );
-
-  const rbacService =
-    new RbacService(
-      rbacRepository
+  const authorisationService =
+    new FakeDiscussionAuthorisationService(
+      result
     );
 
   const repository =
@@ -190,13 +219,14 @@ function createService(
 
   const service =
     new DiscussionService(
-      rbacService,
+      authorisationService,
       repository
     );
 
   return {
     service,
     repository,
+    authorisationService,
   };
 }
 
@@ -207,11 +237,7 @@ test(
     const {
       service,
       repository,
-    } = createService(
-      createProjectAccess([
-        "message.create",
-      ])
-    );
+    } = createService();
 
     const result =
       await service.postMessage(
@@ -245,21 +271,28 @@ test(
 
 
 test(
-  "postMessage preserves actor and correlation metadata",
+  "postMessage uses Person for authority and User for message attribution",
   async () => {
     const {
       service,
       repository,
-    } = createService(
-      createProjectAccess([
-        "message.create",
-      ])
-    );
+      authorisationService,
+    } = createService();
 
     await service.postMessage(
       context,
       projectId,
       "Trace this message"
+    );
+
+    assert.deepEqual(
+      authorisationService.calls,
+      [
+        {
+          personId,
+          projectId,
+        },
+      ]
     );
 
     assert.equal(
@@ -277,7 +310,7 @@ test(
 
     assert.equal(
       input.authorUserId,
-      context.actorUserId
+      userId
     );
 
     assert.equal(
@@ -299,11 +332,8 @@ test(
     const {
       service,
       repository,
-    } = createService(
-      createProjectAccess([
-        "message.create",
-      ])
-    );
+      authorisationService,
+    } = createService();
 
     await assert.rejects(
       () =>
@@ -319,6 +349,11 @@ test(
       repository.calls.length,
       0
     );
+
+    assert.deepEqual(
+      authorisationService.calls,
+      []
+    );
   }
 );
 
@@ -329,11 +364,8 @@ test(
     const {
       service,
       repository,
-    } = createService(
-      createProjectAccess([
-        "message.create",
-      ])
-    );
+      authorisationService,
+    } = createService();
 
     await assert.rejects(
       () =>
@@ -349,18 +381,32 @@ test(
       repository.calls.length,
       0
     );
+
+    assert.deepEqual(
+      authorisationService.calls,
+      []
+    );
   }
 );
 
 
 test(
-  "postMessage returns project not found when membership does not exist",
+  "postMessage returns project not found when effective membership does not exist",
   async () => {
     const {
       service,
       repository,
     } = createService(
-      null
+      authorisation({
+        membershipIds:
+          [],
+
+        roles:
+          [],
+
+        permissions:
+          [],
+      })
     );
 
     await assert.rejects(
@@ -382,16 +428,21 @@ test(
 
 
 test(
-  "postMessage denies an active member without message.create",
+  "postMessage denies an effective member without message.create",
   async () => {
     const {
       service,
       repository,
     } = createService(
-      createProjectAccess([
-        "project.view",
-        "message.view",
-      ])
+      authorisation({
+        roles:
+          ["PROJECT_OBSERVER"],
+
+        permissions: [
+          "project.view",
+          "message.view",
+        ],
+      })
     );
 
     await assert.rejects(
@@ -418,11 +469,7 @@ test(
     const {
       service,
       repository,
-    } = createService(
-      createProjectAccess([
-        "message.view",
-      ])
-    );
+    } = createService();
 
     const messageId =
       "99999999-9999-4999-8999-999999999999";
@@ -435,13 +482,14 @@ test(
 
       projectId,
 
-      versionNumber: 1,
+      versionNumber:
+        1,
 
       content:
         "Daniel, please finalise the syllabus by Friday.",
 
       editorUserId:
-        context.actorUserId,
+        userId,
 
       editorType:
         "human",
@@ -484,7 +532,7 @@ test(
 
     assert.equal(
       result.editorUserId,
-      context.actorUserId
+      userId
     );
 
     assert.equal(
@@ -500,11 +548,7 @@ test(
   async () => {
     const {
       service,
-    } = createService(
-      createProjectAccess([
-        "message.view",
-      ])
-    );
+    } = createService();
 
     const result =
       await service.getMessageVersion(
