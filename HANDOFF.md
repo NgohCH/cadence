@@ -22,23 +22,134 @@ Vertical Slice:
 
 Status:
 
-**VS002-07 Membership and Role Audit Events is complete and verified;
-the implementation remains uncommitted pending the source-control checkpoint.**
+**R02 canonical Project Authorisation cutover is complete. R03A runtime
+closure and R03B canonical membership-field independence are implemented and
+verified locally.**
 
 Current checkpoint:
 
-**VS002-07 is closed. VS002-08 Members Frontend Integration is next. Do not
-begin VS002-08 until this checkpoint is accepted.**
+**R03B is a dependency-removal checkpoint, not a column-removal checkpoint.
+All five legacy membership columns remain present and frozen. R03C dependency
+proof/soak is next; destructive removal remains a separate R03D decision.**
 
-Latest VS002-07 validation:
+Latest completed R02 validation:
 
 ```text
+canonical ProjectAuthorisationService cutover = complete
+legacy RBAC application service/repository = retired
+legacy database authorization helpers = retired
+browser business-schema authority = retired
+stable Person/frozen-role reconciliation = complete
+```
+
+---
+
+# R03 Legacy Membership Schema Retirement
+
+## Audit Result
+
+R02 removed runtime authorization dependence on legacy membership roles, but
+the physical table is not ready for destructive cleanup:
+
+```text
+before R03B:
+  public.project_memberships.joined_at
+    -> generated effective_from
+
+  public.project_memberships.status
+    -> generated membership_status
+    -> lifecycle RPC updates
+
+after R03B:
+  effective_from and membership_status are independently persisted
+  authoritative RPCs use only canonical start/status fields
+  joined_at and status are retained, inert historical fields
+```
+
+Historical compatibility rows also retain truthful `user_id`, `role_id`, and
+nullable `created_by` provenance. The VS-002 contract forbids overwriting or
+hard-deleting this history. Old migrations and historical smoke fixtures may
+mention the legacy fields; deployed runtime authority now uses stable Person
+membership and `project_role_assignments`.
+
+## Staged Plan
+
+```text
+R03A retain and freeze
+  -> no new legacy-shaped rows
+  -> no rewrite of historical user/role/start/grantor fields
+  -> no column removal
+
+R03B decouple canonical projections
+  -> persist effective_from and membership_status independently
+  -> update authoritative membership RPCs
+  -> retain legacy columns as read-only history
+
+R03C prove retirement
+  -> database dependency preflight
+  -> application/static dependency inventory
+  -> environment soak and rollback evidence
+
+R03D remove only after explicit acceptance
+  -> separate forward migration
+  -> remove dependent legacy constraints/indexes/triggers first
+  -> drop legacy columns last
+```
+
+## R03A Implementation
+
+Migration:
+
+```text
+20260828160000_r03a_legacy_membership_write_freeze.sql
+```
+
+The `project_memberships_freeze_legacy_fields` trigger rejects inserts with a
+non-null legacy `user_id` or `role_id`. On historical rows it rejects changes
+to `user_id`, `role_id`, `joined_at`, and `created_by`. Existing values remain
+queryable and are not copied, nulled, or deleted.
+
+`status` was intentionally not frozen in R03A because membership termination
+and expiry RPCs still updated it and `membership_status` was generated from
+it. R03B completed that decoupling. The application repository no longer sends
+any legacy identity, role, start, or status field when creating Person-only
+rows.
+
+R03A adds migration postconditions for paired legacy identity/role values and
+for installation of the write-freeze trigger. It introduces no new dependency,
+route, permission decision, event, or cross-module persistence access.
+
+## R03B Implementation
+
+Migration:
+
+```text
+20260828170000_r03b_canonical_membership_fields.sql
+```
+
+The migration first proves that generated canonical values still match their
+legacy sources, then detaches both generated expressions. It makes
+`effective_from` and `membership_status` independently persisted and non-null,
+adds the canonical status check, and rewrites only the authoritative admission,
+termination, and expiry state helpers to use those fields.
+
+The historical-field trigger now also rejects changes to legacy `status`.
+Obsolete indexes and the check constraint whose authority was specifically the
+legacy status field are removed. No membership column is removed:
+`user_id`, `role_id`, `joined_at`, `status`, and `created_by` remain queryable.
+
+Clean local resets applied both R03 migrations. Live transactional smoke proved
+canonical creation, termination, and expiry; all five historical writes are
+rejected; canonical lifecycle transitions do not rewrite legacy status. Live
+catalog checks also proved the R02 RPC/browser boundary remains intact.
+
+Final local gates:
+
+```text
+R03 focused migration/repository tests = 28 passed, 0 failed
 API typecheck = passed
-API test suite = 309 passed, 0 failed
-local end-to-end mutation/outbox/delivery/Audit verification = passed
-remote migrations 20260825120000 and 20260826120000 = applied
-isolated remote live verification = 8 events / 8 Audit rows
-expiry isolation and idempotency = passed
+full API regression = 362 passed, 0 failed
+VS002-05B and VS002-07B transactional database smokes = passed
 ```
 
 ---
@@ -7040,9 +7151,9 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-start VS002-08
+accept R03A
   ->
-integrate the Members frontend with the completed membership API
+begin R03B canonical membership projection decoupling
 ```
 Do not bypass established module boundaries merely to complete the vertical slice more quickly.
 

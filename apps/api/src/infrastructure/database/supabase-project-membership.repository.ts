@@ -87,21 +87,18 @@ export class SupabaseProjectMembershipRepository
         id: membership.id,
         person_id: membership.personId,
         project_id: membership.projectId,
-        joined_at: membership.effectiveFrom,
+        effective_from:
+          membership.effectiveFrom,
         effective_to: membership.effectiveTo,
-        status:
-          membership.status === "ACTIVE"
-            ? "active"
-            : "inactive",
+        membership_status:
+          membership.status,
         granted_by_person_id:
           membership.grantedBy,
         created_at: membership.createdAt,
         termination_reason:
           membership.terminationReason,
-        // VS-001 role_id and user_id intentionally remain null. Creating
-        // runtime access and assigning a role are later application flows.
-        user_id: null,
-        role_id: null,
+        // R03B writes only canonical membership fields. Retained VS-001
+        // fields receive inert defaults and remain frozen by R03A.
       })
       .select(membershipColumns)
       .single();

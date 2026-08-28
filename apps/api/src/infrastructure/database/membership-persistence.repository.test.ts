@@ -437,13 +437,41 @@ test(
     );
 
     assert.equal(
-      membershipInsert?.user_id,
-      null
+      membershipInsert?.effective_from,
+      membership.effectiveFrom
     );
 
     assert.equal(
-      membershipInsert?.role_id,
-      null
+      membershipInsert?.membership_status,
+      membership.status
+    );
+
+    assert.equal(
+      "joined_at" in
+        (membershipInsert ?? {}),
+      false,
+      "R03B must not derive canonical start from legacy joined_at."
+    );
+
+    assert.equal(
+      "status" in
+        (membershipInsert ?? {}),
+      false,
+      "R03B must not derive canonical lifecycle from legacy status."
+    );
+
+    assert.equal(
+      "user_id" in
+        (membershipInsert ?? {}),
+      false,
+      "R03A must not extend the legacy user membership shape."
+    );
+
+    assert.equal(
+      "role_id" in
+        (membershipInsert ?? {}),
+      false,
+      "R03A must not extend the legacy role membership shape."
     );
 
     assert.equal(

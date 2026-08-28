@@ -1,5 +1,38 @@
 # Project Membership Module
 
+## R03 Canonical Membership Fields
+
+R02 made stable Person membership and frozen role assignments the canonical
+project-authorisation model. R03A begins physical schema retirement without
+deleting compatibility history.
+
+Migration `20260828160000_r03a_legacy_membership_write_freeze.sql` retains
+`user_id`, `role_id`, `status`, `joined_at`, and `created_by`. It rejects new
+legacy-shaped membership rows and makes historical `user_id`, `role_id`,
+`joined_at`, and `created_by` values immutable. The Supabase adapter no longer
+writes explicit null legacy identity/role fields for new Person-only rows.
+
+R03B migration `20260828170000_r03b_canonical_membership_fields.sql` detaches
+the generated expressions. `effective_from` and `membership_status` are now
+independently persisted, non-null canonical fields, and authoritative admission,
+termination, and expiry helpers use them directly. The adapter creates
+memberships with canonical fields only.
+
+Legacy `status` is now frozen alongside `user_id`, `role_id`, `joined_at`, and
+`created_by`. The obsolete legacy-status indexes/check were removed, but all
+five columns remain queryable historical data. R03B performs no column removal.
+
+The staged retirement is:
+
+```text
+R03A retain/freeze
+R03B decouple canonical lifecycle/start fields
+R03C prove no dependencies and complete environment soak
+R03D separately approve and remove legacy columns
+```
+
+No R03A or R03B operation rewrites or drops membership or role history.
+
 ## VS002-07 Membership and Role Events
 
 Admission, ordinary-role replacement, protected appointment/transfer,
@@ -302,8 +335,9 @@ public.project_role_transfers
 `public.project_memberships` is the evolved VS-001 table, not a duplicate.
 VS002-02 adds stable `person_id`, bounded/open-ended dates, a frozen lifecycle
 projection, stable-Person grantor provenance, creation time, and optional
-termination reason. `effective_from` is generated from retained `joined_at`;
-`membership_status` is generated from retained `active`/`inactive` status.
+termination reason. `effective_from` and `membership_status` are independent
+canonical fields. Retained `joined_at` and lowercase `active`/`inactive`
+status are frozen historical compatibility values, not domain authorities.
 
 Persisted `ProjectMembership` state permits `grantedBy: null` only for genuine
 VS-001 history where nullable `created_by` did not record a grantor. Null means

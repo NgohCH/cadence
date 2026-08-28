@@ -6,6 +6,46 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### R03B - Canonical Membership Field Independence
+
+- Completed R03A runtime closure through a clean local Supabase reset and live
+  transactional proof of legacy identity, role, start-time, grantor, and status
+  write freezes. Canonical admission, administrative termination, and expiry
+  remain valid.
+- Added `20260828170000_r03b_canonical_membership_fields.sql`. Canonical
+  `effective_from` and `membership_status` are now independently persisted,
+  non-null fields; authoritative admission and lifecycle state helpers read and
+  write those fields directly.
+- Extended the historical-field trigger to freeze legacy `status`, and removed
+  only its obsolete check/index dependencies. The legacy `user_id`, `role_id`,
+  `joined_at`, `status`, and `created_by` columns remain present for history.
+- Updated the Project Membership repository and active runtime fixtures to use
+  canonical start/status fields. Historical migrations remain unchanged.
+- Preserved the R02 browser/database boundary and the existing service-role RPC
+  contracts. Physical legacy-column removal remains reserved for separately
+  reviewed R03D work after R03C dependency and soak proof.
+
+### R03A - Legacy Membership Retention and Write Freeze
+
+- Audited the post-R02 membership schema and application paths. Stable Person
+  membership plus frozen role assignments are authoritative, but
+  `effective_from` and `membership_status` are still generated from retained
+  `joined_at` and `status`; immediate column removal is therefore unsafe.
+- Added forward migration `20260828160000_r03a_legacy_membership_write_freeze.sql`.
+  It retains every legacy membership column, rejects new rows with legacy
+  `user_id`/`role_id` authority, and prevents historical `user_id`, `role_id`,
+  `joined_at`, or `created_by` values from being rewritten.
+- Removed explicit `user_id: null` and `role_id: null` writes from the
+  Project Membership Supabase adapter. New rows continue to use the
+  Person-only shape through nullable database defaults.
+- Kept legacy `status` writable only for the existing membership lifecycle
+  RPCs. Canonical lifecycle/start-field decoupling is deferred to R03B.
+- Added migration-contract and repository regression coverage. No legacy
+  membership column, historical row, role assignment, or event was dropped or
+  rewritten.
+- Staged later work as R03B canonical-column decoupling, R03C dependency/soak
+  proof, and a separately accepted R03D removal migration.
+
 ### VS002-07 - Membership and Role Audit Events
 
 - Added the six frozen membership/role v1 events and transactional outbox
