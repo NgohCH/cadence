@@ -7303,6 +7303,30 @@ VS002-09 work is included.
 
 Implementation checkpoint: `0fcf346 — feat(project-membership): complete VS002-08 members frontend`.
 
+## VS002-09 Cross-Module Authorisation Integration
+
+**Status: COMPLETE — 2026-08-29**
+
+Discussion, Tasks, Audit, Projects, Team Agent, and Workspace now have a
+verified canonical authorization boundary through
+`ProjectAuthorisationService` and stable Person identity. Consuming modules
+do not make project permission decisions from membership persistence, role
+rows, frozen legacy fields, User IDs, or owner read-model fields.
+
+Authorization is re-evaluated at authoritative read and mutation boundaries;
+repository filtering remains data scoping only. Existing not-found concealment
+and permission-denial semantics remain intact. Audit is a consumer/read model
+only, and its reconstruction RPC accepts no caller authorization identity.
+Browser business traffic remains `/api/v1` only; Supabase is limited to
+Auth/session handling.
+
+Four focused boundary tests cover canonical service usage, browser/API
+separation, RPC defense-in-depth, and authorization re-check behavior. The
+full API regression passed **377/377**, with API typecheck passing. Stale
+pre-R02E `RbacService` documentation was reconciled while historical migration
+evidence was retained. No runtime authorization defect was found, and no
+VS002-10 work was included.
+
 ---
 
 # Handoff Principle

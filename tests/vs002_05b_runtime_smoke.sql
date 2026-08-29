@@ -4,6 +4,8 @@
 
 \set ON_ERROR_STOP on
 
+begin;
+
 insert into public.persons (id, display_name)
 values
   ('10000000-0000-4000-8000-000000000001', 'VS005 Actor'),
@@ -551,6 +553,8 @@ end;
 $$;
 
 set constraints all immediate;
+
+commit;
 
 do $$
 begin

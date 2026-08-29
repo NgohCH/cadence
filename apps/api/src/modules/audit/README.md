@@ -425,24 +425,22 @@ Application boundary:
 ```text
 AuditQueryService
     ->
-RbacService.getProjectAccess(...)
+ProjectAuthorisationService.getEffectiveProjectAuthorisation(...)
     ->
 audit.view
 ```
 
-Persistence boundary:
+Persistence boundary (reconstruction only; no authorization decision):
 
 ```text
 get_task_audit_journey(...)
     ->
-has_project_permission(
-      project_id,
-      'audit.view',
-      requesting_user_id
-    )
+service-role audit reconstruction
 ```
 
-This protects against permission changes occurring between application authorization and database execution.
+The application boundary protects against permission changes before the read;
+the service-role RPC receives no caller authorization identity and remains an
+Audit read-model reconstruction function only.
 
 ---
 

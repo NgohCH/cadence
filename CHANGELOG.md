@@ -6,6 +6,23 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### VS002-09 - Cross-Module Authorisation Integration
+
+- VS002-09 is **COMPLETE**. Discussion, Tasks, Audit, Projects, Team Agent,
+  and Workspace paths use the published `ProjectAuthorisationService`
+  boundary with stable Person identity.
+- Consuming modules do not treat membership persistence, role rows, frozen
+  legacy fields, User IDs, or owner read-model fields as current authorization
+  evidence. Authorization is re-evaluated at authoritative boundaries;
+  repository filtering remains data scoping only.
+- Audit remains a consumer/read model, its reconstruction RPC accepts no
+  caller authorization identity, and browser business traffic remains
+  `/api/v1` only.
+- Four focused boundary/race tests passed; full API regression passed
+  **377/377** and API typecheck passed. Stale pre-R02E `RbacService`
+  documentation was reconciled. No runtime authorization defect was found;
+  VS002-10 was not started.
+
 ### VS002-08 - Members Frontend Integration
 
 - VS002-08 is **COMPLETE** at `0fcf346` (`feat(project-membership): complete

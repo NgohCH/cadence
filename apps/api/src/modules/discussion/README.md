@@ -117,7 +117,7 @@ They must not be embedded directly into the Discussion write transaction.
 The Discussion application service depends on:
 
 - `RequestContext`
-- `RbacService`
+- `ProjectAuthorisationService` (the canonical project authorization boundary)
 - `DiscussionRepository`
 
 The module does not depend directly on Supabase.
@@ -141,11 +141,9 @@ Authorization follows:
 ```text
 authenticated Cadence user
   ->
-active project membership
+ProjectAuthorisationService
   ->
-project role
-  ->
-permission codes
+effective stable-Person membership and permission codes
   ->
 message.create
 ```
