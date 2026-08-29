@@ -6,6 +6,36 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### VS002-07E/07F - Beta Verification and Checkpoint Closure
+
+- VS002-07E **PASSED** against beta project `pwmhasbmacmeerbsagda`; the R01
+  guard passed and remote migration history advanced through `20260828190000`.
+- A manual logical recovery baseline was captured before migration because
+  physical backup/PITR was unavailable. The beta application database was
+  empty before verification. A unique durable 07E fixture was created and
+  intentionally retained.
+- Nine pre-expiry events were present. The rollback-only forced event-write
+  failure proved authoritative mutation/event atomicity. The first worker run
+  emitted exactly one expiry event and ended the bounded membership.
+- The worker intentionally processes one pending Audit delivery per consumer
+  per invocation. Repeated guarded invocations drained all deliveries to 10/10;
+  one additional invocation proved idempotency.
+- Final evidence: 10 domain events, 1 expiry event, 10 Audit rows, and 10/10
+  Audit deliveries processed exactly once. Event types, actors, correlations,
+  protected-transfer, administrative-removal and expiry provenance, and
+  before/after state reconciled correctly.
+- Live R03 structural/history invariants passed. Anonymous/browser business
+  access and service-role historical UPDATE/DELETE/TRUNCATE remained denied.
+- API regression passed 373/373; API typecheck, web lint, CI/local/beta builds,
+  and `git diff --check` passed. VS002-07A through VS002-07F are complete.
+- Verification-script-only, non-product issues were recorded: Windows command
+  line length; linked-project mismatch; prepared-statement multi-command
+  limitation; IPv6 direct-DB limitation; Session Pooler/psql transport
+  resolution; UUID `LIKE` cast correction; 07B-vs-07D fixture membership-ID
+  mismatch; Audit delivery table-name mismatch; and the initial assumption that
+  one worker invocation processed all deliveries. None required product/schema
+  repair or invalidated the beta proof.
+
 ### R03 - Final Closure
 
 - R03 is **CLOSED**. R03A/R03B closed at `ea18095`, R03C at `c99871f`, and

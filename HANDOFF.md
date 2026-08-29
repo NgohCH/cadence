@@ -7221,7 +7221,48 @@ expiry idempotency. Isolated remote verification produced exactly eight QA
 membership events and eight matching Audit rows. API typecheck and all
 **309/309** tests pass.
 
-VS002-08 Members Frontend Integration is next.
+### VS002-07E/07F - Controlled Beta Verification and Closure
+
+VS002-07E **PASSED** against beta project `pwmhasbmacmeerbsagda`.
+The remote migration history advanced through `20260828190000` after the R01
+environment guard passed. Because physical backup/PITR was unavailable, a
+manual logical recovery baseline was captured before migration; the beta
+application database was empty before verification. A unique durable 07E
+fixture was then created and intentionally retained as audit evidence.
+
+The isolated proof recorded nine pre-expiry events, passed the rollback-only
+forced event-write failure (authoritative mutation and event insertion were
+atomic), and produced exactly one expiry event while ending the bounded
+membership. The worker intentionally processes one pending Audit delivery per
+consumer per invocation; repeated guarded invocations drained all deliveries
+to 10/10, followed by an additional no-op/idempotency invocation.
+
+Final durable evidence is:
+
+```text
+10 domain events
+1 expiry event
+10 Audit rows
+10/10 Audit deliveries processed exactly once
+```
+
+Event types, actors, correlations, protected-transfer and administrative-
+removal provenance, expiry provenance, and before/after state reconciled
+correctly. R03 structural/history invariants passed against the live fixture.
+Anonymous/browser business access and service-role historical
+UPDATE/DELETE/TRUNCATE remained denied.
+
+API regression passed **373/373**. API typecheck, web lint, CI/local/beta
+builds, and `git diff --check` passed. The following verification-script-only
+issues were encountered and did not require product/schema repair or invalidate
+the proof: Windows command-line length, linked-project mismatch, prepared-
+statement multi-command limits, IPv6 direct-DB connectivity, Session Pooler
+/psql transport resolution, UUID `LIKE` casting, a 07B/07D fixture membership-
+ID mismatch, an Audit delivery table-name mismatch, and the original
+one-worker-invocation expectation. These are non-product defects.
+
+VS002-07A through VS002-07F are complete. VS002-08 Members Frontend
+Integration is the next checkpoint.
 
 ---
 
@@ -7273,9 +7314,9 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-accept R03A
+VS002-07F closure complete
   ->
-begin R03B canonical membership projection decoupling
+begin VS002-08 Members Frontend Integration
 ```
 Do not bypass established module boundaries merely to complete the vertical slice more quickly.
 
