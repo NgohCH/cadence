@@ -22,11 +22,12 @@ Vertical Slice:
 
 Status:
 
-**R02 canonical Project Authorisation cutover and R03 are closed.**
+**VS002-10 is closed; VS-002 is complete.**
 
 Current checkpoint:
 
-**R03 is closed with frozen legacy membership provenance retained. Physical
+**R03 is closed with frozen legacy membership provenance retained, and the
+final VS002-10 regression/security/documentation closure is complete. Physical
 legacy removal remains a separately approved future decision.**
 
 Latest completed R02 validation:
@@ -7327,6 +7328,52 @@ pre-R02E `RbacService` documentation was reconciled while historical migration
 evidence was retained. No runtime authorization defect was found, and no
 VS002-10 work was included.
 
+## VS002-10 Regression, Security, Documentation and Closure
+
+**Status: COMPLETE — 2026-08-29**
+
+VS002-10 was a verification and documentation closure checkpoint. No product
+implementation, schema, migration, worker, fixture, or authorization behavior
+was changed.
+
+Current-head evidence at `bcc166d`:
+
+```text
+API regression = 377/377
+frontend tests = 11/11
+API typecheck = passed
+web lint = passed
+CI/local/beta builds = passed
+repository quality gate = passed
+```
+
+A clean local database reconstruction from migration zero through
+`20260828190000_r03d_historical_mutation_hardening.sql` completed successfully.
+The seven mandatory runtime smokes all passed against that reconstructed
+database:
+
+```text
+tests/schema_smoke.sql                 = passed
+tests/r03a_runtime_smoke.sql           = R03A_RUNTIME_SMOKE_PASSED
+tests/r03c_runtime_smoke.sql           = R03C_RUNTIME_SMOKE_PASSED
+tests/r03d_runtime_smoke.sql           = R03D_RUNTIME_SMOKE_PASSED
+tests/vs002_05b_runtime_smoke.sql      = passed
+tests/vs002_07b_runtime_smoke.sql      = passed (rollback)
+tests/vs002_07c_audit_runtime_smoke.sql= passed (rollback)
+```
+
+VS-001 Discussion → proposal → review → Task → Audit, project isolation,
+backend permission enforcement, expired/ended membership, returning-person
+identity behavior, external Project Manager support, Observer/Auditor
+read-only behavior, protected-role transfer history, removal responsibility
+guards, audit completeness, and the browser `/api/v1` plus database/RPC
+defence-in-depth boundaries are covered by the passing automated suites and
+runtime evidence. P0 = 0 and P1 = 0; no implementation correction was required.
+
+VS002-10 therefore closes VS-002. Optional post-slice cleanup remains deferred:
+legacy-column removal, generic direct-create refactoring, and further service-
+role privilege tightening are not required for the frozen contract.
+
 ---
 
 # Handoff Principle
@@ -7377,9 +7424,9 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-VS002-08 Members Frontend Integration complete
+VS-002 CLOSED
   ->
-  begin VS002-09 Cross-Module Authorisation Integration
+  no further VS002 checkpoint; future work requires a new approved slice
 ```
 Do not bypass established module boundaries merely to complete the vertical slice more quickly.
 

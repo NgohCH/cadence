@@ -6,6 +6,23 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### VS002-10 — Regression, Security, Documentation and Closure
+
+- VS002-10 is **COMPLETE**. This was a verification/documentation closure
+  checkpoint and introduced no additional product behavior.
+- Current-head verification passed: API regression **377/377**, frontend tests
+  **11/11**, API typecheck, web lint, CI/local/beta builds, repository quality,
+  and `git diff --check`.
+- A clean local database reconstruction replayed migration zero through
+  `20260828190000_r03d_historical_mutation_hardening.sql`. Schema, R03A, R03C,
+  R03D, VS002-05B, VS002-07B, and VS002-07C runtime smokes all passed.
+- VS-001 regression, access-control and backend enforcement, expiry and
+  returning-person behavior, external Project Manager, Observer/Auditor,
+  protected transfers, removal guards, audit completeness, and browser/API/RPC
+  boundaries remain verified. P0 = 0 and P1 = 0.
+- Optional legacy-column removal, generic direct-create cleanup, and further
+  service-role privilege tightening remain explicitly deferred outside VS-002.
+
 ### VS002-09 - Cross-Module Authorisation Integration
 
 - VS002-09 is **COMPLETE**. Discussion, Tasks, Audit, Projects, Team Agent,
