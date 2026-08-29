@@ -6,6 +6,21 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### R03D - Historical Mutation Hardening and Legacy Retention Readiness
+
+- Added `20260828190000_r03d_historical_mutation_hardening.sql`. Membership
+  identity/provenance is immutable after creation; only an `ACTIVE` to `ENDED`
+  forward lifecycle transition remains valid. Closed role assignments are
+  append-only, while an open assignment may only be closed forward.
+- Rechecks protected assignment facts against their immutable transfer ledger
+  on assignment writes, preventing historical transfer divergence.
+- Replaced the membership-to-project `ON DELETE CASCADE` FK with `RESTRICT`,
+  changed legacy `created_by` to `ON DELETE RESTRICT`, revoked direct
+  service-role `UPDATE`, `DELETE`, and `TRUNCATE` on membership history, and
+  added fail-loud `BEFORE TRUNCATE` triggers as defence in depth.
+- Retained all five legacy membership columns. R03D documents their frozen
+  provenance and does not perform physical legacy-column removal.
+
 ### R03C - Structural Membership Invariant Enforcement
 
 - Added `20260828180000_r03c_structural_membership_invariants.sql` with

@@ -33,13 +33,17 @@ and `membership_status` independently persisted domain fields, moved admission
 and lifecycle helpers to them, and frozen legacy `status` as well.
 
 All five compatibility columns remain present. R03B removes dependencies, not
-columns; physical removal remains reserved for separately accepted R03D work.
+columns; physical removal remains a separately accepted decision.
 
 R03C now makes canonical overlap, role-period containment, ordinary-role
 coverage, and protected transfer-ledger consistency database invariants. The
-service role remains the trusted persistence boundary, but direct DML is still
-subject to these constraints and triggers; browser roles retain no mutation
-authority.
+service role remains the trusted persistence boundary and browser roles retain
+no mutation authority.
+
+R03D makes historical membership identity/provenance and closed assignment
+history append-only, removes the membership Project cascade, and revokes direct
+service-role `UPDATE`, `DELETE`, and `TRUNCATE` on membership history. Valid
+changes remain inside service-role-only security-definer RPC transactions.
 
 Required sequence:
 
@@ -47,7 +51,7 @@ Required sequence:
 R03A retain and freeze
 R03B decouple canonical membership fields
 R03C prove database/application retirement and soak
-R03D separately approve destructive column removal
+R03D harden history; retain legacy columns pending a provenance archive
 ```
 
 Historical migrations and tests may still describe the VS-001 RBAC shape.

@@ -234,6 +234,8 @@ begin
     raise exception 'Expected reverse role containment rejection';
   exception when check_violation then
     if sqlerrm <> 'PROJECT_MEMBERSHIP_PERIOD_EXCLUDES_ROLE_HISTORY' then raise; end if;
+  when sqlstate '55000' then
+    if sqlerrm <> 'PROJECT_MEMBERSHIP_FORWARD_LIFECYCLE_REQUIRED' then raise; end if;
   end;
 
   begin
@@ -245,7 +247,8 @@ begin
   exception when check_violation then
     if sqlerrm not in (
       'PROJECT_MEMBERSHIP_PERIOD_EXCLUDES_ROLE_HISTORY',
-      'PROJECT_MEMBERSHIP_CANONICAL_TERMINATION_REQUIRED'
+      'PROJECT_MEMBERSHIP_CANONICAL_TERMINATION_REQUIRED',
+      'PROJECT_MEMBERSHIP_FORWARD_LIFECYCLE_REQUIRED'
     ) then raise; end if;
   end;
 

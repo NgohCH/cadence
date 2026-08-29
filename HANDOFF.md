@@ -22,15 +22,13 @@ Vertical Slice:
 
 Status:
 
-**R02 canonical Project Authorisation cutover is complete. R03A/R03B are
-closed, and R03C structural membership invariant enforcement is implemented
-and verified locally.**
+**R02 canonical Project Authorisation cutover and R03A-R03C are closed. R03D
+historical mutation and destructive-path hardening is implemented.**
 
 Current checkpoint:
 
-**R03C enforces canonical membership invariants structurally. All five legacy
-membership columns remain present and frozen. R03D destructive removal remains
-a separate approved decision.**
+**R03D hardens canonical membership/role/transfer history without removing any
+legacy membership column. Physical legacy removal remains a separate decision.**
 
 Latest completed R02 validation:
 
@@ -90,10 +88,11 @@ R03C prove retirement
   -> application/static dependency inventory
   -> environment soak and rollback evidence
 
-R03D remove only after explicit acceptance
-  -> separate forward migration
-  -> remove dependent legacy constraints/indexes/triggers first
-  -> drop legacy columns last
+R03D harden history and establish removal readiness
+  -> no legacy-column removal
+  -> append-only historical membership/role/transfer records
+  -> remove cascade and service-role destructive paths
+  -> document provenance required before any later removal decision
 ```
 
 ## R03A Implementation
@@ -187,6 +186,58 @@ R03C runtime invariant smoke = passed
 VS002-05B, VS002-07B, VS002-07D smokes = passed
 API typecheck = passed
 full API regression = 369 passed, 0 failed
+```
+
+## R03D Implementation
+
+Migration:
+
+```text
+20260828190000_r03d_historical_mutation_hardening.sql
+```
+
+R03D closes the audit finding that service-role direct DML could rewrite valid
+but historical canonical state, and could use `TRUNCATE ... CASCADE` to bypass
+row-delete triggers. Membership identity (`id`, Project, Person, start,
+grantor, and creation provenance) is immutable after creation. A membership
+may only move forward from `ACTIVE` to `ENDED` with complete termination facts.
+Closed role assignments are append-only; an open assignment may only receive a
+forward `effective_to` closure. Protected assignment facts are rechecked
+against their immutable transfer ledger.
+
+The membership Project FK is now `ON DELETE RESTRICT`, not `CASCADE`.
+`created_by` now uses `ON DELETE RESTRICT` so exact historical User provenance
+cannot silently disappear. `service_role` retains required canonical insert
+paths and security-definer RPC execution, but no longer has direct `UPDATE`,
+`DELETE`, or `TRUNCATE` on membership, role-assignment, or transfer history.
+Fail-loud `BEFORE TRUNCATE` triggers provide owner-side defence in depth.
+
+All legacy columns remain present and frozen:
+
+```text
+user_id     = original VS-001 User identity / compatibility shape
+role_id     = original VS-001 role evidence / compatibility shape
+joined_at   = original membership-start provenance
+status      = original VS-001 lifecycle representation
+created_by  = exact original User grantor provenance
+```
+
+No one field is safe to remove while this provenance and VS-001 compatibility
+remain required. A later removal proposal needs an immutable provenance archive
+and a canonical legacy-origin classifier before it can retire the `user_id`
+compatibility-dependent historical exemption.
+
+Final R03D local gates:
+
+```text
+focused R03A-R03D migration/authorisation tests = 58 passed, 0 failed
+clean Supabase reset with R03D = passed
+R03D historical hardening smoke = passed
+R03A and R03C runtime smokes = passed
+VS002-05B, VS002-07B, VS002-07D runtime smokes = passed
+API typecheck = passed
+full API regression = 373 passed, 0 failed
+web lint/build = passed
 ```
 
 ---

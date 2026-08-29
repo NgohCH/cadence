@@ -28,13 +28,21 @@ The staged retirement is:
 R03A retain/freeze
 R03B decouple canonical lifecycle/start fields
 R03C prove no dependencies and complete environment soak
-R03D separately approve and remove legacy columns
+R03D harden history and establish legacy-removal readiness
 ```
 
 R03C adds structural overlap, containment, exact ordinary-role coverage, and
 protected transfer-ledger checks. Exclusion constraints provide at-most-one;
 deferred coverage separately provides exactly-one for canonical memberships.
 No R03A, R03B, or R03C operation rewrites or drops membership or role history.
+
+R03D makes membership identity/provenance immutable after creation and closed
+role assignments append-only. It retains the five legacy columns, changes
+membership Project and legacy `created_by` FKs to `ON DELETE RESTRICT`, and
+removes direct service-role `UPDATE`, `DELETE`, and `TRUNCATE` from membership
+history. Security-definer lifecycle/role RPCs retain the valid forward
+transitions. Future column removal needs an immutable provenance archive and a
+canonical legacy-origin classifier; it is not part of R03D.
 
 ## VS002-07 Membership and Role Events
 
