@@ -1,0 +1,42 @@
+{
+  "name": "web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "env:local:check": "node --env-file=.env.development.local scripts/assert-environment.cjs local",
+    "env:qa:check": "node --env-file=.env.qa.local scripts/assert-environment.cjs qa",
+    "dev": "npm run dev:local",
+    "dev:local": "npm run env:local:check && vite --mode development",
+    "dev:qa": "npm run env:qa:check && vite --mode qa",
+    "build": "npm run build:local",
+    "build:local": "npm run env:local:check && tsc -b && vite build --mode development",
+    "build:qa": "npm run env:qa:check && tsc -b && vite build --mode qa",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "preview": "vite preview",
+    "env:ci:check": "node --env-file=.env.ci scripts/assert-environment.cjs local",
+    "build:ci": "npm run env:ci:check && tsc -b && vite build --mode ci",
+    "env:beta:check": "node --env-file=.env.beta.local scripts/assert-environment.cjs beta",
+    "dev:beta": "npm run env:beta:check && vite --mode beta",
+    "build:beta": "npm run env:beta:check && tsc -b && vite build --mode beta"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "jsdom": "^26.0.0",
+    "oxlint": "^1.75.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.11"
+  }
+}

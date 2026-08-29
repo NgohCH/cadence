@@ -1,0 +1,44 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "env:local:check": "node --env-file=.env.local --import tsx scripts/assert-environment.ts local",
+    "env:qa:check": "node --env-file=.env.qa --import tsx scripts/assert-environment.ts qa",
+    "dev": "npm run dev:local",
+    "dev:local": "npm run env:local:check && node --env-file=.env.local --watch --import tsx src/server.ts",
+    "dev:qa": "npm run env:qa:check && node --env-file=.env.qa --watch --import tsx src/server.ts",
+    "start": "npm run start:local",
+    "start:local": "npm run env:local:check && node --env-file=.env.local --import tsx src/server.ts",
+    "start:qa": "npm run env:qa:check && node --env-file=.env.qa --import tsx src/server.ts",
+    "worker:once": "npm run worker:local",
+    "worker:local": "npm run env:local:check && node --env-file=.env.local --import tsx src/worker.ts",
+    "worker:qa:once": "npm run env:qa:check && node --env-file=.env.qa --import tsx src/worker.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "local:bootstrap": "npm run env:local:check && node --env-file=.env.local --import tsx scripts/bootstrap-local-dev.ts",
+    "env:beta:check": "node --env-file=.env.beta --import tsx scripts/assert-environment.ts beta",
+    "dev:beta": "npm run env:beta:check && node --env-file=.env.beta --watch --import tsx src/server.ts",
+    "start:beta": "npm run env:beta:check && node --env-file=.env.beta --import tsx src/server.ts",
+    "worker:beta:once": "npm run env:beta:check && node --env-file=.env.beta --import tsx src/worker.ts",
+    "beta:verify": "npm run env:beta:check && node --env-file=.env.beta --import tsx scripts/verify-beta-runtime.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.2",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  }
+}

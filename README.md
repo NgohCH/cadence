@@ -30,6 +30,12 @@ Cadence_v0.1_Supabase_Migrations/
 - Domain events implement the transactional-outbox baseline for loosely coupled modules.
 - Browser clients are read-only at the database layer in v0.1. Mutations go through the Cadence server/API.
 - RLS protects browser/realtime reads by project membership and permission.
+- VS002-02 adds stable Person, replaceable authentication identity,
+  time-varying affiliation, temporal membership, and separate project-role
+  assignment persistence while retaining the VS-001 user/RBAC bridge.
+- VS002-03 adds the stable Person-based Project Authorisation service,
+  effective frozen-role permission evaluation, read-only Observer/Auditor
+  enforcement, and an explicit VS-001 RBAC compatibility fallback.
 
 ## Supabase Auth and local pilot accounts
 
@@ -67,7 +73,9 @@ Do not make production schema changes directly in the Supabase Dashboard after a
 
 ## Run the schema smoke test
 
-After migration, run `tests/schema_smoke.sql` against the target database. The test confirms the required tables and baseline RBAC seed are present.
+After migration, run `tests/schema_smoke.sql` against the target database. The
+test confirms the required tables, baseline RBAC seed, deterministic VS-001
+user-to-Person bridge, and migrated membership Person references are present.
 
 The RLS checklist in `tests/rls_manual_test.md` should be executed with at least two real authenticated test users because correct isolation depends on JWT identity and project membership.
 

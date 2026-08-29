@@ -1,0 +1,986 @@
+import { Router } from "express";
+
+import type {
+  NextFunction,
+  Response,
+} from "express";
+
+import {
+  failure,
+  success,
+} from "../../bootstrap/api-response";
+
+import type {
+  AuthenticatedRequestState,
+} from "../../middleware/authenticate";
+
+import {
+  ActiveResponsibilitiesExistError,
+  LastRequiredRoleHolderError,
+  MemberRemovalNotPermittedError,
+  ProjectMemberPersonNotFoundError,
+  ProjectMembershipAlreadyActiveError,
+  ProjectMembershipExpiredError,
+  ProjectMembershipNotFoundError,
+  ProjectMembershipPermissionDeniedError,
+  ProjectMembershipValidationError,
+  ProjectRoleAssignmentInvalidError,
+  ProjectRoleTransferRequiredError,
+} from "./project-membership.errors";
+
+import type {
+  RemoveProjectMemberInput,
+} from "./project-membership-lifecycle.types";
+
+import type {
+  AddProjectMemberInput,
+  ChangeOrdinaryRoleInput,
+  ProjectMembershipService,
+  TransferProtectedRoleInput,
+} from "./project-membership.service";
+
+import type {
+  ProjectRoleAssignment,
+} from "./project-role.types";
+
+
+export function createProjectMembershipRouter(
+  projectMembershipService:
+    ProjectMembershipService
+): Router {
+  const router =
+    Router();
+
+
+  router.get(
+    "/projects/:projectId/members",
+    async (req, res, next) => {
+      try {
+        const authenticated =
+          res.locals.authenticated as
+            AuthenticatedRequestState;
+
+        const {
+          context,
+        } = authenticated;
+
+        const projectId =
+          req.params.projectId;
+
+        const members =
+          await projectMembershipService
+            .listProjectMembers(
+              context,
+              projectId
+            );
+        const capabilities =
+          await projectMembershipService
+            .getProjectMembershipCapabilities(
+              context,
+              projectId
+            );
+
+        res.status(
+          200
+        ).json(
+          success(
+            {
+              members:
+                members.map(
+                  (member) => ({
+                    membership_id:
+                      member.membership.id,
+
+                    person_id:
+                      member.person.id,
+
+                    display_name:
+                      member.person.displayName,
+
+                    project_id:
+                      member.membership.projectId,
+
+                    roles:
+                      member.roles,
+
+                    affiliation:
+                      member.affiliation
+                        ? {
+                            classification:
+                              member
+                                .affiliation
+                                .classification,
+
+                            organisation_name:
+                              member
+                                .affiliation
+                                .organisationName,
+
+                            effective_from:
+                              member
+                                .affiliation
+                                .effectiveFrom,
+
+                            effective_to:
+                              member
+                                .affiliation
+                                .effectiveTo,
+                          }
+                        : null,
+
+                    effective_from:
+                      member
+                        .membership
+                        .effectiveFrom,
+
+                    effective_to:
+                      member
+                        .membership
+                        .effectiveTo,
+
+                    status:
+                      member
+                        .membership
+                        .status,
+                  })
+                ),
+              capabilities: {
+                can_invite_member:
+                  capabilities.canInviteMember,
+                can_change_ordinary_role:
+                  capabilities.canChangeOrdinaryRole,
+                can_transfer_sponsor:
+                  capabilities.canTransferSponsor,
+                can_transfer_owner:
+                  capabilities.canTransferOwner,
+                can_transfer_manager:
+                  capabilities.canTransferManager,
+                can_remove_member:
+                  capabilities.canRemoveMember,
+              },
+            },
+
+            {
+              correlation_id:
+                context.correlationId,
+
+              request_id:
+                context.requestId,
+
+              next_cursor:
+                null,
+            }
+          )
+        );
+      } catch (error) {
+        handleProjectMembershipError(
+          error,
+          res,
+          next
+        );
+      }
+    }
+  );
+
+
+  router.get("/projects/:projectId/member-candidates", async (req, res, next) => {
+    try {
+      const authenticated = res.locals.authenticated as AuthenticatedRequestState;
+      const query = typeof req.query.query === "string" ? req.query.query : "";
+      const candidates = await projectMembershipService.searchMemberCandidates(authenticated.context, req.params.projectId, query);
+      res.status(200).json(success({ candidates: candidates.map(({ person, affiliation }) => ({ person_id: person.id, display_name: person.displayName, affiliation: affiliation ? { classification: affiliation.classification, organisation_name: affiliation.organisationName } : null })) }, { correlation_id: authenticated.context.correlationId, request_id: authenticated.context.requestId, next_cursor: null }));
+    } catch (error) { handleProjectMembershipError(error, res, next); }
+  });
+
+  router.post(
+    "/projects/:projectId/members",
+    async (req, res, next) => {
+      try {
+        const authenticated =
+          res.locals.authenticated as
+            AuthenticatedRequestState;
+
+        const {
+          context,
+        } = authenticated;
+
+        const projectId =
+          req.params.projectId;
+
+        const input =
+          parseAddProjectMemberRequest(
+            req.body
+          );
+
+        const result =
+          await projectMembershipService
+            .addProjectMember(
+              context,
+              projectId,
+              input
+            );
+
+        res.status(
+          201
+        ).json(
+          success(
+            {
+              membership: {
+                id:
+                  result.membership.id,
+
+                person_id:
+                  result.membership.personId,
+
+                project_id:
+                  result.membership.projectId,
+
+                effective_from:
+                  result
+                    .membership
+                    .effectiveFrom,
+
+                effective_to:
+                  result
+                    .membership
+                    .effectiveTo,
+
+                status:
+                  result.membership.status,
+
+                granted_by_person_id:
+                  result
+                    .membership
+                    .grantedBy,
+
+                created_at:
+                  result
+                    .membership
+                    .createdAt,
+
+                termination_reason:
+                  result
+                    .membership
+                    .terminationReason,
+              },
+
+              role_assignment: {
+                id:
+                  result
+                    .roleAssignment
+                    .id,
+
+                project_id:
+                  result
+                    .roleAssignment
+                    .projectId,
+
+                membership_id:
+                  result
+                    .roleAssignment
+                    .membershipId,
+
+                role:
+                  result
+                    .roleAssignment
+                    .role,
+
+                effective_from:
+                  result
+                    .roleAssignment
+                    .effectiveFrom,
+
+                effective_to:
+                  result
+                    .roleAssignment
+                    .effectiveTo,
+
+                assigned_by_person_id:
+                  result
+                    .roleAssignment
+                    .assignedBy,
+
+                change_reason:
+                  result
+                    .roleAssignment
+                    .changeReason,
+
+                created_at:
+                  result
+                    .roleAssignment
+                    .createdAt,
+              },
+            },
+
+            {
+              correlation_id:
+                context.correlationId,
+
+              request_id:
+                context.requestId,
+
+              next_cursor:
+                null,
+            }
+          )
+        );
+      } catch (error) {
+        handleProjectMembershipError(
+          error,
+          res,
+          next
+        );
+      }
+    }
+  );
+
+
+  router.patch(
+    "/projects/:projectId/members/:membershipId",
+    async (req, res, next) => {
+      try {
+        const authenticated =
+          res.locals.authenticated as
+            AuthenticatedRequestState;
+        const { context } = authenticated;
+        const projectId =
+          req.params.projectId;
+        const membershipId =
+          req.params.membershipId;
+        const input =
+          parseChangeOrdinaryRoleRequest(
+            req.body,
+            membershipId
+          );
+
+        const result =
+          await projectMembershipService
+            .changeOrdinaryRole(
+              context,
+              projectId,
+              input
+            );
+
+        res.status(200).json(
+          success(
+            {
+              closed_assignment:
+                result.closedAssignment === null
+                  ? null
+                  : mapRoleAssignment(
+                      result.closedAssignment
+                    ),
+              role_assignment:
+                mapRoleAssignment(
+                  result.roleAssignment
+                ),
+              effective_at:
+                result.effectiveAt,
+            },
+            {
+              correlation_id:
+                context.correlationId,
+              request_id:
+                context.requestId,
+              next_cursor:
+                null,
+            }
+          )
+        );
+      } catch (error) {
+        handleProjectMembershipError(
+          error,
+          res,
+          next
+        );
+      }
+    }
+  );
+
+
+  router.delete(
+    "/projects/:projectId/members/:membershipId",
+    async (req, res, next) => {
+      try {
+        const authenticated =
+          res.locals.authenticated as
+            AuthenticatedRequestState;
+        const { context } = authenticated;
+        const projectId =
+          req.params.projectId;
+        const membershipId =
+          req.params.membershipId;
+        const input =
+          parseRemoveProjectMemberRequest(
+            req.body,
+            membershipId
+          );
+
+        const result =
+          await projectMembershipService
+            .removeProjectMember(
+              context,
+              projectId,
+              input
+            );
+
+        res.status(200).json(
+          success(
+            {
+              outcome:
+                result.outcome,
+              membership: {
+                id:
+                  result.membership.id,
+                person_id:
+                  result.membership.personId,
+                project_id:
+                  result.membership.projectId,
+                effective_from:
+                  result.membership.effectiveFrom,
+                effective_to:
+                  result.membership.effectiveTo,
+                status:
+                  result.membership.status,
+              },
+              closed_assignments:
+                result.closedAssignments.map(
+                  mapRoleAssignment
+                ),
+              termination: {
+                kind:
+                  result.termination.type,
+                terminated_by_person_id:
+                  result.termination
+                    .terminatedByPersonId,
+                reason:
+                  result.termination
+                    .terminationReason,
+                correlation_id:
+                  result.termination
+                    .correlationId,
+                terminated_at:
+                  result.termination
+                    .terminatedAt,
+              },
+            },
+            {
+              correlation_id:
+                context.correlationId,
+              request_id:
+                context.requestId,
+              next_cursor:
+                null,
+            }
+          )
+        );
+      } catch (error) {
+        handleProjectMembershipError(
+          error,
+          res,
+          next
+        );
+      }
+    }
+  );
+
+
+  router.post(
+    "/projects/:projectId/role-transfers",
+    async (req, res, next) => {
+      try {
+        const authenticated =
+          res.locals.authenticated as
+            AuthenticatedRequestState;
+        const { context } = authenticated;
+        const projectId =
+          req.params.projectId;
+        const input =
+          parseTransferProtectedRoleRequest(
+            req.body
+          );
+
+        const result =
+          await projectMembershipService
+            .transferProtectedRole(
+              context,
+              projectId,
+              input
+            );
+
+        res.status(200).json(
+          success(
+            {
+              role:
+                result.roleAssignment.role,
+              operation:
+                result.operation,
+              outgoing_assignment:
+                result.outgoingAssignment === null
+                  ? null
+                  : mapRoleAssignment(
+                      result.outgoingAssignment
+                    ),
+              incoming_assignment:
+                mapRoleAssignment(
+                  result.roleAssignment
+                ),
+              effective_at:
+                result.effectiveAt,
+            },
+            {
+              correlation_id:
+                context.correlationId,
+              request_id:
+                context.requestId,
+              next_cursor:
+                null,
+            }
+          )
+        );
+      } catch (error) {
+        handleProjectMembershipError(
+          error,
+          res,
+          next
+        );
+      }
+    }
+  );
+
+
+  return router;
+}
+
+
+function parseChangeOrdinaryRoleRequest(
+  body: unknown,
+  membershipId: string
+): ChangeOrdinaryRoleInput {
+  const request =
+    requireRequestObject(body);
+
+  assertAllowedRequestFields(
+    request,
+    ["role", "reason"]
+  );
+
+  const role = requireNonBlankString(
+    request.role,
+    "role"
+  );
+
+  return {
+    membershipId,
+    role:
+      role as ChangeOrdinaryRoleInput["role"],
+    reason:
+      optionalText(
+        request.reason,
+        "reason"
+      ),
+  };
+}
+
+
+function parseRemoveProjectMemberRequest(
+  body: unknown,
+  membershipId: string
+): RemoveProjectMemberInput {
+  const request =
+    body === undefined
+      ? {}
+      : requireRequestObject(body);
+
+  assertAllowedRequestFields(
+    request,
+    ["reason"]
+  );
+
+  return {
+    membershipId,
+    reason:
+      optionalText(
+        request.reason,
+        "reason"
+      ),
+  };
+}
+
+
+function parseTransferProtectedRoleRequest(
+  body: unknown
+): TransferProtectedRoleInput {
+  const request =
+    requireRequestObject(body);
+
+  assertAllowedRequestFields(
+    request,
+    [
+      "role",
+      "new_membership_id",
+      "reason",
+    ]
+  );
+
+  return {
+    role:
+      requireNonBlankString(
+        request.role,
+        "role"
+      ) as TransferProtectedRoleInput["role"],
+    newMembershipId:
+      requireNonBlankString(
+        request.new_membership_id,
+        "new_membership_id"
+      ),
+    reason:
+      requireNonBlankString(
+        request.reason,
+        "reason"
+      ),
+  };
+}
+
+
+function requireRequestObject(
+  body: unknown
+): Record<string, unknown> {
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    Array.isArray(body)
+  ) {
+    throw new ProjectMembershipValidationError(
+      "Request body must be an object."
+    );
+  }
+
+  return body as Record<string, unknown>;
+}
+
+
+function assertAllowedRequestFields(
+  request: Record<string, unknown>,
+  allowed: readonly string[]
+): void {
+  const unexpected =
+    Object.keys(request).find(
+      (field) =>
+        !allowed.includes(field)
+    );
+
+  if (unexpected) {
+    throw new ProjectMembershipValidationError(
+      `${unexpected} is not permitted.`
+    );
+  }
+}
+
+
+function optionalText(
+  value: unknown,
+  fieldName: string
+): string | null {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    throw new ProjectMembershipValidationError(
+      `${fieldName} must be text or null.`
+    );
+  }
+
+  const normalized = value.trim();
+
+  return normalized.length === 0
+    ? null
+    : normalized;
+}
+
+
+function mapRoleAssignment(
+  assignment: ProjectRoleAssignment
+) {
+  return {
+    id:
+      assignment.id,
+    project_id:
+      assignment.projectId,
+    membership_id:
+      assignment.membershipId,
+    role:
+      assignment.role,
+    effective_from:
+      assignment.effectiveFrom,
+    effective_to:
+      assignment.effectiveTo,
+    assigned_by_person_id:
+      assignment.assignedBy,
+    change_reason:
+      assignment.changeReason,
+    created_at:
+      assignment.createdAt,
+  };
+}
+
+
+function parseAddProjectMemberRequest(
+  body: unknown
+): AddProjectMemberInput {
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    Array.isArray(body)
+  ) {
+    throw new ProjectMembershipValidationError(
+      "Request body must be an object."
+    );
+  }
+
+  const request =
+    body as Record<
+      string,
+      unknown
+    >;
+
+  const personId =
+    requireNonBlankString(
+      request.person_id,
+      "person_id"
+    );
+
+  const role =
+    requireNonBlankString(
+      request.role,
+      "role"
+    );
+
+  if (
+    role !==
+      "PROJECT_MEMBER"
+  ) {
+    throw new ProjectMembershipValidationError(
+      "VS002-04 add-member flow supports only PROJECT_MEMBER."
+    );
+  }
+
+  const effectiveFrom =
+    requireNonBlankString(
+      request.effective_from,
+      "effective_from"
+    );
+
+  const effectiveToValue =
+    request.effective_to;
+
+  let effectiveTo:
+    string | null;
+
+  if (
+    effectiveToValue ===
+      undefined ||
+    effectiveToValue ===
+      null
+  ) {
+    effectiveTo =
+      null;
+  } else {
+    effectiveTo =
+      requireNonBlankString(
+        effectiveToValue,
+        "effective_to"
+      );
+  }
+
+  return {
+    personId,
+    role:
+      "PROJECT_MEMBER",
+    effectiveFrom,
+    effectiveTo,
+  };
+}
+
+
+function requireNonBlankString(
+  value: unknown,
+  fieldName: string
+): string {
+  if (
+    typeof value !==
+      "string" ||
+    value.trim().length ===
+      0
+  ) {
+    throw new ProjectMembershipValidationError(
+      `${fieldName} is required.`
+    );
+  }
+
+  return value.trim();
+}
+
+
+function handleProjectMembershipError(
+  error: unknown,
+  res: Response,
+  next: NextFunction
+): void {
+  const authenticated =
+    res.locals.authenticated as
+      AuthenticatedRequestState;
+
+  const correlationId =
+    authenticated
+      .context
+      .correlationId;
+
+  if (
+    error instanceof
+      ProjectMembershipPermissionDeniedError
+  ) {
+    res.status(
+      403
+    ).json(
+      failure(
+        "PROJECT_ACCESS_DENIED",
+        "You do not have permission to perform this project membership operation.",
+        correlationId
+      )
+    );
+
+    return;
+  }
+
+  if (
+    error instanceof
+      ProjectMembershipAlreadyActiveError
+  ) {
+    res.status(
+      409
+    ).json(
+      failure(
+        "PROJECT_MEMBERSHIP_ALREADY_ACTIVE",
+        "An overlapping active project membership already exists.",
+        correlationId
+      )
+    );
+
+    return;
+  }
+
+  if (
+    error instanceof
+      ProjectMembershipNotFoundError
+  ) {
+    res.status(404).json(
+      failure(
+        "PROJECT_MEMBERSHIP_NOT_FOUND",
+        error.message,
+        correlationId
+      )
+    );
+    return;
+  }
+
+  const lifecycleConflict =
+    error instanceof
+      ProjectMembershipExpiredError
+      ? "PROJECT_MEMBERSHIP_EXPIRED"
+      : error instanceof
+          ActiveResponsibilitiesExistError
+        ? "ACTIVE_RESPONSIBILITIES_EXIST"
+        : error instanceof
+            LastRequiredRoleHolderError
+          ? "LAST_REQUIRED_ROLE_HOLDER"
+          : error instanceof
+              MemberRemovalNotPermittedError
+            ? "MEMBER_REMOVAL_NOT_PERMITTED"
+            : null;
+
+  if (lifecycleConflict !== null) {
+    res.status(409).json(
+      failure(
+        lifecycleConflict,
+        error instanceof Error
+          ? error.message
+          : "Membership lifecycle conflict.",
+        correlationId
+      )
+    );
+    return;
+  }
+
+  if (
+    error instanceof
+      ProjectMemberPersonNotFoundError
+  ) {
+    res.status(
+      404
+    ).json(
+      failure(
+        "NOT_FOUND",
+        "Cadence Person not found.",
+        correlationId
+      )
+    );
+
+    return;
+  }
+
+  if (
+    error instanceof
+      ProjectMembershipValidationError
+  ) {
+    res.status(
+      400
+    ).json(
+      failure(
+        "VALIDATION_ERROR",
+        error.message,
+        correlationId
+      )
+    );
+
+    return;
+  }
+
+  if (
+    error instanceof
+      ProjectRoleTransferRequiredError
+  ) {
+    res.status(409).json(
+      failure(
+        "PROJECT_ROLE_TRANSFER_REQUIRED",
+        "Protected project roles must use the role-transfer operation.",
+        correlationId
+      )
+    );
+
+    return;
+  }
+
+  if (
+    error instanceof
+      ProjectRoleAssignmentInvalidError
+  ) {
+    res.status(409).json(
+      failure(
+        "PROJECT_ROLE_ASSIGNMENT_INVALID",
+        "The requested project role assignment is invalid.",
+        correlationId
+      )
+    );
+
+    return;
+  }
+
+  next(
+    error
+  );
+}
