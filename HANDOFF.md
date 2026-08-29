@@ -22,15 +22,15 @@ Vertical Slice:
 
 Status:
 
-**R02 canonical Project Authorisation cutover is complete. R03A runtime
-closure and R03B canonical membership-field independence are implemented and
-verified locally.**
+**R02 canonical Project Authorisation cutover is complete. R03A/R03B are
+closed, and R03C structural membership invariant enforcement is implemented
+and verified locally.**
 
 Current checkpoint:
 
-**R03B is a dependency-removal checkpoint, not a column-removal checkpoint.
-All five legacy membership columns remain present and frozen. R03C dependency
-proof/soak is next; destructive removal remains a separate R03D decision.**
+**R03C enforces canonical membership invariants structurally. All five legacy
+membership columns remain present and frozen. R03D destructive removal remains
+a separate approved decision.**
 
 Latest completed R02 validation:
 
@@ -148,8 +148,45 @@ Final local gates:
 ```text
 R03 focused migration/repository tests = 28 passed, 0 failed
 API typecheck = passed
-full API regression = 362 passed, 0 failed
+full API regression = 369 passed, 0 failed
 VS002-05B and VS002-07B transactional database smokes = passed
+```
+
+## R03C Implementation
+
+Migration:
+
+```text
+20260828180000_r03c_structural_membership_invariants.sql
+```
+
+The migration preflights existing canonical state before adding `btree_gist`
+half-open exclusion constraints for overlapping Person/project memberships,
+ordinary roles per membership, and protected singleton roles per project.
+Bidirectional triggers enforce role periods within membership periods.
+
+Deferred constraint triggers require gap-free ordinary-role coverage for every
+canonical membership, making the distinction explicit: exclusion provides
+“at most one,” while coverage provides “exactly one” and rejects zero-role
+canonical state. Ended legacy VS-001 rows without reconstructed role history
+remain exempt so historical truth is preserved.
+
+Protected assignments must have one aligned transfer-ledger entry, with unique
+incoming/outgoing references and matching timing/provenance. Canonical ended
+memberships require termination provenance, and termination history now guards
+canonical `membership_status`. Service-role direct-DML probes demonstrate the
+invalid states are rejected while valid admission, replacement, transfer,
+termination, and expiry RPCs remain valid.
+
+Final R03C local gates:
+
+```text
+focused migration/authorisation tests = passed
+clean Supabase reset with R03C = passed
+R03C runtime invariant smoke = passed
+VS002-05B, VS002-07B, VS002-07D smokes = passed
+API typecheck = passed
+full API regression = 369 passed, 0 failed
 ```
 
 ---

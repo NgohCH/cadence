@@ -6,6 +6,26 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### R03C - Structural Membership Invariant Enforcement
+
+- Added `20260828180000_r03c_structural_membership_invariants.sql` with
+  database-enforced half-open exclusion constraints for Person/project
+  membership overlap, ordinary-role overlap per membership, and protected
+  singleton overlap per project and role.
+- Added bidirectional role-period containment checks and deferred exact,
+  gap-free ordinary-role coverage. The exclusion constraint supplies only
+  “at most one”; deferred coverage separately enforces “exactly one” for
+  canonical memberships, including the zero-role case.
+- Added transfer/history integrity checks, unique ledger references, protected
+  assignment ledger requirements, canonical termination provenance checks, and
+  transfer-to-assignment timing/provenance alignment.
+- Added explicit fail-closed handling for multiple effective memberships in
+  `ProjectAuthorisationService`. R02 browser boundaries, service-role RPC
+  contracts, protected transfer semantics, and all frozen legacy columns remain
+  intact.
+- Reconciled VS002-07B/07D fixtures to seed valid canonical ordinary-role
+  coverage; no historical membership or role record is removed.
+
 ### R03B - Canonical Membership Field Independence
 
 - Completed R03A runtime closure through a clean local Supabase reset and live

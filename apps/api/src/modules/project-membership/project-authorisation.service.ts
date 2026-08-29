@@ -122,6 +122,12 @@ export class ProjectAuthorisationService {
           )
       );
 
+    if (effectiveMemberships.length > 1) {
+      throw new ProjectRoleAssignmentInvalidError(
+        "A Person cannot have more than one effective membership in the same project."
+      );
+    }
+
     const assignments =
       await Promise.all(
         effectiveMemberships.map(

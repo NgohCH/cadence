@@ -35,6 +35,12 @@ and lifecycle helpers to them, and frozen legacy `status` as well.
 All five compatibility columns remain present. R03B removes dependencies, not
 columns; physical removal remains reserved for separately accepted R03D work.
 
+R03C now makes canonical overlap, role-period containment, ordinary-role
+coverage, and protected transfer-ledger consistency database invariants. The
+service role remains the trusted persistence boundary, but direct DML is still
+subject to these constraints and triggers; browser roles retain no mutation
+authority.
+
 Required sequence:
 
 ```text

@@ -31,7 +31,10 @@ R03C prove no dependencies and complete environment soak
 R03D separately approve and remove legacy columns
 ```
 
-No R03A or R03B operation rewrites or drops membership or role history.
+R03C adds structural overlap, containment, exact ordinary-role coverage, and
+protected transfer-ledger checks. Exclusion constraints provide at-most-one;
+deferred coverage separately provides exactly-one for canonical memberships.
+No R03A, R03B, or R03C operation rewrites or drops membership or role history.
 
 ## VS002-07 Membership and Role Events
 

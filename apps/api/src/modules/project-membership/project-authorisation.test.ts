@@ -657,6 +657,50 @@ test(
 
 
 test(
+  "multiple effective memberships for one Person and Project fail closed",
+  async () => {
+    const secondMembership =
+      createMembership({
+        id:
+          "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      });
+
+    const service =
+      createService(
+        new InMemoryProjectMembershipRepository(
+          [
+            createMembership(),
+            secondMembership,
+          ],
+          [
+            createAssignment(
+              "PROJECT_MEMBER"
+            ),
+            createAssignment(
+              "PROJECT_OBSERVER",
+              {
+                id:
+                  "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                membershipId:
+                  secondMembership.id,
+              }
+            ),
+          ]
+        )
+      );
+
+    await assert.rejects(
+      service.getEffectiveProjectRoles(
+        personId,
+        projectId
+      ),
+      ProjectRoleAssignmentInvalidError
+    );
+  }
+);
+
+
+test(
   "multiple effective ordinary roles on one membership are invalid",
   async () => {
     const service =
