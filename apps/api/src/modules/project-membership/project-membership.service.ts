@@ -107,7 +107,9 @@ export type ProjectMemberIdentityPort =
     IdentityPersistenceRepository,
     | "findPersonById"
     | "listOrganisationalAffiliations"
-  >;
+  > & {
+    searchPeople?: IdentityPersistenceRepository["searchPeople"];
+  };
 
 
 export interface AddProjectMemberInput {
@@ -192,6 +194,20 @@ export interface ProjectMemberView {
   roles: ProjectRole[];
   affiliation:
     OrganisationalAffiliation | null;
+}
+
+export interface ProjectMembershipCapabilities {
+  canInviteMember: boolean;
+  canChangeOrdinaryRole: boolean;
+  canTransferSponsor: boolean;
+  canTransferOwner: boolean;
+  canTransferManager: boolean;
+  canRemoveMember: boolean;
+}
+
+export interface ProjectMemberCandidate {
+  person: CadencePerson;
+  affiliation: OrganisationalAffiliation | null;
 }
 
 
@@ -339,6 +355,46 @@ export class ProjectMembershipService {
         }
       )
     );
+  }
+
+  async getProjectMembershipCapabilities(
+    context: ProjectAuthorisationContext,
+    projectId: string
+  ): Promise<ProjectMembershipCapabilities> {
+    await this.requirePermission(context, projectId, "member.view");
+    const checks = await Promise.all([
+      this.authorisation.hasProjectPermission(context, projectId, "member.invite"),
+      this.authorisation.hasProjectPermission(context, projectId, ORDINARY_ROLE_CHANGE_PERMISSION),
+      this.authorisation.hasProjectPermission(context, projectId, getProtectedRolePermission("PROJECT_SPONSOR")),
+      this.authorisation.hasProjectPermission(context, projectId, getProtectedRolePermission("PROJECT_OWNER")),
+      this.authorisation.hasProjectPermission(context, projectId, getProtectedRolePermission("PROJECT_MANAGER")),
+      this.authorisation.hasProjectPermission(context, projectId, PROJECT_MEMBER_REMOVAL_PERMISSION),
+    ]);
+    return {
+      canInviteMember: checks[0],
+      canChangeOrdinaryRole: checks[1],
+      canTransferSponsor: checks[2],
+      canTransferOwner: checks[3],
+      canTransferManager: checks[4],
+      canRemoveMember: checks[5],
+    };
+  }
+
+  async searchMemberCandidates(
+    context: ProjectAuthorisationContext,
+    projectId: string,
+    query: string
+  ): Promise<ProjectMemberCandidate[]> {
+    await this.requirePermission(context, projectId, "member.invite");
+    const normalized = query.trim();
+    if (normalized.length < 2) return [];
+    const evaluatedAt = normalizeTimestamp(this.currentTime(), "current time");
+    const people = this.identityRepository.searchPeople
+      ? await this.identityRepository.searchPeople(normalized, 20)
+      : [];
+    const memberships = await this.membershipRepository.listMembershipsForProject(projectId);
+    const eligible = people.filter((person) => !memberships.some((membership) => membership.personId === person.id && membership.status === "ACTIVE" && isProjectMembershipEffectiveAt(membership, evaluatedAt)));
+    return Promise.all(eligible.map(async (person) => ({ person, affiliation: selectEffectiveAffiliation(await this.identityRepository.listOrganisationalAffiliations(person.id), evaluatedAt) })));
   }
 
 

@@ -19,6 +19,7 @@ export interface IdentityRepository {
  * working CadenceUser request path can remain unchanged during the migration.
  */
 export interface IdentityPersistenceRepository {
+  searchPeople(query: string, limit?: number): Promise<CadencePerson[]>;
   createPerson(
     person: CadencePerson
   ): Promise<CadencePerson>;

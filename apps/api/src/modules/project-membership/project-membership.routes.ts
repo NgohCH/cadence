@@ -73,6 +73,12 @@ export function createProjectMembershipRouter(
               context,
               projectId
             );
+        const capabilities =
+          await projectMembershipService
+            .getProjectMembershipCapabilities(
+              context,
+              projectId
+            );
 
         res.status(
           200
@@ -138,6 +144,20 @@ export function createProjectMembershipRouter(
                         .status,
                   })
                 ),
+              capabilities: {
+                can_invite_member:
+                  capabilities.canInviteMember,
+                can_change_ordinary_role:
+                  capabilities.canChangeOrdinaryRole,
+                can_transfer_sponsor:
+                  capabilities.canTransferSponsor,
+                can_transfer_owner:
+                  capabilities.canTransferOwner,
+                can_transfer_manager:
+                  capabilities.canTransferManager,
+                can_remove_member:
+                  capabilities.canRemoveMember,
+              },
             },
 
             {
@@ -162,6 +182,15 @@ export function createProjectMembershipRouter(
     }
   );
 
+
+  router.get("/projects/:projectId/member-candidates", async (req, res, next) => {
+    try {
+      const authenticated = res.locals.authenticated as AuthenticatedRequestState;
+      const query = typeof req.query.query === "string" ? req.query.query : "";
+      const candidates = await projectMembershipService.searchMemberCandidates(authenticated.context, req.params.projectId, query);
+      res.status(200).json(success({ candidates: candidates.map(({ person, affiliation }) => ({ person_id: person.id, display_name: person.displayName, affiliation: affiliation ? { classification: affiliation.classification, organisation_name: affiliation.organisationName } : null })) }, { correlation_id: authenticated.context.correlationId, request_id: authenticated.context.requestId, next_cursor: null }));
+    } catch (error) { handleProjectMembershipError(error, res, next); }
+  });
 
   router.post(
     "/projects/:projectId/members",

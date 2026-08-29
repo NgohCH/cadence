@@ -26,6 +26,9 @@ import {
   MyTasksPanel,
 } from '../tasks/MyTasksPanel'
 
+import { MembersPanel } from '../members/MembersPanel'
+import { useProjectMembers } from '../members/useProjectMembers'
+
 
 interface WorkspaceShellProps {
   user: CadenceUser
@@ -38,6 +41,7 @@ interface WorkspaceShellProps {
 type WorkspaceView =
   | 'workspace'
   | 'my_tasks'
+  | 'members'
 
 
 export function WorkspaceShell({
@@ -76,6 +80,8 @@ export function WorkspaceShell({
         '_',
         ' ',
       )
+
+  const members = useProjectMembers(project.project.id)
 
 
   return (
@@ -160,6 +166,14 @@ export function WorkspaceShell({
               }
             >
               My Tasks
+            </button>
+
+            <button
+              className={activeView === 'members' ? 'nav-item nav-item-active' : 'nav-item'}
+              type="button"
+              onClick={() => { setActiveView('members') }}
+            >
+              Members
             </button>
           </nav>
         </aside>
@@ -469,7 +483,7 @@ export function WorkspaceShell({
                 </div>
               </section>
             </>
-          ) : (
+          ) : activeView === 'my_tasks' ? (
             <>
               <section className="workspace-heading">
                 <div>
@@ -504,6 +518,11 @@ export function WorkspaceShell({
                   }
                 }
               />
+            </>
+          ) : (
+            <>
+              <section className="workspace-heading"><div><p className="eyebrow">PROJECT ACCESS</p><h1>Members</h1><p className="muted">Current effective project membership and roles.</p></div></section>
+              <MembersPanel projectId={project.project.id} {...members} onRetry={members.refresh} />
             </>
           )}
         </main>

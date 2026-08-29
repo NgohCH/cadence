@@ -46,6 +46,12 @@ export class SupabaseIdentityPersistenceRepository
     private readonly db: SupabaseClient
   ) {}
 
+  async searchPeople(query: string, limit = 20): Promise<CadencePerson[]> {
+    const { data, error } = await this.db.from("persons").select("id, display_name").ilike("display_name", `%${query.trim()}%`).order("display_name", { ascending: true }).limit(Math.min(Math.max(limit, 1), 50));
+    if (error) throw error;
+    return ((data ?? []) as PersonRow[]).map(mapPerson);
+  }
+
 
   async createPerson(
     person: CadencePerson
