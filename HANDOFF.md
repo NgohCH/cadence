@@ -22,13 +22,12 @@ Vertical Slice:
 
 Status:
 
-**R02 canonical Project Authorisation cutover and R03A-R03C are closed. R03D
-historical mutation and destructive-path hardening is implemented.**
+**R02 canonical Project Authorisation cutover and R03 are closed.**
 
 Current checkpoint:
 
-**R03D hardens canonical membership/role/transfer history without removing any
-legacy membership column. Physical legacy removal remains a separate decision.**
+**R03 is closed with frozen legacy membership provenance retained. Physical
+legacy removal remains a separately approved future decision.**
 
 Latest completed R02 validation:
 
@@ -239,6 +238,41 @@ API typecheck = passed
 full API regression = 373 passed, 0 failed
 web lint/build = passed
 ```
+
+## R03 Final Closure
+
+R03 is **CLOSED**. R03A and R03B closed at `ea18095`, R03C closed at
+`c99871f`, and R03D closed at `7557e65`. R03E's final reconciliation audit
+found no material P1 issue and deliberately made no further schema or runtime
+change. R03F closure proof passed with P0 = 0 and P1 = 0.
+
+The clean local reset applied 56 migrations successfully through
+`20260828190000_r03d_historical_mutation_hardening.sql`. Closure validation:
+
+```text
+focused R03 tests = 62 passed, 0 failed
+full API regression = 373 passed, 0 failed
+R03A, R03C, R03D runtime smokes = passed
+VS002-05B, VS002-07B, VS002-07D runtime smokes = passed
+API typecheck = passed
+repository quality gate = passed
+web lint/build = passed
+beta deployment build = passed
+git diff --check = passed
+```
+
+The five retained membership fields are deliberately frozen and
+non-authoritative provenance or compatibility data:
+
+```text
+user_id, role_id, joined_at, status, created_by
+```
+
+Physical removal is explicitly deferred until a separately approved immutable
+provenance/archive representation, canonical legacy-origin classifier, and
+compatibility prerequisites are in place. Optional cleanup of generic
+direct-create methods and service-role `INSERT`/`REFERENCES`/`TRIGGER`
+privileges is outside R03 and is not P1.
 
 ---
 

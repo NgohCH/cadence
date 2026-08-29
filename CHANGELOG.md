@@ -6,6 +6,26 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### R03 - Final Closure
+
+- R03 is **CLOSED**. R03A/R03B closed at `ea18095`, R03C at `c99871f`, and
+  R03D at `7557e65`. R03E's final reconciliation found no material P1 issue
+  and deliberately retained the frozen legacy fields without further change.
+- R03F closure proof passed: a clean reset through
+  `20260828190000_r03d_historical_mutation_hardening.sql` applied all 56
+  migrations successfully; focused R03 tests passed 62/62; and the full API
+  regression passed 373/373.
+- R03A, R03C, R03D, VS002-05B, VS002-07B, and VS002-07D runtime smokes passed,
+  along with API typecheck, repository quality gate, web lint/build, beta
+  deployment build, and `git diff --check`. R03 closure disposition is P0 = 0
+  and P1 = 0.
+- `user_id`, `role_id`, `joined_at`, `status`, and `created_by` remain
+  deliberately frozen, non-authoritative provenance or compatibility data.
+  Physical removal is deferred until the documented immutable provenance,
+  canonical legacy-origin classifier, and compatibility prerequisites are met.
+- Optional cleanup of generic direct-create methods and service-role
+  `INSERT`/`REFERENCES`/`TRIGGER` privileges is outside R03 and is not P1.
+
 ### R03D - Historical Mutation Hardening and Legacy Retention Readiness
 
 - Added `20260828190000_r03d_historical_mutation_hardening.sql`. Membership
