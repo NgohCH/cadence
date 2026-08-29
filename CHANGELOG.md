@@ -6,6 +6,31 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### VS002-08 - Members Frontend Integration
+
+- VS002-08 is **COMPLETE** at `0fcf346` (`feat(project-membership): complete
+  VS002-08 members frontend`).
+- Added the Members workspace/navigation with Leadership, Delivery Team, and
+  Oversight grouping; INTERNAL/EXTERNAL affiliation; canonical effective-date
+  and time-bounded membership presentation. Only current-effective members
+  are shown; ended/history presentation is deliberately deferred.
+- Added presentation-only capability hints: `can_invite_member`,
+  `can_change_ordinary_role`, `can_transfer_sponsor`, `can_transfer_owner`,
+  `can_transfer_manager`, and `can_remove_member`. Backend authorization
+  remains authoritative.
+- Added project-scoped member-candidate search gated by `member.invite`; no
+  generic/global Person directory was introduced. Add Member, ordinary role
+  management restricted to Member/Observer/Auditor, separate protected
+  Sponsor/Owner/Manager appointment/transfer with confirmation and required
+  reason, and member-removal confirmation/conflict handling are complete.
+- Browser business data remains `/api/v1` only. The frontend does not use
+  legacy membership fields. A minimal Vitest/React Testing Library baseline
+  was introduced.
+- Frontend tests passed **11/11**; full API regression passed **373/373**.
+  API typecheck, web lint, CI/local/beta builds, and `git diff --check`
+  passed. No product defect was discovered during Stage 5.
+- No VS002-09 work is included.
+
 ### VS002-07E/07F - Beta Verification and Checkpoint Closure
 
 - VS002-07E **PASSED** against beta project `pwmhasbmacmeerbsagda`; the R01

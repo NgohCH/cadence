@@ -7262,7 +7262,46 @@ ID mismatch, an Audit delivery table-name mismatch, and the original
 one-worker-invocation expectation. These are non-product defects.
 
 VS002-07A through VS002-07F are complete. VS002-08 Members Frontend
-Integration is the next checkpoint.
+Integration is complete at `0fcf346`.
+
+## VS002-08 Members Frontend Integration
+
+**Status: COMPLETE — 2026-08-29**
+
+The Members workspace is integrated into Project Workspace navigation. It
+shows current effective members grouped as Leadership, Delivery Team, and
+Oversight, with INTERNAL/EXTERNAL affiliation, canonical effective dates,
+and time-bounded membership indicators. Ended membership/history views are
+deliberately deferred.
+
+The members read model exposes presentation-only capability hints:
+
+```text
+can_invite_member
+can_change_ordinary_role
+can_transfer_sponsor
+can_transfer_owner
+can_transfer_manager
+can_remove_member
+```
+
+Backend authorization remains authoritative for every mutation. Admission
+uses a project-scoped `member.invite`-gated Person candidate search; no
+generic/global Person directory was introduced. Add Member, ordinary role
+management (Member/Observer/Auditor only), separate protected
+Sponsor/Owner/Manager appointment/transfer with confirmation and a required
+reason, and removal confirmation with backend conflict handling are all
+implemented. Browser business data continues through `/api/v1`; no direct
+Supabase business-table access or legacy membership fields is used by the
+frontend.
+
+A minimal Vitest/React Testing Library baseline was introduced. Final
+validation passed with frontend tests **11/11**, full API regression
+**373/373**, API typecheck, web lint, CI/local/beta builds, and
+`git diff --check`. No product defect was discovered during Stage 5. No
+VS002-09 work is included.
+
+Implementation checkpoint: `0fcf346 — feat(project-membership): complete VS002-08 members frontend`.
 
 ---
 
@@ -7314,9 +7353,9 @@ by reading the repository documentation and inspecting the code.
 The immediate continuation point is:
 
 ```text
-VS002-07F closure complete
+VS002-08 Members Frontend Integration complete
   ->
-begin VS002-08 Members Frontend Integration
+  begin VS002-09 Cross-Module Authorisation Integration
 ```
 Do not bypass established module boundaries merely to complete the vertical slice more quickly.
 
