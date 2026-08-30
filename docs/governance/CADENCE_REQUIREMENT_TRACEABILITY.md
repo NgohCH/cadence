@@ -61,6 +61,25 @@ where each requirement stands and what evidence closes it, but cannot redefine
 or reduce the baseline. C01-C24 and F01-F19 are `INITIATION`; C25 is the sole
 `APPROVED_ADDITION`, sourced from frozen VS-002 sections 15-28 and AC-04-06.
 
+## VS003 sequencing reconciliation
+
+The VS003 documentation freeze records an approved milestone sequencing change
+within M0–M3. It does not claim implementation delivery and does not change
+the Scope Baseline.
+
+| Requirement | Previous milestone | Current milestone | Current status treatment | Reason and closure path |
+|---|---|---|---|---|
+| C08.1 | M2 | M1 | Remains `PARTIAL`; expected closure only after VS003 implementation evidence passes. | Durable project rooms/messages are required before Pilot Activation; VS003 supplies the authenticated read path. |
+| C08.2 | M1 | M1 | Remains `OUTSTANDING`; expected closure only after VS003 implementation evidence passes. | M1 requires persisted Discussion to reload after return. |
+| INIT-AC-03 | M2 | M1 | Remains `PARTIAL`; expected closure only after complete VS003 acceptance evidence passes. | The original discussion criterion is brought forward for the controlled-pilot journey. |
+| C08.3 | M2 | M2 | Remains `OUTSTANDING` until implementation; VS003 is recorded as a planned partial advancement only. | Deterministic manual refresh/shared visibility advances the obligation; realtime/automatic convergence remains due M2. |
+| C08.4 | M0 | M0 | Remains `DELIVERED` and regression protected. | Existing asynchronous Discussion event behavior remains under VS001 closure evidence. |
+
+This is a sequencing reconciliation, not a deferral: moving C08.1 and
+INIT-AC-03 earlier does not weaken their intended outcomes. The implementation
+closure checkpoint must add the actual API, browser, authorization, isolation,
+and two-user runtime evidence. Original commitments moved beyond M3: **0**.
+
 ## Product parent register
 
 | Requirement ID | Parent ID | Original commitment | Source | Intended outcome | Type | Current status | Milestone due | Vertical slice(s) | Implementation evidence | Test/evidence | Remaining gap | Closure evidence |
@@ -72,7 +91,7 @@ or reduce the baseline. C01-C24 and F01-F19 are `INITIATION`; C25 is the sole
 | C05 | — | Multi-project support. | PTS §§20–22; VS002 AC-02 | Multiple memberships, roles and usable navigation. | Product parent | PARTIAL | M2 | VS002 partial; M2-01 | Backend multi-project membership model. | VS002 AC-02 evidence. | Project discovery/switching UI. | Multi-project browser acceptance. |
 | C06 | — | User/Person/authentication/Entra identity. | PTS §§20,22,30–31,45; VS002 | Stable identity and replaceable production login. | Product parent | PARTIAL | M3 | VS001; VS002; M2-01; M3-04 | Supabase Auth, stable Person, auth identity. | VS001 auth and VS002 identity tests. | Self-service onboarding and Entra lifecycle. | Production identity acceptance. |
 | C07 | — | Membership, roles, permissions and protected responsibility. | PTS §§20–21,45,47; VS002 | Project access and authority are explicit and auditable. | Product parent | DELIVERED | M0 | VS002 | Canonical ProjectAuthorisationService and Members flows. | Frozen VS002 closure, P0/P1=0. | Preserve regression. | VS002 closure plus ongoing regression. |
-| C08 | — | Native durable project Discussion. | PTS §§1,9,46–47 | Conversation remains shared project context. | Product parent | PARTIAL | M2 | VS001 partial; M2-02 | Authorised message creation and persistence. | VS001 Discussion tests. | Listing/reload and shared update behavior. | Durable-return acceptance. |
+| C08 | — | Native durable project Discussion. | PTS §§1,9,46–47 | Conversation remains shared project context. | Product parent | PARTIAL | M2 | VS001 partial; VS003; M2-02 | Authorised message creation and persistence. | VS001 Discussion tests; VS003 contract frozen, implementation not begun. | Listing/reload and shared update behavior. | Durable-return acceptance. |
 | C09 | — | Discussion collaboration features. | PTS §9 | Threads, mentions, attachments, reactions, read state, search, AI hooks. | Product parent | OUTSTANDING | M3 | M2-02; M3-02 | Message support tables; AI event hook partial. | Schema evidence only for most items. | Product/API/UI capability. | All C09 children proven. |
 | C10 | — | Message edit/version history. | PTS §10; §47 | Editing never destroys history. | Product parent | PARTIAL | M3 | VS001 foundation; M3-02 | MessageVersion and immutable retrieval. | VS001 immutable-version evidence. | Edit command, read history, UI. | Edit/history acceptance. |
 | C11 | — | Basic project files. | PTS §16; §47 | Upload/view/download/link/audit files. | Product parent | OUTSTANDING | M3 | M3-02 | File/file-link schema only. | Initial migration/RLS evidence. | Owning module, API, storage and UI. | File journey acceptance. |
@@ -121,7 +140,7 @@ or reduce the baseline. C01-C24 and F01-F19 are `INITIATION`; C25 is the sole
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | INIT-AC-01 | C01 | Create a project. | PTS §47.1 | Usable governed project. | Acceptance child | OUTSTANDING | M2 | M2-01 | None beyond schema/bootstrap. | No product route. | Create workflow. | Runtime acceptance required. |
 | INIT-AC-02 | C07 | Assign members and RBAC roles. | PTS §47.2 | Project-specific access/authority. | Acceptance child | DELIVERED | M0 | VS002 | Members and role workflows. | VS002 closure. | Preserve. | Frozen closure/regression. |
-| INIT-AC-03 | C08 | Hold project discussions. | PTS §47.3 | Durable shared collaboration. | Acceptance child | PARTIAL | M2 | VS001; M2-02 | Message posting. | VS001 tests. | List/reload/shared view. | Return-context acceptance. |
+| INIT-AC-03 | C08 | Hold project discussions. | PTS §47.3 | Durable shared collaboration. | Acceptance child | PARTIAL | M1 | VS001; VS003; M2-02 | Message posting; VS003 contract frozen, implementation not begun. | VS001 tests; complete VS003 acceptance evidence required. | List/reload/shared view and M1 runtime proof. | Return-context acceptance. |
 | INIT-AC-04 | C11 | Upload files. | PTS §47.4 | File enters project context. | Acceptance child | OUTSTANDING | M3 | M3-02 | Schema only. | Migration evidence. | Module/API/UI/storage. | File acceptance. |
 | INIT-AC-05 | C10, F09 | Edit messages without losing history. | PTS §47.5 | Immutable revision chain. | Acceptance child | PARTIAL | M3 | VS001 foundation; M3-02 | MessageVersion exists. | Immutable retrieval proof. | Edit/history UX. | Revision acceptance. |
 | INIT-AC-06 | C14 | Create and manage tasks. | PTS §47.6 | Full useful Task lifecycle. | Acceptance child | PARTIAL | M3 | VS001; M2-03 | Create/read. | VS001 Task evidence. | Update/complete/cancel/assign. | Lifecycle acceptance. |
@@ -172,9 +191,9 @@ defined in the Scope Baseline. Each row has one parent and a closure path.
 | C07.3 | C07 | Backend permissions are authoritative. | PTS §21 | Hidden controls never grant security. | Product child | DELIVERED | M0 | VS001; VS002 | Service/RPC checks. | Boundary tests. | Preserve. | Regression. |
 | C07.4 | C07 | Platform admin is not universal reader. | PTS §20 | Project confidentiality remains scoped. | Product child | DELIVERED | M0 | VS002 | Separate platform/project authority. | VS002 closure. | Preserve. | Security regression. |
 | C07.5 | C07 | Protected roles/history auditable. | VS002 | Responsibility succession preserves truth. | Product child | DELIVERED | M0 | VS002 | Transfer ledger/history/Audit. | Frozen closure. | Preserve. | Regression. |
-| C08.1 | C08 | Project rooms/messages. | PTS §9 | Members can converse in project context. | Product child | PARTIAL | M2 | VS001; M2-02 | Post message. | VS001 tests. | List/read room. | Discussion acceptance. |
-| C08.2 | C08 | Persisted conversations reload after return. | PTS §§1,9,46 | Context survives session/navigation. | Product child | OUTSTANDING | M1 | M2-02 | DB persists; UI session state only. | Source inspection. | Query/API/UI reload. | Return-context proof. |
-| C08.3 | C08 | Members see committed messages/realtime updates. | PTS §46 | Shared project view converges. | Product child | OUTSTANDING | M2 | M2-02 | No list/realtime product path. | None. | Read/realtime/update behavior. | Multi-user acceptance. |
+| C08.1 | C08 | Project rooms/messages. | PTS §9 | Members can converse in project context. | Product child | PARTIAL | M1 | VS001; VS003; M2-02 | Post message; VS003 read contract frozen, implementation not begun. | VS001 tests; VS003 closure evidence required. | Implement authenticated list/read room path. | Discussion acceptance. |
+| C08.2 | C08 | Persisted conversations reload after return. | PTS §§1,9,46 | Context survives session/navigation. | Product child | OUTSTANDING | M1 | VS003 | DB persists; UI session state only. | Source inspection; no VS003 implementation evidence yet. | Query/API/UI initial load, reload, return, and retry. | Return-context proof. |
+| C08.3 | C08 | Members see committed messages/realtime updates. | PTS §46 | Shared project view converges. | Product child | OUTSTANDING | M2 | VS003 partial; M2-02 | No list/realtime product path; approved VS003 will add deterministic manual refresh/shared visibility. | No implementation evidence yet. | Automatic/realtime convergence remains M2. | Multi-user acceptance including realtime/automatic convergence. |
 | C08.4 | C08 | Discussion emits AI hooks asynchronously. | PTS §§9,27 | AI consumes without blocking Discussion. | Product child | DELIVERED | M0 | VS001 | MessageCreated outbox/delivery. | VS001 tests. | Preserve. | Regression. |
 | C09.1 | C09 | Replies/threads. | PTS §9 | Related conversation remains grouped. | Product child | OUTSTANDING | M3 | M3-02 | Parent ID accepted on write only. | Validation tests. | Thread query/UI. | Thread acceptance. |
 | C09.2 | C09 | Mentions. | PTS §9 | Users can direct attention. | Product child | OUTSTANDING | M3 | M3-02 | Schema only. | Migration evidence. | API/UI/notification link. | Mention acceptance. |

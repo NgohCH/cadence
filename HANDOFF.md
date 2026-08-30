@@ -17,6 +17,13 @@ INIT-AC-20, preserve independently testable obligations without inflating the
 parent count. No governed requirement may move beyond M3. This HANDOFF records
 current execution state and does not redefine or reduce committed scope.
 
+The Governance Baseline v1.0 is merged. M1 — Controlled Pilot is active, and
+the current documentation freeze defines VS003 as the next engineering slice.
+VS003 implementation has not begun. VS004 — Controlled Pilot Bootstrap and
+Access, VS005 — Pilot Runtime and Worker Scheduling, and VS006 — Pilot
+Operations, Recovery and Support remain planned M1 slices. VS-001 and VS-002
+remain closed.
+
 ## Project
 
 Cadence
@@ -29,23 +36,26 @@ v0.1 - Development
 
 ## Current Branch
 
-`feature/vs-002`
+`feature/vs-003-durable-discussion-read-path`
 
 ## Current Implementation Work
 
 Vertical Slice:
 
-`VS-002 - Project Membership & Collaboration`
+`VS003 - Durable Discussion Read and Return Path`
 
 Status:
 
-**VS002-10 is closed; VS-002 is complete.**
+**VS003 documentation freeze is complete; VS003 implementation has not begun.**
+
+VS-001 and VS-002 are closed. They must not be reopened without concrete
+evidence that a frozen contract is violated.
 
 Current checkpoint:
 
-**R03 is closed with frozen legacy membership provenance retained, and the
-final VS002-10 regression/security/documentation closure is complete. Physical
-legacy removal remains a separately approved future decision.**
+**M1 Controlled Pilot is active. The approved M1 contract and VS003 contract
+are frozen for review; VS004–VS006 remain planned, and no VS003 application
+implementation has started.**
 
 Latest completed R02 validation:
 
