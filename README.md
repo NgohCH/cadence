@@ -2,6 +2,14 @@
 
 This package turns the Cadence v0.1 database and module-boundary design into an executable migration baseline for Supabase PostgreSQL.
 
+## Governance and roadmap
+
+Future Cadence work is governed by the
+[Cadence Governance Index](docs/governance/CADENCE_GOVERNANCE_INDEX.md).
+The Project Scope Baseline defines committed scope; the Milestone Roadmap
+sequences it; the Requirement Traceability Register records current status;
+and Change Control governs evolution, incorporation, and deferral.
+
 ## Directory structure
 
 ```text
