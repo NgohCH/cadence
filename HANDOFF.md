@@ -1,5 +1,22 @@
 # Cadence Engineering Handoff
 
+## Governance Baseline
+
+Future Cadence development is governed by
+`docs/governance/CADENCE_GOVERNANCE_INDEX.md` and its linked authoritative
+documents. `CADENCE_PROJECT_SCOPE_BASELINE.md` defines committed scope;
+`CADENCE_REQUIREMENT_TRACEABILITY.md` is the canonical status/evidence ledger;
+`CADENCE_MILESTONE_ROADMAP.md` controls M0–M4+ sequencing; and
+`CADENCE_CHANGE_CONTROL.md` governs enhancements, evolution, incorporation,
+and deferral.
+
+The authoritative baseline contains 44 governed parent commitments: 43
+`INITIATION` parents (C01–C24 and F01–F19) and one `APPROVED_ADDITION` (C25
+from frozen VS-002). Child requirements, including INIT-AC-01 through
+INIT-AC-20, preserve independently testable obligations without inflating the
+parent count. No governed requirement may move beyond M3. This HANDOFF records
+current execution state and does not redefine or reduce committed scope.
+
 ## Project
 
 Cadence

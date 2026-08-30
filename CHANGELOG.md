@@ -6,6 +6,28 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### Cadence Project Scope and Governance Baseline
+
+- Added the authoritative Cadence Project Scope Baseline, fixed M0–M4+
+  Milestone Roadmap, canonical Requirement Traceability Register, Change
+  Control rules, and a short Governance Index for future maintainers/agents.
+- Reconciled the authoritative parent inventory to 25 product commitments and
+  19 foundational commitments (44 governed parents: 43 `INITIATION` and 1
+  `APPROVED_ADDITION`, C25 from frozen VS-002). Foundational parent status is
+  mathematically consistent: 16 `FOUNDATIONAL — ACTIVE`, 2 `AT RISK`, and 1
+  `PARTIAL`.
+- Preserved all 20 original v0.1 acceptance criteria as `INIT-AC` child
+  requirements and preserved independently testable product/foundation child
+  requirements without double-counting parent statistics.
+- Established that the Scope Baseline defines committed scope while the
+  Traceability Register records status/evidence and cannot redefine or reduce
+  that scope.
+- Established mandatory future vertical-slice reconciliation and closure
+  records. Original commitments removed, moved beyond M3, or left unmapped
+  must each remain zero.
+- This documentation/governance checkpoint changes no application behavior,
+  migration, runtime configuration, or frozen VS-001/VS-002 contract.
+
 ### VS002-10 — Regression, Security, Documentation and Closure
 
 - VS002-10 is **COMPLETE**. This was a verification/documentation closure
