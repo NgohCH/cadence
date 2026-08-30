@@ -17,6 +17,9 @@ const migration =
       "../../supabase/migrations/20260828144000_r02e_browser_database_boundary.sql"
     ),
     "utf8"
+  ).replace(
+    /\r\n?/g,
+    "\n"
   );
 
 
