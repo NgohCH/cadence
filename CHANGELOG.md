@@ -6,6 +6,23 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### M1 Controlled Pilot / VS003 Documentation Freeze
+
+- Added the M1 Controlled Pilot milestone contract with separate Work Entry
+  and Pilot Activation gates, the approved VS003–VS006 decomposition, pilot
+  rehearsal, operational evidence, and M2/M3 scope protection.
+- Added the frozen VS003 — Durable Discussion Read and Return Path contract.
+  VS003 is the next engineering slice; its implementation has not begun.
+- Reconciled C08.1 and INIT-AC-03 from M2 to M1, retained C08.2 at M1,
+  retained C08.3 at M2 with a planned partial manual-refresh advancement, and
+  retained delivered C08.4 at M0. These are sequencing changes within M0–M3,
+  not scope reductions.
+- Recorded that M1 defaults to 5–10 internal users and one real project;
+  external participation is optional and not mandatory for the default pilot.
+- Updated governance navigation and HANDOFF. VS-001 and VS-002 remain closed;
+  no application behavior, migration, runtime configuration, or dependency
+  changed.
+
 ### Cadence Project Scope and Governance Baseline
 
 - Added the authoritative Cadence Project Scope Baseline, fixed M0–M4+

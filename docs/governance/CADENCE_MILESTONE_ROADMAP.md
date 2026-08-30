@@ -68,10 +68,18 @@ intervention in normal workflow is not.
 
 ### Entry conditions
 
-- M0 closure evidence remains valid.
-- Pilot environment and data classification are approved.
-- Named pilot operator and support owner exist.
-- A recovery baseline exists before real project data is introduced.
+- M0 governance closure remains valid.
+- The M1 contract and approved slice boundaries are accepted.
+- VS-001 and VS-002 remain closed with no concrete frozen-contract violation.
+- Pilot environment, hosting, backup, and bootstrap decisions are understood
+  well enough to design M1 work.
+
+The detailed M1 contract, including the separate Pilot Activation Gate, is
+[`docs/milestones/M1_CONTROLLED_PILOT.md`](../milestones/M1_CONTROLLED_PILOT.md).
+Stable URLs, prepared users/project/roles, supervised worker execution,
+backup/restore, support ownership, and completed rehearsal are M1 deliverables
+and Pilot Activation prerequisites; they are not prerequisites for beginning
+M1 engineering.
 
 ### Required baseline capabilities
 
@@ -79,7 +87,8 @@ intervention in normal workflow is not.
 - Scheduled/supervised worker execution adequate for pilot volume.
 - Repeatable pilot project and account preparation.
 - Initial Owner/Manager/Sponsor and ordinary members established.
-- Durable Discussion reload so users can leave and return with context.
+- Durable Discussion reload so users can leave and return with context. This is
+  an M1/core-journey requirement, not an MVP-only requirement.
 - Working proposal review, Task materialisation, My Tasks, Members, and Task
   Audit journey.
 - Pilot logging, failure inspection, support, backup, and recovery runbook.
@@ -102,8 +111,9 @@ operations.
 - User login → project access → Discussion → worker → proposal review → Task →
   Audit succeeds without developer repair.
 - Users can return later and recover visible collaboration context.
-- Access denial, read-only roles, membership changes, and external participant
-  scenarios remain secure.
+- Access denial, read-only roles, and membership changes remain secure.
+  External participant scenarios are optional for the default internal pilot;
+  C25 remains mandatory by M3.
 - Pilot deployment, backup, restore/recovery, support, and failure procedures
   have named owners and one recorded rehearsal.
 - Pilot observations and incidents are recorded as evidence for M2.

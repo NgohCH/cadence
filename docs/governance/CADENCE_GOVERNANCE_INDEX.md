@@ -9,17 +9,20 @@ Read in this order before planning or changing a vertical slice:
    committed scope and intended outcomes.
 2. [Milestone Roadmap](CADENCE_MILESTONE_ROADMAP.md) — M0–M4+ sequencing and
    milestone gates.
-3. [Requirement Traceability](CADENCE_REQUIREMENT_TRACEABILITY.md) — canonical
+3. [Applicable Milestone Contract](../milestones/M1_CONTROLLED_PILOT.md) — the
+   current milestone's approved contract and gates.
+4. [Requirement Traceability](CADENCE_REQUIREMENT_TRACEABILITY.md) — canonical
    current status, implementation, evidence, gap, and closure ledger.
-4. [Change Control](CADENCE_CHANGE_CONTROL.md) — enhancement, evolution,
+5. [Change Control](CADENCE_CHANGE_CONTROL.md) — enhancement, evolution,
    incorporation, deferral, and vertical-slice governance rules.
-5. The current applicable vertical-slice contract.
-6. `HANDOFF.md` — current execution state and engineering handoff.
+6. The current applicable vertical-slice contract.
+7. `HANDOFF.md` — current execution state and engineering handoff.
 
 Authority rule: the Scope Baseline defines what Cadence must deliver. The
 Traceability Register records where it stands. The Milestone Roadmap sequences
 delivery. Change Control governs change. `HANDOFF.md` records current execution
 state and does not redefine, reduce, or supersede committed project scope.
 
-No governed baseline requirement may be moved beyond M3. Every future vertical slice
-must identify the baseline IDs it advances and update traceability at closure.
+No governed baseline requirement may be moved beyond M3. Every future vertical
+slice must identify the baseline IDs it advances and update traceability at
+closure.
