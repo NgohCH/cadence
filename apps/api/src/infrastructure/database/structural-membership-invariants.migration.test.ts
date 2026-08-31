@@ -12,6 +12,18 @@ const migration = readFileSync(
   "utf8"
 );
 
+const functionDefinition = (name: string): string => {
+  const definition = migration.match(
+    new RegExp(
+      `create\\s+or\\s+replace\\s+function\\s+public\\.${name}\\s*\\([^)]*\\)[\\s\\S]*?\\$\\$;`,
+      "i"
+    )
+  );
+
+  assert.ok(definition, `Missing R03C function definition: ${name}`);
+  return definition[0];
+};
+
 
 test(
   "R03C structurally excludes membership and role-period overlaps",
@@ -33,6 +45,66 @@ test(
       migration,
       /tstzrange\(effective_from, effective_to, '\[\)'\) with &&/i
     );
+  }
+);
+
+
+test(
+  "R03C elevates only the deferred internal wrappers",
+  () => {
+    const deferredWrappers = [
+      "enforce_membership_ordinary_role_coverage",
+      "enforce_assignment_ordinary_role_coverage",
+      "enforce_protected_assignment_transfer",
+    ];
+    const invokerFunctions = [
+      "enforce_role_assignment_within_membership",
+      "enforce_membership_period_contains_roles",
+      "enforce_canonical_membership_lifecycle",
+      "prevent_membership_termination_rewrite",
+      "enforce_project_role_transfer_consistency",
+      "assert_project_membership_ordinary_role_coverage",
+      "assert_protected_assignment_transfer",
+    ];
+
+    for (const name of deferredWrappers) {
+      const definition = functionDefinition(name);
+      assert.match(definition, /security\s+definer/i);
+      assert.match(
+        definition,
+        /set\s+search_path\s*=\s*public,\s*pg_temp/i
+      );
+    }
+
+    for (const name of invokerFunctions) {
+      const definition = functionDefinition(name);
+      assert.doesNotMatch(definition, /security\s+definer/i);
+      assert.match(
+        definition,
+        /set\s+search_path\s*=\s*public,\s*pg_temp/i
+      );
+    }
+
+    for (const name of [
+      ...deferredWrappers,
+      "assert_project_membership_ordinary_role_coverage",
+      "assert_protected_assignment_transfer",
+    ]) {
+      assert.match(
+        migration,
+        new RegExp(
+          `revoke\\s+all\\s+on\\s+function\\s+public\\.${name}\\s*\\([^)]*\\)\\s+from\\s+public,\\s*anon,\\s*authenticated`,
+          "i"
+        )
+      );
+      assert.doesNotMatch(
+        migration,
+        new RegExp(
+          `grant\\s+execute\\s+on\\s+function\\s+public\\.${name}`,
+          "i"
+        )
+      );
+    }
   }
 );
 

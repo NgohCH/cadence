@@ -429,6 +429,7 @@ create or replace function
   public.enforce_membership_ordinary_role_coverage()
 returns trigger
 language plpgsql
+security definer
 set search_path = public, pg_temp
 as $$
 begin
@@ -447,6 +448,7 @@ create or replace function
   public.enforce_assignment_ordinary_role_coverage()
 returns trigger
 language plpgsql
+security definer
 set search_path = public, pg_temp
 as $$
 begin
@@ -641,6 +643,7 @@ create or replace function
   public.enforce_protected_assignment_transfer()
 returns trigger
 language plpgsql
+security definer
 set search_path = public, pg_temp
 as $$
 begin
