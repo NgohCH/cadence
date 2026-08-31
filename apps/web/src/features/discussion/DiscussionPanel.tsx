@@ -150,7 +150,8 @@ export function DiscussionPanel({
     trimmedContent.length <= 20000 &&
     !currentComposer.sending &&
     !discussion.loading &&
-    !discussion.error
+    !discussion.error &&
+    !discussion.refreshing
 
 
   async function handleSubmit(
@@ -321,10 +322,37 @@ export function DiscussionPanel({
             and Team Agent.
           </p>
         </div>
+
+        {!discussion.error &&
+          (!discussion.loading ||
+            discussion.refreshing) && (
+          <div className="panel-actions">
+            <button
+              type="button"
+              disabled={
+                discussion.refreshing ||
+                currentComposer.sending
+              }
+              onClick={
+                () => {
+                  discussion.refresh()
+                }
+              }
+            >
+              Refresh
+            </button>
+
+            {discussion.refreshing && (
+              <span className="muted">
+                Refreshing discussion…
+              </span>
+            )}
+          </div>
+        )}
       </header>
 
       <div className="discussion-content">
-        {discussion.loading ? (
+        {discussion.loading && !discussion.error ? (
           <div className="discussion-state">
             Loading Discussion messages...
           </div>
@@ -335,6 +363,24 @@ export function DiscussionPanel({
           >
             Unable to load persisted Discussion messages:{' '}
             {discussion.error}
+
+            {discussion.loading && (
+              <span className="muted">
+                Retrying discussion…
+              </span>
+            )}
+
+            <button
+              type="button"
+              disabled={discussion.loading}
+              onClick={
+                () => {
+                  discussion.retry()
+                }
+              }
+            >
+              Retry
+            </button>
           </div>
         ) : discussion.messages.length === 0 ? (
           <div className="discussion-empty">
@@ -386,6 +432,17 @@ export function DiscussionPanel({
             )}
           </div>
         )}
+
+        {!discussion.loading &&
+          !discussion.error &&
+          discussion.refreshError && (
+          <div
+            className="discussion-state discussion-refresh-error"
+            role="alert"
+          >
+            Could not refresh discussion.
+          </div>
+        )}
       </div>
 
       <form
@@ -407,7 +464,8 @@ export function DiscussionPanel({
             disabled={
               currentComposer.sending ||
               discussion.loading ||
-              Boolean(discussion.error)
+              Boolean(discussion.error) ||
+              discussion.refreshing
             }
             onChange={
               (event) => {

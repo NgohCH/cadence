@@ -27,7 +27,23 @@ interface DiscussionSnapshot {
   projectId: string
   messages: DiscussionMessage[]
   loading: boolean
+  refreshing: boolean
   error: string | null
+  refreshError: string | null
+}
+
+type ReadMode =
+  | 'initial'
+  | 'refresh'
+
+
+function errorMessage(
+  loadError: unknown,
+  fallback: string,
+): string {
+  return loadError instanceof Error
+    ? loadError.message
+    : fallback
 }
 
 
@@ -42,15 +58,32 @@ export function useDiscussionMessages(
       projectId,
       messages: [],
       loading: true,
+      refreshing: false,
       error: null,
+      refreshError: null,
     })
 
   const projectIdRef =
     useRef(projectId)
 
+  const visitGenerationRef =
+    useRef(0)
+  const readRequestGenerationRef =
+    useRef(0)
+  const readPendingRef =
+    useRef(false)
+
   useLayoutEffect(
     () => {
-      projectIdRef.current = projectId
+      if (
+        projectIdRef.current !==
+        projectId
+      ) {
+        projectIdRef.current = projectId
+        visitGenerationRef.current += 1
+        readRequestGenerationRef.current = 0
+        readPendingRef.current = false
+      }
     },
     [projectId],
   )
@@ -58,77 +91,86 @@ export function useDiscussionMessages(
   const mountedRef =
     useRef(false)
 
+  const startRead =
+    useCallback(
+      (mode: ReadMode) => {
+        if (
+          !mountedRef.current ||
+          projectIdRef.current !==
+            projectId ||
+          readPendingRef.current
+        ) {
+          return
+        }
 
-  useEffect(
-    () => {
-      let active = true
+        const visitGeneration =
+          visitGenerationRef.current
+        const requestGeneration =
+          readRequestGenerationRef.current +
+          1
 
-      mountedRef.current = true
-      setSnapshot({
-        projectId,
-        messages: [],
-        loading: true,
-        error: null,
-      })
+        readRequestGenerationRef.current =
+          requestGeneration
+        readPendingRef.current = true
 
-      void apiFetch<
-        ApiSuccess<DiscussionMessagesResponse>
-      >(
-        `/api/v1/projects/${encodeURIComponent(projectId)}/messages`,
-      )
-        .then(
-          (response) => {
-            if (active) {
-              setSnapshot(
-                (current) => {
-                  if (
-                    current.projectId !==
-                    projectId
-                  ) {
-                    return current
-                  }
+        if (mode === 'initial') {
+          setSnapshot(
+            (current) => ({
+              projectId,
+              messages: [],
+              loading: true,
+              refreshing: false,
+              error:
+                current.projectId ===
+                projectId
+                  ? current.error
+                  : null,
+              refreshError: null,
+            }),
+          )
+        } else {
+          setSnapshot(
+            (current) => {
+              if (
+                current.projectId !==
+                  projectId ||
+                current.loading ||
+                current.error ||
+                current.refreshing
+              ) {
+                return current
+              }
 
-                  return {
-                    projectId,
-                    messages:
-                      response.data.messages,
-                    loading: false,
-                    error: null,
-                  }
-                },
-              )
-            }
-          },
+              return {
+                ...current,
+                refreshing: true,
+                refreshError: null,
+              }
+            },
+          )
+        }
+
+        const isCurrentRead =
+          () =>
+            mountedRef.current &&
+            projectIdRef.current ===
+              projectId &&
+            visitGenerationRef.current ===
+              visitGeneration &&
+            readRequestGenerationRef.current ===
+              requestGeneration
+
+        void apiFetch<
+          ApiSuccess<DiscussionMessagesResponse>
+        >(
+          `/api/v1/projects/${encodeURIComponent(projectId)}/messages`,
         )
-        .catch(
-          (loadError: unknown) => {
-            if (active) {
-              setSnapshot(
-                (current) => {
-                  if (
-                    current.projectId !==
-                    projectId
-                  ) {
-                    return current
-                  }
+          .then(
+            (response) => {
+              if (!isCurrentRead()) {
+                return
+              }
 
-                  return {
-                    projectId,
-                    messages: [],
-                    loading: false,
-                    error:
-                      loadError instanceof Error
-                        ? loadError.message
-                        : 'Unable to load Discussion messages.',
-                  }
-                },
-              )
-            }
-          },
-        )
-        .finally(
-          () => {
-            if (active) {
               setSnapshot(
                 (current) => {
                   if (
@@ -140,29 +182,142 @@ export function useDiscussionMessages(
 
                   return {
                     ...current,
+                    messages:
+                      response.data.messages,
                     loading: false,
+                    refreshing: false,
+                    error: null,
+                    refreshError: null,
                   }
                 },
               )
-            }
-          },
-        )
+            },
+          )
+          .catch(
+            (loadError: unknown) => {
+              if (!isCurrentRead()) {
+                return
+              }
+
+              setSnapshot(
+                (current) => {
+                  if (
+                    current.projectId !==
+                    projectId
+                  ) {
+                    return current
+                  }
+
+                  if (mode === 'refresh') {
+                    return {
+                      ...current,
+                      loading: false,
+                      refreshing: false,
+                      refreshError:
+                        errorMessage(
+                          loadError,
+                          'Unable to refresh Discussion messages.',
+                        ),
+                    }
+                  }
+
+                  return {
+                    ...current,
+                    messages: [],
+                    loading: false,
+                    refreshing: false,
+                    error:
+                      errorMessage(
+                        loadError,
+                        'Unable to load Discussion messages.',
+                      ),
+                    refreshError: null,
+                  }
+                },
+              )
+            },
+          )
+          .finally(
+            () => {
+              if (!isCurrentRead()) {
+                return
+              }
+
+              readPendingRef.current = false
+
+              setSnapshot(
+                (current) => {
+                  if (
+                    current.projectId !==
+                    projectId
+                  ) {
+                    return current
+                  }
+
+                  return {
+                    ...current,
+                    loading:
+                      mode === 'initial'
+                        ? false
+                        : current.loading,
+                    refreshing:
+                      mode === 'refresh'
+                        ? false
+                        : current.refreshing,
+                  }
+                },
+              )
+            },
+          )
+      },
+      [
+        projectId,
+      ],
+    )
+
+
+  useEffect(
+    () => {
+      mountedRef.current = true
+      startRead('initial')
 
       return () => {
-        active = false
-
         if (
           projectIdRef.current ===
           projectId
         ) {
           mountedRef.current = false
+          readPendingRef.current = false
         }
       }
     },
     [
       projectId,
+      startRead,
     ],
   )
+
+
+  const refresh =
+    useCallback(
+      () => {
+        startRead('refresh')
+      },
+      [
+        startRead,
+      ],
+    )
+
+
+  const retry =
+    useCallback(
+      () => {
+        startRead('initial')
+      },
+      [
+        startRead,
+      ],
+    )
 
 
   const appendMessage =
@@ -213,7 +368,9 @@ export function useDiscussionMessages(
           projectId,
           messages: [],
           loading: true,
+          refreshing: false,
           error: null,
+          refreshError: null,
         }
 
 
@@ -222,8 +379,14 @@ export function useDiscussionMessages(
       currentSnapshot.messages,
     loading:
       currentSnapshot.loading,
+    refreshing:
+      currentSnapshot.refreshing,
     error:
       currentSnapshot.error,
+    refreshError:
+      currentSnapshot.refreshError,
+    refresh,
+    retry,
     appendMessage,
   }
 }

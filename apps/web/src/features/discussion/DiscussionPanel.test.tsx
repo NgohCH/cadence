@@ -1155,3 +1155,504 @@ describe('VS003 Stage 4 DiscussionPanel', () => {
     )
   })
 })
+
+
+describe('VS003 Stage 5 manual Discussion convergence', () => {
+  it('exposes Refresh after a successful initial load', async () => {
+    renderPanel()
+
+    expect(
+      await screen.findByRole('button', { name: 'Refresh' }),
+    ).toBeTruthy()
+  })
+
+  it('issues a fresh GET for the exact current project when Refresh is clicked', async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([]))
+      .mockResolvedValueOnce(success([]))
+
+    renderPanel('project-a')
+    await screen.findByText('No persisted Discussion messages yet.')
+
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: 'Refresh' }),
+    )
+
+    await waitFor(() => {
+      expect(apiFetch).toHaveBeenCalledTimes(2)
+    })
+    expect(apiFetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/projects/project-a/messages',
+    )
+  })
+
+  it('keeps existing messages visible and shows refresh progress while Refresh is pending', async () => {
+    let resolveRefresh: (
+      value: ApiSuccess<{ messages: DiscussionMessage[] }>,
+    ) => void = () => undefined
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([
+        message({ content: 'Existing message' }),
+      ]))
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveRefresh = resolve
+      }))
+
+    renderPanel()
+    await screen.findByText('Existing message')
+
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: 'Refresh' }),
+    )
+
+    expect(screen.getByText('Existing message')).toBeTruthy()
+    expect(screen.getByText('Refreshing discussion…')).toBeTruthy()
+
+    resolveRefresh(success([
+      message({ content: 'Refreshed message' }),
+    ]))
+    expect(await screen.findByText('Refreshed message')).toBeTruthy()
+    expect(screen.queryByText('Existing message')).toBeNull()
+  })
+
+  it('cannot trigger another Refresh while the current refresh is pending', async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([]))
+      .mockReturnValueOnce(new Promise(() => undefined))
+
+    renderPanel()
+    await screen.findByText('No persisted Discussion messages yet.')
+
+    const user = userEvent.setup()
+    const refresh = screen.getByRole('button', {
+      name: 'Refresh',
+    }) as HTMLButtonElement
+    await user.click(refresh)
+    expect(refresh.disabled).toBe(true)
+
+    await user.click(refresh)
+    expect(apiFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('replaces the current list with a successful Refresh in API order', async () => {
+    const first = message({
+      id: 'message-first',
+      content: 'First refreshed message',
+    })
+    const second = message({
+      id: 'message-second',
+      content: 'Second refreshed message',
+    })
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([
+        message({ content: 'Old message' }),
+      ]))
+      .mockResolvedValueOnce(success([second, first]))
+
+    renderPanel()
+    await screen.findByText('Old message')
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: 'Refresh' }),
+    )
+
+    const firstMessage = await screen.findByText(
+      'Second refreshed message',
+    )
+    const secondMessage = screen.getByText(
+      'First refreshed message',
+    )
+    expect(screen.queryByText('Old message')).toBeNull()
+    expect(
+      firstMessage.compareDocumentPosition(secondMessage) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('shows an external committed message only after manual Refresh', async () => {
+    const participantMessage = message({
+      id: 'participant-message',
+      author_user_id: 'participant-456789',
+      content: 'Message committed by another participant',
+    })
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([
+        message({ content: 'Message A' }),
+      ]))
+      .mockResolvedValueOnce(success([
+        message({ content: 'Message A' }),
+        participantMessage,
+      ]))
+
+    renderPanel()
+    await screen.findByText('Message A')
+    expect(
+      screen.queryByText('Message committed by another participant'),
+    ).toBeNull()
+
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: 'Refresh' }),
+    )
+
+    expect(
+      await screen.findByText('Message committed by another participant'),
+    ).toBeTruthy()
+  })
+
+  it('keeps valid messages visible and reports a non-blocking Refresh failure', async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([
+        message({ content: 'Still visible after failure' }),
+      ]))
+      .mockRejectedValueOnce(new Error('Refresh unavailable'))
+
+    renderPanel()
+    await screen.findByText('Still visible after failure')
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: 'Refresh' }),
+    )
+
+    expect(
+      await screen.findByText('Could not refresh discussion.'),
+    ).toBeTruthy()
+    expect(screen.getByText('Still visible after failure')).toBeTruthy()
+    expect(
+      screen.queryByText(/Unable to load persisted Discussion messages/i),
+    ).toBeNull()
+  })
+
+  it('allows a later Refresh to recover from a Refresh failure', async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([
+        message({ content: 'Before recovery' }),
+      ]))
+      .mockRejectedValueOnce(new Error('Temporary refresh failure'))
+      .mockResolvedValueOnce(success([
+        message({ content: 'After recovery' }),
+      ]))
+
+    renderPanel()
+    await screen.findByText('Before recovery')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    await screen.findByText('Could not refresh discussion.')
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    expect(await screen.findByText('After recovery')).toBeTruthy()
+    expect(screen.queryByText('Could not refresh discussion.')).toBeNull()
+  })
+
+  it('exposes blocking Retry and keeps posting disabled after an initial read failure', async () => {
+    vi.mocked(apiFetch).mockRejectedValueOnce(
+      new Error('Initial read failed'),
+    )
+
+    renderPanel()
+    await screen.findByText(
+      'Unable to load persisted Discussion messages: Initial read failed',
+    )
+
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
+    expect(
+      (screen.getByPlaceholderText('Write a project message...') as HTMLTextAreaElement)
+        .disabled,
+    ).toBe(true)
+  })
+
+  it('issues a fresh GET and shows retry progress without duplicate Retry requests', async () => {
+    vi.mocked(apiFetch)
+      .mockRejectedValueOnce(new Error('Initial read failed'))
+      .mockReturnValueOnce(new Promise(() => undefined))
+
+    renderPanel()
+    await screen.findByText(
+      'Unable to load persisted Discussion messages: Initial read failed',
+    )
+
+    const user = userEvent.setup()
+    const retry = screen.getByRole('button', {
+      name: 'Retry',
+    }) as HTMLButtonElement
+    await user.click(retry)
+
+    expect(screen.getByText('Retrying discussion…')).toBeTruthy()
+    expect(retry.disabled).toBe(true)
+    await user.click(retry)
+    expect(apiFetch).toHaveBeenCalledTimes(2)
+    expect(apiFetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/projects/project-a/messages',
+    )
+  })
+
+  it('exits the blocking error state and renders messages after successful Retry', async () => {
+    vi.mocked(apiFetch)
+      .mockRejectedValueOnce(new Error('Initial read failed'))
+      .mockResolvedValueOnce(success([
+        message({ content: 'Recovered persisted message' }),
+      ]))
+
+    renderPanel()
+    await screen.findByText(
+      'Unable to load persisted Discussion messages: Initial read failed',
+    )
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: 'Retry' }),
+    )
+
+    expect(await screen.findByText('Recovered persisted message')).toBeTruthy()
+    expect(
+      screen.queryByText(/Unable to load persisted Discussion messages/i),
+    ).toBeNull()
+    expect(
+      (screen.getByPlaceholderText('Write a project message...') as HTMLTextAreaElement)
+        .disabled,
+    ).toBe(false)
+  })
+
+  it('keeps failed Retry recoverable in the blocking error state', async () => {
+    vi.mocked(apiFetch)
+      .mockRejectedValueOnce(new Error('Initial read failed'))
+      .mockRejectedValueOnce(new Error('Retry failed'))
+
+    renderPanel()
+    await screen.findByText(
+      'Unable to load persisted Discussion messages: Initial read failed',
+    )
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(
+      await screen.findByText(
+        'Unable to load persisted Discussion messages: Retry failed',
+      ),
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
+    expect(screen.queryByText('No persisted Discussion messages yet.')).toBeNull()
+  })
+
+  it('disables posting while manual Refresh is pending', async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([]))
+      .mockReturnValueOnce(new Promise(() => undefined))
+
+    renderPanel()
+    await screen.findByText('No persisted Discussion messages yet.')
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: 'Refresh' }),
+    )
+
+    expect(
+      (screen.getByPlaceholderText('Write a project message...') as HTMLTextAreaElement)
+        .disabled,
+    ).toBe(true)
+    expect(
+      (screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
+  })
+
+  it('disables Refresh while POST is sending', async () => {
+    let resolvePost: (
+      value: ApiSuccess<DiscussionMessage>,
+    ) => void = () => undefined
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([]))
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolvePost = resolve
+      }))
+
+    renderPanel()
+    await screen.findByText('No persisted Discussion messages yet.')
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByPlaceholderText('Write a project message...'),
+      'Message while refresh is blocked',
+    )
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(
+      (screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
+    expect(apiFetch).toHaveBeenCalledTimes(2)
+
+    resolvePost({
+      success: true,
+      data: message({ content: 'Message while refresh is blocked' }),
+      meta: success([]).meta,
+    })
+    expect(
+      await screen.findByText('Message while refresh is blocked'),
+    ).toBeTruthy()
+    expect(
+      (screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false)
+  })
+
+  it('rejects a stale Refresh completion after switching from Project A to Project B', async () => {
+    let resolveProjectARefresh: (
+      value: ApiSuccess<{ messages: DiscussionMessage[] }>,
+    ) => void = () => undefined
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([
+        message({ content: 'Project A message' }),
+      ]))
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveProjectARefresh = resolve
+      }))
+      .mockResolvedValueOnce(success([
+        message({
+          project_id: 'project-b',
+          content: 'Project B message',
+        }),
+      ]))
+
+    const { rerender } = renderPanel('project-a')
+    await screen.findByText('Project A message')
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: 'Refresh' }),
+    )
+
+    rerender(
+      <DiscussionPanel
+        currentUserId={currentUserId}
+        projectId="project-b"
+      />,
+    )
+    await screen.findByText('Project B message')
+
+    resolveProjectARefresh(success([
+      message({ content: 'Stale Project A refresh result' }),
+    ]))
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByText('Stale Project A refresh result')).toBeNull()
+    expect(screen.queryByText('Could not refresh discussion.')).toBeNull()
+    expect(screen.getByText('Project B message')).toBeTruthy()
+  })
+
+  it('rejects a stale Refresh failure and finally after switching from Project A to Project B', async () => {
+    let rejectProjectARefresh: (
+      reason?: unknown,
+    ) => void = () => undefined
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([
+        message({ content: 'Project A message' }),
+      ]))
+      .mockReturnValueOnce(new Promise((_, reject) => {
+        rejectProjectARefresh = reject
+      }))
+      .mockResolvedValueOnce(success([
+        message({
+          project_id: 'project-b',
+          content: 'Project B message',
+        }),
+      ]))
+
+    const { rerender } = renderPanel('project-a')
+    await screen.findByText('Project A message')
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: 'Refresh' }),
+    )
+
+    rerender(
+      <DiscussionPanel
+        currentUserId={currentUserId}
+        projectId="project-b"
+      />,
+    )
+    await screen.findByText('Project B message')
+
+    rejectProjectARefresh(new Error('Stale Project A refresh failure'))
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('Project B message')).toBeTruthy()
+    expect(screen.queryByText('Stale Project A refresh failure')).toBeNull()
+    expect(screen.queryByText('Could not refresh discussion.')).toBeNull()
+    expect(screen.queryByText('Refreshing discussion…')).toBeNull()
+  })
+
+  it('issues a new GET and reconstructs persisted messages after unmount and remount', async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([
+        message({ content: 'Before remount' }),
+      ]))
+      .mockResolvedValueOnce(success([
+        message({ content: 'After remount' }),
+      ]))
+
+    const first = renderPanel()
+    await screen.findByText('Before remount')
+    first.unmount()
+
+    renderPanel()
+    expect(await screen.findByText('After remount')).toBeTruthy()
+    expect(apiFetch).toHaveBeenCalledTimes(2)
+    expect(apiFetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/projects/project-a/messages',
+    )
+  })
+
+  it('uses a fresh GET when leaving and returning to the same project', async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(success([
+        message({ content: 'Initial Project A message' }),
+      ]))
+      .mockResolvedValueOnce(success([
+        message({
+          project_id: 'project-b',
+          content: 'Project B message',
+        }),
+      ]))
+      .mockResolvedValueOnce(success([
+        message({ content: 'Current Project A message' }),
+      ]))
+
+    const { rerender } = renderPanel('project-a')
+    await screen.findByText('Initial Project A message')
+
+    rerender(
+      <DiscussionPanel
+        currentUserId={currentUserId}
+        projectId="project-b"
+      />,
+    )
+    await screen.findByText('Project B message')
+
+    rerender(
+      <DiscussionPanel
+        currentUserId={currentUserId}
+        projectId="project-a"
+      />,
+    )
+    expect(await screen.findByText('Current Project A message')).toBeTruthy()
+    expect(screen.queryByText('Initial Project A message')).toBeNull()
+    expect(apiFetch).toHaveBeenCalledTimes(3)
+    expect(apiFetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/projects/project-a/messages',
+    )
+  })
+
+  it('does not issue an automatic additional GET while Discussion is idle', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce(success([
+      message({ content: 'Idle persisted message' }),
+    ]))
+
+    renderPanel()
+    await screen.findByText('Idle persisted message')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(apiFetch).toHaveBeenCalledTimes(1)
+  })
+})
