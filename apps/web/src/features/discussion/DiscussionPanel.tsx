@@ -1,4 +1,7 @@
 import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
   useState,
   type FormEvent,
 } from 'react'
@@ -15,47 +18,139 @@ import type {
   DiscussionMessage,
 } from '../../types/discussion'
 
+import {
+  useDiscussionMessages,
+} from './useDiscussionMessages'
+
 
 interface DiscussionPanelProps {
   projectId: string
+  currentUserId: string
+}
+
+interface ComposerSnapshot {
+  projectId: string
+  generation: number
+  content: string
+  postError: string | null
+  sending: boolean
+}
+
+
+function authorLabel(
+  message: DiscussionMessage,
+  currentUserId: string,
+): string {
+  if (
+    message.author_type ===
+    'agent'
+  ) {
+    return 'Team Agent'
+  }
+
+  if (
+    message.author_type ===
+    'system'
+  ) {
+    return 'System'
+  }
+
+  if (
+    message.author_user_id ===
+    currentUserId
+  ) {
+    return 'You'
+  }
+
+  return `Participant ${message.author_user_id?.slice(0, 11) ?? 'unknown'}`
 }
 
 
 export function DiscussionPanel({
   projectId,
+  currentUserId,
 }: DiscussionPanelProps) {
-  const [
-    content,
-    setContent,
-  ] =
-    useState('')
+  const committedProjectRef =
+    useRef(projectId)
+  const visitGenerationRef =
+    useRef(0)
+  const currentVisitGeneration =
+    committedProjectRef.current ===
+    projectId
+      ? visitGenerationRef.current
+      : visitGenerationRef.current + 1
+
+  useLayoutEffect(
+    () => {
+      if (
+        committedProjectRef.current !==
+        projectId
+      ) {
+        committedProjectRef.current =
+          projectId
+        visitGenerationRef.current += 1
+      }
+    },
+    [projectId],
+  )
 
   const [
-    messages,
-    setMessages,
+    composerSnapshot,
+    setComposerSnapshot,
   ] =
-    useState<DiscussionMessage[]>([])
+    useState<ComposerSnapshot>({
+      projectId,
+      generation:
+        currentVisitGeneration,
+      content: '',
+      postError: null,
+      sending: false,
+    })
 
-  const [
-    sending,
-    setSending,
-  ] =
-    useState(false)
+  const mountedRef =
+    useRef(false)
 
-  const [
-    error,
-    setError,
-  ] =
-    useState<string | null>(null)
+  useEffect(
+    () => {
+      mountedRef.current = true
+
+      return () => {
+        mountedRef.current = false
+      }
+    },
+    [],
+  )
+
+  const discussion =
+    useDiscussionMessages(
+      projectId,
+    )
+
+  const currentComposer =
+    composerSnapshot.projectId ===
+      projectId &&
+    composerSnapshot.generation ===
+      currentVisitGeneration
+      ? composerSnapshot
+      : {
+          projectId,
+          generation:
+            currentVisitGeneration,
+          content: '',
+          postError: null,
+          sending: false,
+        }
 
 
   const trimmedContent =
-    content.trim()
+    currentComposer.content.trim()
 
   const canSend =
     trimmedContent.length > 0 &&
     trimmedContent.length <= 20000 &&
-    !sending
+    !currentComposer.sending &&
+    !discussion.loading &&
+    !discussion.error
 
 
   async function handleSubmit(
@@ -68,8 +163,39 @@ export function DiscussionPanel({
     }
 
 
-    setSending(true)
-    setError(null)
+    const initiatingProjectId =
+      projectId
+    const initiatingVisitGeneration =
+      currentVisitGeneration
+
+    if (
+      !mountedRef.current ||
+      committedProjectRef.current !==
+        initiatingProjectId ||
+      visitGenerationRef.current !==
+        initiatingVisitGeneration
+    ) {
+      return
+    }
+
+    setComposerSnapshot(
+      (current) => {
+        if (
+          current.projectId !==
+            initiatingProjectId ||
+          current.generation !==
+            initiatingVisitGeneration
+        ) {
+          return current
+        }
+
+        return {
+          ...current,
+          sending: true,
+          postError: null,
+        }
+      },
+    )
 
 
     try {
@@ -92,24 +218,92 @@ export function DiscussionPanel({
         )
 
 
-      setMessages(
-        (current) => [
-          ...current,
+      if (
+        mountedRef.current &&
+        committedProjectRef.current ===
+          initiatingProjectId &&
+        visitGenerationRef.current ===
+          initiatingVisitGeneration
+      ) {
+        discussion.appendMessage(
           response.data,
-        ],
-      )
+        )
 
-      setContent('')
+        setComposerSnapshot(
+          (current) => {
+            if (
+              current.projectId !==
+                initiatingProjectId ||
+              current.generation !==
+                initiatingVisitGeneration
+            ) {
+              return current
+            }
+
+            return {
+              ...current,
+              content: '',
+            }
+          },
+        )
+      }
     } catch (
       postError: unknown
     ) {
-      setError(
-        postError instanceof Error
-          ? postError.message
-          : 'Unable to post the message.',
-      )
+      if (
+        mountedRef.current &&
+        committedProjectRef.current ===
+          initiatingProjectId &&
+        visitGenerationRef.current ===
+          initiatingVisitGeneration
+      ) {
+        setComposerSnapshot(
+          (current) => {
+            if (
+              current.projectId !==
+                initiatingProjectId ||
+              current.generation !==
+                initiatingVisitGeneration
+            ) {
+              return current
+            }
+
+            return {
+              ...current,
+              postError:
+                postError instanceof Error
+                  ? postError.message
+                  : 'Unable to post the message.',
+            }
+          },
+        )
+      }
     } finally {
-      setSending(false)
+      if (
+        mountedRef.current &&
+        committedProjectRef.current ===
+          initiatingProjectId &&
+        visitGenerationRef.current ===
+          initiatingVisitGeneration
+      ) {
+        setComposerSnapshot(
+          (current) => {
+            if (
+              current.projectId !==
+                initiatingProjectId ||
+              current.generation !==
+                initiatingVisitGeneration
+            ) {
+              return current
+            }
+
+            return {
+              ...current,
+              sending: false,
+            }
+          },
+        )
+      }
     }
   }
 
@@ -130,28 +324,47 @@ export function DiscussionPanel({
       </header>
 
       <div className="discussion-content">
-        {messages.length === 0 ? (
+        {discussion.loading ? (
+          <div className="discussion-state">
+            Loading Discussion messages...
+          </div>
+        ) : discussion.error ? (
+          <div
+            className="discussion-state discussion-read-error"
+            role="alert"
+          >
+            Unable to load persisted Discussion messages:{' '}
+            {discussion.error}
+          </div>
+        ) : discussion.messages.length === 0 ? (
           <div className="discussion-empty">
             <strong>
-              Start the discussion.
+              No persisted Discussion messages yet.
             </strong>
 
             <p>
-              Messages posted in this browser
-              session will appear here.
+              Start a durable project conversation.
             </p>
           </div>
         ) : (
           <div className="message-list">
-            {messages.map(
+            {discussion.messages.map(
               (message) => (
                 <article
                   className="discussion-message"
                   key={message.id}
                 >
                   <div className="message-meta">
-                    <strong>
-                      You
+                    <strong
+                      title={
+                        message.author_user_id ??
+                        undefined
+                      }
+                    >
+                      {authorLabel(
+                        message,
+                        currentUserId,
+                      )}
                     </strong>
 
                     <time
@@ -190,12 +403,40 @@ export function DiscussionPanel({
             rows={3}
             maxLength={20000}
             placeholder="Write a project message..."
-            value={content}
-            disabled={sending}
+            value={currentComposer.content}
+            disabled={
+              currentComposer.sending ||
+              discussion.loading ||
+              Boolean(discussion.error)
+            }
             onChange={
               (event) => {
-                setContent(
-                  event.target.value,
+                const nextContent =
+                  event.target.value
+
+                setComposerSnapshot(
+                  (current) => {
+                    if (
+                      current.projectId !==
+                        projectId ||
+                      current.generation !==
+                        currentVisitGeneration
+                    ) {
+                      return {
+                        projectId,
+                        generation:
+                          currentVisitGeneration,
+                        content: nextContent,
+                        postError: null,
+                        sending: false,
+                      }
+                    }
+
+                    return {
+                      ...current,
+                      content: nextContent,
+                    }
+                  },
                 )
               }
             }
@@ -203,16 +444,16 @@ export function DiscussionPanel({
 
           <div className="composer-meta">
             <span>
-              {content.length.toLocaleString()}
+              {currentComposer.content.length.toLocaleString()}
               /20,000
             </span>
 
-            {error && (
+            {currentComposer.postError && (
               <span
                 className="composer-error"
                 role="alert"
               >
-                {error}
+                {currentComposer.postError}
               </span>
             )}
           </div>
@@ -222,7 +463,7 @@ export function DiscussionPanel({
           type="submit"
           disabled={!canSend}
         >
-          {sending
+          {currentComposer.sending
             ? 'Sending...'
             : 'Send'}
         </button>
