@@ -53,6 +53,8 @@ begin
   )
   into v_definition;
 
+  v_definition := replace(v_definition, E'\r\n', E'\n');
+  v_definition := replace(v_definition, E'\r', E'\n');
   v_original := v_definition;
 
   v_definition := replace(
@@ -92,6 +94,8 @@ begin
   )
   into v_definition;
 
+  v_definition := replace(v_definition, E'\r\n', E'\n');
+  v_definition := replace(v_definition, E'\r', E'\n');
   v_original := v_definition;
   v_definition := replace(
     v_definition,
@@ -116,6 +120,8 @@ begin
   )
   into v_definition;
 
+  v_definition := replace(v_definition, E'\r\n', E'\n');
+  v_definition := replace(v_definition, E'\r', E'\n');
   v_original := v_definition;
   v_definition := replace(
     v_definition,
