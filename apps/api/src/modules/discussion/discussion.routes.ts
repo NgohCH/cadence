@@ -31,6 +31,108 @@ export function createDiscussionRouter(
 ): Router {
   const router = Router();
 
+  router.get(
+    "/projects/:projectId/messages",
+    async (req, res, next) => {
+      const authenticated =
+        res.locals.authenticated as AuthenticatedRequestState;
+
+      const { context } = authenticated;
+
+      try {
+        const projectId =
+          req.params.projectId;
+
+        if (!isUuid(projectId)) {
+          res.status(400).json(
+            failure(
+              "VALIDATION_ERROR",
+              "Project ID must be a valid UUID.",
+              context.correlationId
+            )
+          );
+
+          return;
+        }
+
+        const messages =
+          await discussionService.listProjectMessages(
+            context,
+            projectId
+          );
+
+        res.status(200).json(
+          success(
+            {
+              messages: messages.map(
+                (message) => ({
+                  id: message.id,
+                  project_id:
+                    message.projectId,
+                  author_user_id:
+                    message.authorUserId,
+                  author_type:
+                    message.authorType,
+                  thread_parent_id:
+                    message.threadParentId,
+                  current_version:
+                    message.currentVersion,
+                  content:
+                    message.content,
+                  created_at:
+                    message.createdAt,
+                  edited_at:
+                    message.editedAt,
+                })
+              ),
+            },
+            {
+              correlation_id:
+                context.correlationId,
+
+              request_id:
+                context.requestId,
+
+              next_cursor: null,
+            }
+          )
+        );
+      } catch (error) {
+        if (
+          error instanceof
+          DiscussionProjectNotFoundError
+        ) {
+          res.status(404).json(
+            failure(
+              "NOT_FOUND",
+              "Project not found.",
+              context.correlationId
+            )
+          );
+
+          return;
+        }
+
+        if (
+          error instanceof
+          DiscussionPermissionDeniedError
+        ) {
+          res.status(403).json(
+            failure(
+              "PERMISSION_DENIED",
+              "You do not have permission to view messages in this project.",
+              context.correlationId
+            )
+          );
+
+          return;
+        }
+
+        next(error);
+      }
+    }
+  );
+
   router.post(
     "/projects/:projectId/messages",
     async (req, res, next) => {
