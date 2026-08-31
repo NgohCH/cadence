@@ -110,17 +110,27 @@ class FakeDiscussionAuthorisationService
       projectId: string;
     }> = [];
 
-
   constructor(
     private readonly result:
-      EffectiveProjectAuthorisation
+      EffectiveProjectAuthorisation,
+
+    private readonly failure:
+      Error | null = null,
+
+    private readonly events:
+      string[] = []
   ) {}
+
 
 
   async getEffectiveProjectAuthorisation(
     requestedPersonId: string,
     requestedProjectId: string
   ): Promise<EffectiveProjectAuthorisation> {
+    this.events.push(
+      "authorisation"
+    );
+
     this.calls.push({
       personId:
         requestedPersonId,
@@ -128,6 +138,10 @@ class FakeDiscussionAuthorisationService
       projectId:
         requestedProjectId,
     });
+
+    if (this.failure) {
+      throw this.failure;
+    }
 
     return this.result;
   }
@@ -142,6 +156,17 @@ class FakeDiscussionRepository
 
   public versions:
     DiscussionMessageVersion[] = [];
+
+  public messages:
+    DiscussionMessage[] = [];
+
+  public listProjectIds:
+    string[] = [];
+
+  constructor(
+    private readonly events:
+      string[] = []
+  ) {}
 
 
   async createMessage(
@@ -180,8 +205,18 @@ class FakeDiscussionRepository
   }
 
 
-  async listProjectMessages(): Promise<DiscussionMessage[]> {
-    return [];
+  async listProjectMessages(
+    requestedProjectId: string
+  ): Promise<DiscussionMessage[]> {
+    this.events.push(
+      "repository"
+    );
+
+    this.listProjectIds.push(
+      requestedProjectId
+    );
+
+    return this.messages;
   }
 
 
@@ -207,20 +242,30 @@ class FakeDiscussionRepository
 
 function createService(
   result:
-    EffectiveProjectAuthorisation = authorisation()
+    EffectiveProjectAuthorisation = authorisation(),
+
+  failure:
+    Error | null = null
 ): {
   service: DiscussionService;
   repository: FakeDiscussionRepository;
   authorisationService:
     FakeDiscussionAuthorisationService;
+  events: string[];
 } {
+  const events: string[] = [];
+
   const authorisationService =
     new FakeDiscussionAuthorisationService(
-      result
+      result,
+      failure,
+      events
     );
 
   const repository =
-    new FakeDiscussionRepository();
+    new FakeDiscussionRepository(
+      events
+    );
 
   const service =
     new DiscussionService(
@@ -232,8 +277,305 @@ function createService(
     service,
     repository,
     authorisationService,
+    events,
   };
 }
+
+
+test(
+  "listProjectMessages returns authorized project messages unchanged",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createService();
+
+    const messages: DiscussionMessage[] = [
+      {
+        id:
+          "88888888-8888-4888-8888-888888888888",
+
+        projectId,
+
+        authorUserId:
+          userId,
+
+        authorType:
+          "human",
+
+        threadParentId:
+          null,
+
+        currentVersion:
+          1,
+
+        content:
+          "Persisted discussion context",
+
+        createdAt:
+          "2026-08-14T00:00:00.000Z",
+
+        editedAt:
+          null,
+      },
+    ];
+
+    repository.messages = messages;
+
+    const result =
+      await service.listProjectMessages(
+        context,
+        projectId
+      );
+
+    assert.strictEqual(
+      result,
+      messages
+    );
+  }
+);
+
+
+test(
+  "listProjectMessages authorizes with actorPersonId and requested projectId",
+  async () => {
+    const {
+      service,
+      authorisationService,
+    } = createService();
+
+    await service.listProjectMessages(
+      context,
+      projectId
+    );
+
+    assert.deepEqual(
+      authorisationService.calls,
+      [
+        {
+          personId:
+            context.actorPersonId,
+
+          projectId,
+        },
+      ]
+    );
+
+    assert.notEqual(
+      authorisationService.calls[0].personId,
+      context.actorUserId
+    );
+  }
+);
+
+
+test(
+  "listProjectMessages reads the repository only after authorization succeeds",
+  async () => {
+    const {
+      service,
+      events,
+    } = createService();
+
+    await service.listProjectMessages(
+      context,
+      projectId
+    );
+
+    assert.deepEqual(
+      events,
+      [
+        "authorisation",
+        "repository",
+      ]
+    );
+  }
+);
+
+
+test(
+  "listProjectMessages passes exactly the requested projectId to the repository",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createService();
+
+    await service.listProjectMessages(
+      context,
+      projectId
+    );
+
+    assert.deepEqual(
+      repository.listProjectIds,
+      [projectId]
+    );
+  }
+);
+
+
+test(
+  "listProjectMessages conceals projects with no effective membership",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createService(
+      authorisation({
+        membershipIds:
+          [],
+
+        roles:
+          [],
+
+        permissions:
+          [],
+      })
+    );
+
+    await assert.rejects(
+      () =>
+        service.listProjectMessages(
+          context,
+          projectId
+        ),
+      DiscussionProjectNotFoundError
+    );
+
+    assert.deepEqual(
+      repository.listProjectIds,
+      []
+    );
+  }
+);
+
+
+test(
+  "listProjectMessages requires message.view for an effective member",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createService(
+      authorisation({
+        permissions: [
+          "project.view",
+        ],
+      })
+    );
+
+    await assert.rejects(
+      () =>
+        service.listProjectMessages(
+          context,
+          projectId
+        ),
+      DiscussionPermissionDeniedError
+    );
+
+    assert.deepEqual(
+      repository.listProjectIds,
+      []
+    );
+  }
+);
+
+
+test(
+  "listProjectMessages does not treat message.create as read permission",
+  async () => {
+    const {
+      service,
+      repository,
+    } = createService(
+      authorisation({
+        permissions: [
+          "message.create",
+        ],
+      })
+    );
+
+    await assert.rejects(
+      () =>
+        service.listProjectMessages(
+          context,
+          projectId
+        ),
+      DiscussionPermissionDeniedError
+    );
+
+    assert.deepEqual(
+      repository.listProjectIds,
+      []
+    );
+  }
+);
+
+
+test(
+  "listProjectMessages does not use actorUserId as authorization evidence",
+  async () => {
+    const {
+      service,
+      authorisationService,
+    } = createService(
+      authorisation({
+        personId:
+          context.actorUserId,
+      })
+    );
+
+    await service.listProjectMessages(
+      context,
+      projectId
+    );
+
+    assert.deepEqual(
+      authorisationService.calls,
+      [
+        {
+          personId:
+            context.actorPersonId,
+
+          projectId,
+        },
+      ]
+    );
+  }
+);
+
+
+test(
+  "listProjectMessages does not read the repository when authorization fails",
+  async () => {
+    const authorisationFailure =
+      new Error(
+        "authorization unavailable"
+      );
+
+    const {
+      service,
+      repository,
+    } = createService(
+      authorisation(),
+      authorisationFailure
+    );
+
+    await assert.rejects(
+      () =>
+        service.listProjectMessages(
+          context,
+          projectId
+        ),
+      authorisationFailure
+    );
+
+    assert.deepEqual(
+      repository.listProjectIds,
+      []
+    );
+  }
+);
 
 
 test(

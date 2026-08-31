@@ -109,6 +109,37 @@ export class DiscussionService {
   }
 
 
+  async listProjectMessages(
+    context: RequestContext,
+    projectId: string
+  ): Promise<DiscussionMessage[]> {
+    const authorisation =
+      await this.authorisationService
+        .getEffectiveProjectAuthorisation(
+          context.actorPersonId,
+          projectId
+        );
+
+    if (
+      authorisation.membershipIds.length === 0
+    ) {
+      throw new DiscussionProjectNotFoundError();
+    }
+
+    if (
+      !authorisation.permissions.includes(
+        "message.view"
+      )
+    ) {
+      throw new DiscussionPermissionDeniedError();
+    }
+
+    return this.repository.listProjectMessages(
+      projectId
+    );
+  }
+
+
   async getMessageVersion(
     projectId: string,
     messageId: string,
