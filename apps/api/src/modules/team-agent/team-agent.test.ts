@@ -159,6 +159,11 @@ class FakeDiscussionRepository
   }
 
 
+  async listProjectMessages(): Promise<DiscussionMessage[]> {
+    return [];
+  }
+
+
   async getMessageVersion(
     requestedProjectId: string,
     requestedMessageId: string,

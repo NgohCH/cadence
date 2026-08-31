@@ -133,6 +133,70 @@ export class SupabaseDiscussionRepository
   }
 
 
+  async listProjectMessages(
+    projectId: string
+  ): Promise<DiscussionMessage[]> {
+    const {
+      data,
+      error,
+    } = await this.db
+      .from("current_messages")
+      .select(
+        "id, project_id, author_user_id, author_type, thread_parent_id, current_version, content, created_at, edited_at"
+      )
+      .eq(
+        "project_id",
+        projectId
+      )
+      .order(
+        "created_at",
+        { ascending: true }
+      )
+      .order(
+        "id",
+        { ascending: true }
+      );
+
+    if (error) {
+      throw new Error(
+        `Failed to read discussion messages: ${error.message}`
+      );
+    }
+
+    const rows =
+      (data ?? []) as DiscussionMessageRow[];
+
+    return rows.map((row) => ({
+      id:
+        row.id,
+
+      projectId:
+        row.project_id,
+
+      authorUserId:
+        row.author_user_id,
+
+      authorType:
+        row.author_type,
+
+      threadParentId:
+        row.thread_parent_id,
+
+      currentVersion:
+        row.current_version,
+
+      content:
+        row.content,
+
+      createdAt:
+        row.created_at,
+
+      editedAt:
+        row.edited_at,
+    }));
+  }
+
+
   async getMessageVersion(
     projectId: string,
     messageId: string,

@@ -9,6 +9,10 @@ export interface DiscussionRepository {
     input: CreateDiscussionMessageInput
   ): Promise<DiscussionMessage>;
 
+  listProjectMessages(
+    projectId: string
+  ): Promise<DiscussionMessage[]>;
+
   getMessageVersion(
     projectId: string,
     messageId: string,
