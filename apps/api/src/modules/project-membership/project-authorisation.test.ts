@@ -333,6 +333,24 @@ test(
       await service.hasProjectPermission(
         context,
         projectId,
+        "message.view"
+      ),
+      true
+    );
+
+    assert.equal(
+      await service.hasProjectPermission(
+        context,
+        projectId,
+        "message.create"
+      ),
+      false
+    );
+
+    assert.equal(
+      await service.hasProjectPermission(
+        context,
+        projectId,
         "audit.view"
       ),
       true

@@ -63,6 +63,71 @@ test(
 
 
 test(
+  "R03B normalizes helper definitions before guarded reconciliation",
+  () => {
+    const helperGuards = [
+      [
+        "vs002_07_add_project_member_state",
+        "R03B_ADMISSION_HELPER_RECONCILIATION_FAILED",
+      ],
+      [
+        "vs002_07_terminate_membership_state",
+        "R03B_TERMINATION_HELPER_RECONCILIATION_FAILED",
+      ],
+      [
+        "vs002_07_finalize_expiry_state",
+        "R03B_EXPIRY_HELPER_RECONCILIATION_FAILED",
+      ],
+    ] as const;
+
+    for (const [helper, guard] of helperGuards) {
+      const helperStart = migration.indexOf(`'public.${helper}(`);
+      const guardPosition = migration.indexOf(guard, helperStart);
+      const reconciliation = migration.slice(
+        helperStart,
+        guardPosition
+      );
+      const capturePosition = reconciliation.indexOf(
+        "into v_definition;"
+      );
+      const crlfNormalizationPosition = reconciliation.indexOf(
+        "replace(v_definition, E'\\r\\n', E'\\n')"
+      );
+      const crNormalizationPosition = reconciliation.indexOf(
+        "replace(v_definition, E'\\r', E'\\n')"
+      );
+      const originalPosition = reconciliation.indexOf(
+        "v_original := v_definition;"
+      );
+      const replacementPosition = reconciliation.indexOf(
+        "v_definition := replace(",
+        originalPosition
+      );
+
+      assert.ok(helperStart >= 0, `Helper missing: ${helper}`);
+      assert.ok(guardPosition >= 0, `Guard missing: ${guard}`);
+      assert.ok(
+        capturePosition < crlfNormalizationPosition,
+        `${helper} must normalize CRLF after capturing its definition`
+      );
+      assert.ok(
+        crlfNormalizationPosition < crNormalizationPosition,
+        `${helper} must normalize CRLF before lone CR`
+      );
+      assert.ok(
+        crNormalizationPosition < originalPosition,
+        `${helper} must snapshot the original after normalization`
+      );
+      assert.ok(
+        originalPosition < replacementPosition,
+        `${helper} must normalize before semantic replacements`
+      );
+    }
+  }
+);
+
+
+test(
   "R03B retires legacy status schema interpretation",
   () => {
     for (const objectName of [

@@ -369,6 +369,9 @@ export function WorkspaceShell({
 
               <section className="workspace-grid">
                 <DiscussionPanel
+                  currentUserId={
+                    user.id
+                  }
                   projectId={
                     project
                       .project

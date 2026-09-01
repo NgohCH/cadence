@@ -9,7 +9,8 @@ values
   ('c0300000-0000-4000-8000-000000000002', 'R03C Member One'),
   ('c0300000-0000-4000-8000-000000000003', 'R03C Member Two'),
   ('c0300000-0000-4000-8000-000000000004', 'R03C Zero Role Probe'),
-  ('c0300000-0000-4000-8000-000000000005', 'R03C Gap Probe');
+  ('c0300000-0000-4000-8000-000000000005', 'R03C Gap Probe'),
+  ('c0300000-0000-4000-8000-000000000006', 'R03C Service Role Member');
 
 insert into public.users (
   id,
@@ -32,6 +33,71 @@ values (
   'R03C Runtime Project',
   'c0300000-0000-4000-8000-000000000001'
 );
+
+
+set local role service_role;
+
+select * from public.add_project_member(
+  'c0300000-0000-4000-8000-000000000090',
+  'c0300000-0000-4000-8000-000000000010',
+  'c0300000-0000-4000-8000-000000000006',
+  '2026-01-01T00:00:00Z',
+  null,
+  'c0300000-0000-4000-8000-000000000001',
+  '2026-01-01T00:00:00Z',
+  'c0300000-0000-4000-8000-000000000091',
+  'c0300000-0000-4000-8000-000000000001',
+  '2026-01-01T00:00:00Z',
+  'c0300000-0000-4000-8000-000000000092'
+);
+
+set constraints all immediate;
+
+reset role;
+
+do $$
+declare
+  v_event_types text[];
+begin
+  if not exists (
+    select 1
+    from public.project_memberships membership
+    where membership.id = 'c0300000-0000-4000-8000-000000000090'
+      and membership.project_id = 'c0300000-0000-4000-8000-000000000010'
+      and membership.person_id = 'c0300000-0000-4000-8000-000000000006'
+      and membership.membership_status = 'ACTIVE'
+  ) then
+    raise exception 'Service-role admission did not create membership';
+  end if;
+
+  if not exists (
+    select 1
+    from public.project_role_assignments assignment
+    where assignment.id = 'c0300000-0000-4000-8000-000000000091'
+      and assignment.membership_id = 'c0300000-0000-4000-8000-000000000090'
+      and assignment.role = 'PROJECT_MEMBER'
+      and assignment.effective_to is null
+  ) then
+    raise exception 'Service-role admission did not create initial role';
+  end if;
+
+  select array_agg(event_type order by event_type)
+  into v_event_types
+  from public.domain_events
+  where correlation_id = 'c0300000-0000-4000-8000-000000000092';
+
+  if v_event_types <> array[
+    'ProjectMemberAdded',
+    'ProjectRoleAssigned'
+  ] then
+    raise exception
+      'Service-role admission event cardinality invalid: %',
+      v_event_types;
+  end if;
+end;
+$$;
+
+set constraints all deferred;
 
 
 select * from public.add_project_member(
@@ -63,6 +129,8 @@ select * from public.add_project_member(
 );
 
 
+set local role service_role;
+
 select * from public.transfer_project_protected_role(
   'c0300000-0000-4000-8000-000000000050',
   'c0300000-0000-4000-8000-000000000051',
@@ -88,6 +156,50 @@ select * from public.transfer_project_protected_role(
   'c0300000-0000-4000-8000-000000000055',
   '2026-03-01T00:00:00Z'
 );
+
+set constraints all immediate;
+
+reset role;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from public.project_role_transfers transfer
+    where transfer.id = 'c0300000-0000-4000-8000-000000000050'
+      and transfer.outgoing_assignment_id is null
+      and transfer.incoming_assignment_id =
+        'c0300000-0000-4000-8000-000000000051'
+  ) or not exists (
+    select 1
+    from public.project_role_transfers transfer
+    where transfer.id = 'c0300000-0000-4000-8000-000000000053'
+      and transfer.outgoing_assignment_id =
+        'c0300000-0000-4000-8000-000000000051'
+      and transfer.incoming_assignment_id =
+        'c0300000-0000-4000-8000-000000000054'
+  ) then
+    raise exception 'Service-role protected transfer ledger invalid';
+  end if;
+
+  if not exists (
+    select 1
+    from public.project_role_assignments assignment
+    where assignment.id = 'c0300000-0000-4000-8000-000000000051'
+      and assignment.effective_to = '2026-03-01T00:00:00Z'
+  ) or not exists (
+    select 1
+    from public.project_role_assignments assignment
+    where assignment.id = 'c0300000-0000-4000-8000-000000000054'
+      and assignment.role = 'PROJECT_OWNER'
+      and assignment.effective_to is null
+  ) then
+    raise exception 'Service-role protected transfer assignment state invalid';
+  end if;
+end;
+$$;
+
+set constraints all deferred;
 
 
 do $$
@@ -306,6 +418,8 @@ select * from public.change_project_ordinary_role(
   'c0300000-0000-4000-8000-000000000081'
 );
 
+set local role service_role;
+
 select * from public.terminate_project_membership(
   'c0300000-0000-4000-8000-000000000010',
   'c0300000-0000-4000-8000-000000000020',
@@ -316,6 +430,8 @@ select * from public.terminate_project_membership(
 );
 
 set constraints all immediate;
+
+reset role;
 
 
 do $$
@@ -339,6 +455,42 @@ begin
       and assignment.effective_to is null
   ) then
     raise exception 'Valid lifecycle RPC left an open role assignment';
+  end if;
+
+  if (
+    select range_agg(
+      tstzrange(
+        assignment.effective_from,
+        assignment.effective_to,
+        '[)'
+      )
+    )
+    from public.project_role_assignments assignment
+    where assignment.membership_id =
+      'c0300000-0000-4000-8000-000000000020'
+      and assignment.role in (
+        'PROJECT_MEMBER',
+        'PROJECT_OBSERVER',
+        'PROJECT_AUDITOR'
+      )
+  ) is distinct from tstzmultirange(
+    tstzrange(
+      '2026-01-01T00:00:00Z',
+      '2026-05-01T00:00:00Z',
+      '[)'
+    )
+  ) then
+    raise exception 'Service-role termination left invalid role coverage';
+  end if;
+
+  if (
+    select count(*)
+    from public.domain_events event
+    where event.correlation_id =
+      'c0300000-0000-4000-8000-000000000082'
+      and event.event_type = 'ProjectMemberRemoved'
+  ) <> 1 then
+    raise exception 'Service-role termination event cardinality invalid';
   end if;
 
   if has_table_privilege(

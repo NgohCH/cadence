@@ -119,6 +119,9 @@ test("an authoritative mutation re-checks authorization after an earlier allowed
         editedAt: null,
       };
     },
+    async listProjectMessages() {
+      return [];
+    },
     async getMessageVersion() {
       return null;
     },
