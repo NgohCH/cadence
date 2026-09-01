@@ -1,0 +1,199 @@
+{
+  "manifestVersion": "1.0",
+  "manifestId": "vs004-default-m1-pilot",
+  "target": {
+    "environment": "local",
+    "supabaseProjectRef": null,
+    "safeTargetMarker": "VS004_LOCAL_PILOT_TARGET",
+    "projectId": "00440000-0000-4000-8000-000000000001"
+  },
+  "operator": {
+    "personId": "00441000-0000-4000-8000-000000000001",
+    "displayName": "VS004 Pilot Operator"
+  },
+  "project": {
+    "id": "00440000-0000-4000-8000-000000000001",
+    "marker": "VS004_LOCAL_PILOT_PROJECT",
+    "name": "VS004 Controlled Pilot Project",
+    "description": "Safe VS004 pilot example.",
+    "goal": "Exercise controlled project access.",
+    "lifecycleStatus": "active",
+    "ownerUserId": "00448000-0000-4000-8000-000000000002",
+    "startDate": "2026-09-01",
+    "targetDate": null,
+    "health": {
+      "status": "on_track",
+      "reasons": [],
+      "source": "system",
+      "changedBy": null
+    }
+  },
+  "users": [
+    {
+      "key": "owner",
+      "displayName": "VS004 owner",
+      "affiliation": "INTERNAL",
+      "person": {
+        "kind": "existing",
+        "id": "00441000-0000-4000-8000-000000000002"
+      },
+      "cadenceUser": {
+        "id": "00448000-0000-4000-8000-000000000002",
+        "username": "vs004_owner",
+        "displayName": "VS004 owner",
+        "email": "vs004.owner@cadence.test",
+        "status": "active",
+        "identityProvider": "local"
+      },
+      "authentication": {
+        "identityId": "00445000-0000-4000-8000-000000000002",
+        "provider": "local",
+        "providerSubjectId": "00446000-0000-4000-8000-000000000002",
+        "loginIdentifier": "vs004.owner@cadence.test"
+      },
+      "membership": {
+        "id": "00442000-0000-4000-8000-000000000002",
+        "effectiveFrom": "2026-09-01T00:00:00.000Z",
+        "effectiveTo": null,
+        "grantedByPersonId": "00441000-0000-4000-8000-000000000001",
+        "initialRoleAssignmentId": "00443000-0000-4000-8000-000000000002"
+      },
+      "role": "PROJECT_OWNER",
+      "roleAssignmentId": "00444000-0000-4000-8000-000000000002",
+      "protectedTransferId": "00447000-0000-4000-8000-000000000002",
+      "protectedRoleReason": "VS004 pilot owner appointment"
+    },
+    {
+      "key": "manager",
+      "displayName": "VS004 manager",
+      "affiliation": "INTERNAL",
+      "person": {
+        "kind": "existing",
+        "id": "00441000-0000-4000-8000-000000000003"
+      },
+      "cadenceUser": {
+        "id": "00448000-0000-4000-8000-000000000003",
+        "username": "vs004_manager",
+        "displayName": "VS004 manager",
+        "email": "vs004.manager@cadence.test",
+        "status": "active",
+        "identityProvider": "local"
+      },
+      "authentication": {
+        "identityId": "00445000-0000-4000-8000-000000000003",
+        "provider": "local",
+        "providerSubjectId": "00446000-0000-4000-8000-000000000003",
+        "loginIdentifier": "vs004.manager@cadence.test"
+      },
+      "membership": {
+        "id": "00442000-0000-4000-8000-000000000003",
+        "effectiveFrom": "2026-09-01T00:00:00.000Z",
+        "effectiveTo": null,
+        "grantedByPersonId": "00441000-0000-4000-8000-000000000001",
+        "initialRoleAssignmentId": "00443000-0000-4000-8000-000000000003"
+      },
+      "role": "PROJECT_MANAGER",
+      "roleAssignmentId": "00444000-0000-4000-8000-000000000003",
+      "protectedTransferId": "00447000-0000-4000-8000-000000000003",
+      "protectedRoleReason": "VS004 pilot manager appointment"
+    },
+    {
+      "key": "sponsor",
+      "displayName": "VS004 sponsor",
+      "affiliation": "INTERNAL",
+      "person": {
+        "kind": "existing",
+        "id": "00441000-0000-4000-8000-000000000004"
+      },
+      "cadenceUser": {
+        "id": "00448000-0000-4000-8000-000000000004",
+        "username": "vs004_sponsor",
+        "displayName": "VS004 sponsor",
+        "email": "vs004.sponsor@cadence.test",
+        "status": "active",
+        "identityProvider": "local"
+      },
+      "authentication": {
+        "identityId": "00445000-0000-4000-8000-000000000004",
+        "provider": "local",
+        "providerSubjectId": "00446000-0000-4000-8000-000000000004",
+        "loginIdentifier": "vs004.sponsor@cadence.test"
+      },
+      "membership": {
+        "id": "00442000-0000-4000-8000-000000000004",
+        "effectiveFrom": "2026-09-01T00:00:00.000Z",
+        "effectiveTo": null,
+        "grantedByPersonId": "00441000-0000-4000-8000-000000000001",
+        "initialRoleAssignmentId": "00443000-0000-4000-8000-000000000004"
+      },
+      "role": "PROJECT_SPONSOR",
+      "roleAssignmentId": "00444000-0000-4000-8000-000000000004",
+      "protectedTransferId": "00447000-0000-4000-8000-000000000004",
+      "protectedRoleReason": "VS004 pilot sponsor appointment"
+    },
+    {
+      "key": "member",
+      "displayName": "VS004 member",
+      "affiliation": "INTERNAL",
+      "person": {
+        "kind": "existing",
+        "id": "00441000-0000-4000-8000-000000000005"
+      },
+      "cadenceUser": {
+        "id": "00448000-0000-4000-8000-000000000005",
+        "username": "vs004_member",
+        "displayName": "VS004 member",
+        "email": "vs004.member@cadence.test",
+        "status": "active",
+        "identityProvider": "local"
+      },
+      "authentication": {
+        "identityId": "00445000-0000-4000-8000-000000000005",
+        "provider": "local",
+        "providerSubjectId": "00446000-0000-4000-8000-000000000005",
+        "loginIdentifier": "vs004.member@cadence.test"
+      },
+      "membership": {
+        "id": "00442000-0000-4000-8000-000000000005",
+        "effectiveFrom": "2026-09-01T00:00:00.000Z",
+        "effectiveTo": null,
+        "grantedByPersonId": "00441000-0000-4000-8000-000000000001",
+        "initialRoleAssignmentId": "00443000-0000-4000-8000-000000000005"
+      },
+      "role": "PROJECT_MEMBER",
+      "roleAssignmentId": "00443000-0000-4000-8000-000000000005"
+    },
+    {
+      "key": "observer",
+      "displayName": "VS004 observer",
+      "affiliation": "INTERNAL",
+      "person": {
+        "kind": "existing",
+        "id": "00441000-0000-4000-8000-000000000006"
+      },
+      "cadenceUser": {
+        "id": "00448000-0000-4000-8000-000000000006",
+        "username": "vs004_observer",
+        "displayName": "VS004 observer",
+        "email": "vs004.observer@cadence.test",
+        "status": "active",
+        "identityProvider": "local"
+      },
+      "authentication": {
+        "identityId": "00445000-0000-4000-8000-000000000006",
+        "provider": "local",
+        "providerSubjectId": "00446000-0000-4000-8000-000000000006",
+        "loginIdentifier": "vs004.observer@cadence.test"
+      },
+      "membership": {
+        "id": "00442000-0000-4000-8000-000000000006",
+        "effectiveFrom": "2026-09-01T00:00:00.000Z",
+        "effectiveTo": null,
+        "grantedByPersonId": "00441000-0000-4000-8000-000000000001",
+        "initialRoleAssignmentId": "00443000-0000-4000-8000-000000000006"
+      },
+      "role": "PROJECT_OBSERVER",
+      "roleAssignmentId": "00444000-0000-4000-8000-000000000006"
+    }
+  ]
+}
