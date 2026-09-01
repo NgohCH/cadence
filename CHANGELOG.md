@@ -6,6 +6,20 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### M1 Controlled Pilot / VS003 implementation and closure reconciliation
+
+- Implemented the durable Discussion read and return path through the owning
+  repository/service/API boundary, including persisted reload/return recovery
+  and deterministic manual Refresh for committed shared visibility.
+- Preserved canonical project authorization, project isolation, API-only
+  browser business data, and Observer/Auditor read-only protection.
+- Added deterministic VS003 runtime-fixture evidence and reconciled C08.1,
+  C08.2, and INIT-AC-03 as delivered at M1; C08.3 remains partial at M2 because
+  realtime and automatic convergence are not part of VS003. C08.4 remains the
+  previously delivered M0 behavior under regression protection.
+- User B's browser POST status was not retained and is intentionally not
+  claimed. The local browser project-ID adjustment was ignored test setup only.
+
 ### M1 Controlled Pilot / VS003 Documentation Freeze
 
 - Added the M1 Controlled Pilot milestone contract with separate Work Entry

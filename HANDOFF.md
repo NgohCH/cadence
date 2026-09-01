@@ -17,12 +17,13 @@ INIT-AC-20, preserve independently testable obligations without inflating the
 parent count. No governed requirement may move beyond M3. This HANDOFF records
 current execution state and does not redefine or reduce committed scope.
 
-The Governance Baseline v1.0 is merged. M1 — Controlled Pilot is active, and
-the current documentation freeze defines VS003 as the next engineering slice.
-VS003 implementation has not begun. VS004 — Controlled Pilot Bootstrap and
-Access, VS005 — Pilot Runtime and Worker Scheduling, and VS006 — Pilot
-Operations, Recovery and Support remain planned M1 slices. VS-001 and VS-002
-remain closed.
+The Governance Baseline v1.0 is merged. M1 — Controlled Pilot is active. VS-001
+and VS-002 remain closed. VS003 implementation and runtime verification are
+complete candidates; this checkpoint reconciles the closure evidence only.
+VS004 — Controlled Pilot Bootstrap and Access, VS005 — Pilot Runtime and Worker
+Scheduling, and VS006 — Pilot Operations, Recovery and Support remain planned
+M1 slices. VS004 starts only after the VS003 closure commit under the
+single-stream rule.
 
 ## Project
 
@@ -36,7 +37,7 @@ v0.1 - Development
 
 ## Current Branch
 
-`feature/vs-003-durable-discussion-read-path`
+`feature/vs-003-implementation`
 
 ## Current Implementation Work
 
@@ -46,16 +47,66 @@ Vertical Slice:
 
 Status:
 
-**VS003 documentation freeze is complete; VS003 implementation has not begun.**
+**VS003 implementation and runtime verification are complete candidates; VS003
+closure documentation is the current checkpoint.**
 
 VS-001 and VS-002 are closed. They must not be reopened without concrete
 evidence that a frozen contract is violated.
 
 Current checkpoint:
 
-**M1 Controlled Pilot is active. The approved M1 contract and VS003 contract
-are frozen for review; VS004–VS006 remain planned, and no VS003 application
-implementation has started.**
+**M1 Controlled Pilot is active. VS003 closure evidence is being reconciled;
+VS004–VS006 remain planned, and no VS004 work has started.**
+
+## VS003 Current Implementation State
+
+VS003 — Durable Discussion Read and Return Path is implemented at the following
+checkpoints:
+
+```text
+89babaf  persisted Discussion read repository
+b69b2d0  canonical read authorization
+90c5b58  GET /api/v1/projects/:projectId/messages
+a8c2b39  persisted browser loading and race correctness
+2ff9ea4  deterministic Refresh and Retry
+e8e6f61  Auditor Discussion permission regression evidence
+13a27f1  R03B migration line-ending portability hardening (adjacent only)
+6e21b76  R03C deferred-constraint security hardening (adjacent only)
+5efa43e  deterministic VS003 local runtime fixture
+```
+
+Stage 7A API/runtime verification passed with the five authenticated fixture
+actors: authentication 5/5; User A POST 201 and persisted GET; repeated-read
+determinism; User B shared P1 visibility; P1/P2 isolation; Observer/Auditor
+read with 403 write denial; nonmember 404 concealment; unauthenticated 401;
+ordering; fresh return read; and database read-only cross-check. Unauthorized
+mutations, P1/P2 leakage, Security P0, and Application P1 counts were 0.
+
+Stage 7B browser verification was completed manually in the user's normal
+browser after Codex had no browser surface. A local ignored
+`apps/web/.env.development.local` project-ID adjustment was test setup only and
+remained outside Git. User A's message and User B's message survived reload and
+leave/return, appeared exactly once, and manual Refresh converged to committed
+shared state. The exact User B POST status was not retained and is not claimed.
+Observer and Auditor reads remained allowed while writes were denied with no
+unauthorized persistence. Discussion business traffic used `/api/v1`; no direct
+Supabase business-table access was observed.
+
+Current traceability treatment:
+
+```text
+C08.1       DELIVERED / M1
+C08.2       DELIVERED / M1
+INIT-AC-03  DELIVERED / M1 — “Hold project discussions.” evidenced
+C08.3       PARTIAL / M2 — manual Refresh/shared visibility only
+C08.4       DELIVERED / M0 — regression protected, not newly delivered
+```
+
+Final automated evidence is 404/404 API tests, 58/58 web tests including 47
+DiscussionPanel tests, 75/75 fixture tests, API typecheck, web lint with zero
+warnings/errors, CI build, and `npm.cmd run quality` at final review. Realtime
+subscriptions and automatic convergence remain outside VS003 and due under
+C08.3/M2. No P0 or P1 blocker remains for this closure checkpoint.
 
 Latest completed R02 validation:
 
@@ -5729,11 +5780,16 @@ Do not silently claim those capabilities are supported.
 
 ## Discussion Automated Coverage
 
-Six substantive Discussion service unit tests exist.
+VS003 adds repository, service, API, authorization, and browser coverage for
+persisted reads, current-version selection, deterministic ordering, empty and
+failure states, retry/Refresh behavior, reload/return reconstruction, project
+isolation, and read-only Observer/Auditor behavior. The closure evidence is
+404/404 API tests, 58/58 web tests including 47 DiscussionPanel tests, and a
+75/75 deterministic runtime-fixture suite.
 
-The persistence transaction and HTTP integration paths have been manually verified against the linked Supabase environment.
-
-Database-backed automated integration tests remain future work.
+The persistence transaction and HTTP/runtime paths were also verified against
+the linked local Supabase environment. Broader database-backed automated
+integration coverage remains future work.
 
 ## `external_user_id`
 
@@ -7417,7 +7473,8 @@ A new engineer should be able to determine:
 * how authentication works,
 * how project authorization works,
 * how Project Workspace is assembled,
-* how Discussion message creation works,
+* how Discussion message creation, persisted reads, reload/return recovery,
+  and deterministic manual Refresh work,
 * how Discussion persistence remains atomic,
 * how `MessageCreated.v1` fans out to independent consumers,
 * how event deliveries are claimed, leased, completed, failed, and retried,

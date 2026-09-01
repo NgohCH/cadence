@@ -4,11 +4,14 @@
 
 The Discussion module provides Cadence-native project conversation and preserves discussion history as authoritative, traceable project context.
 
-VS001-04 introduces the first implemented Discussion command:
+VS001-04 introduced the first implemented Discussion command, and VS003 adds
+the persisted read path:
 
 `postMessage()`
 
-The current implementation supports authenticated human users posting a message to a project discussion.
+The current implementation supports authenticated human users posting a message
+to a project discussion and authorized users reading the current committed
+messages for a project.
 
 ## Responsibilities
 
@@ -70,17 +73,35 @@ The broader API contract also defines `mention_user_ids` and `file_ids`, but the
 
 ## Public Queries
 
-No Discussion query is implemented yet.
+### `listProjectMessages()`
+
+Implemented in VS003.
+
+Application service:
+
+`DiscussionService.listProjectMessages()`
+
+HTTP endpoint:
+
+`GET /api/v1/projects/{projectId}/messages`
+
+Required permission:
+
+`message.view`
+
+The query returns the current committed message version, author identity/type,
+project ID, thread parent, creation time, and edit time. Results are ordered by
+`created_at ASC`, then `id ASC`.
 
 Future contract operations include:
 
 - `getMessage()`
 - `getMessageHistory()`
-- `listProjectMessages()`
 - `getThread()`
 - `searchMessages()`
 
-These must be implemented through the Discussion module rather than by allowing other modules to read Discussion internals directly.
+These must be implemented through the Discussion module rather than by allowing
+other modules to read Discussion internals directly.
 
 ## Events Emitted
 
@@ -132,6 +153,10 @@ located under:
 
 ## Permissions
 
+Reading messages requires:
+
+`message.view`
+
 Posting a message requires:
 
 `message.create`
@@ -148,7 +173,11 @@ effective stable-Person membership and permission codes
 message.create
 ```
 
-If no active project membership exists, the service returns the Discussion project-not-found condition.
+If no active project membership exists, the service returns the Discussion
+project-not-found condition for both read and write operations.
+
+An Observer or Auditor with `message.view` can read Discussion, but their
+message-creation attempt remains denied because they lack `message.create`.
 
 If an active project member lacks `message.create`, the operation is denied.
 
@@ -293,6 +322,13 @@ Whole API test runner:
 
 Some existing module `*.test.ts` files remain empty placeholders and are counted by Node as successful test files. They should not be interpreted as substantive automated coverage.
 
+VS003 adds repository, service, API, authorization, and browser coverage for
+persisted reads, current-version selection, deterministic ordering, empty and
+failure states, retry/refresh behavior, reload/return reconstruction, project
+isolation, and read-only Observer/Auditor behavior. The closure checkpoint
+reports 404/404 API tests, 58/58 web tests including 47 DiscussionPanel tests,
+and a 75/75 deterministic runtime-fixture test suite.
+
 ## Manually Verified in VS001-04
 
 ### Successful message creation
@@ -352,9 +388,8 @@ The temporary Auth user, Cadence user, and project membership were deleted after
 
 ## Known Limitations
 
-VS001-04 intentionally does not implement:
+VS001-04 intentionally did not implement, and VS003 still does not implement:
 
-- listing project messages,
 - retrieving an individual message,
 - message history retrieval,
 - editing messages,
@@ -366,6 +401,9 @@ VS001-04 intentionally does not implement:
 - Team Agent consumption of `MessageCreated.v1`,
 - background processing of pending domain events,
 - Discussion-specific audit processing.
+
+VS003 provides deterministic manual refresh and persisted shared visibility; it
+does not provide realtime subscriptions or automatic push convergence.
 
 Although the OpenAPI request contract includes `mention_user_ids` and `file_ids`, VS001-04 does not yet implement those capabilities.
 
