@@ -87,6 +87,7 @@ export interface PilotProjectIntent {
     | "on_hold"
     | "completed"
     | "cancelled";
+  progressPercent: number;
   ownerUserId: string;
   startDate: string | null;
   targetDate: string | null;
@@ -406,6 +407,7 @@ function validateProject(
       "description",
       "goal",
       "lifecycleStatus",
+      "progressPercent",
       "ownerUserId",
       "startDate",
       "targetDate",
@@ -433,6 +435,18 @@ function validateProject(
     );
   }
 
+  if (
+    typeof project.progressPercent !== "number" ||
+    !Number.isInteger(project.progressPercent) ||
+    !Number.isFinite(project.progressPercent) ||
+    project.progressPercent < 0 ||
+    project.progressPercent > 100
+  ) {
+    throw invalid(
+      "project.progressPercent must be an integer between 0 and 100."
+    );
+  }
+
   return {
     id: uuid(project.id, "project.id"),
     marker: nonBlankString(project.marker, "project.marker"),
@@ -446,6 +460,7 @@ function validateProject(
       "project.goal"
     ),
     lifecycleStatus: lifecycleStatus as PilotProjectIntent["lifecycleStatus"],
+    progressPercent: project.progressPercent,
     ownerUserId: uuid(
       project.ownerUserId,
       "project.ownerUserId"

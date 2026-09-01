@@ -18,6 +18,7 @@
     "description": "Safe VS004 pilot example.",
     "goal": "Exercise controlled project access.",
     "lifecycleStatus": "active",
+    "progressPercent": 0,
     "ownerUserId": "00448000-0000-4000-8000-000000000002",
     "startDate": "2026-09-01",
     "targetDate": null,

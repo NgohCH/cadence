@@ -59,6 +59,7 @@ export interface ObservedProject {
   description: string | null;
   goal: string | null;
   lifecycleStatus: ValidatedPilotManifest["project"]["lifecycleStatus"];
+  progressPercent: number;
   ownerUserId: string | null;
   startDate: string | null;
   targetDate: string | null;
@@ -169,6 +170,7 @@ export interface PilotPlanOperation {
   readonly resourceKey: string;
   readonly manifestKey?: string;
   readonly id?: string;
+  readonly progressPercent?: number;
   readonly role?: ProjectRole;
   readonly reason?: string;
 }
@@ -328,6 +330,7 @@ function planProject(
       existing.description !== intended.description ||
       existing.goal !== intended.goal ||
       existing.lifecycleStatus !== intended.lifecycleStatus ||
+      existing.progressPercent !== intended.progressPercent ||
       existing.ownerUserId !== intended.ownerUserId ||
       existing.startDate !== intended.startDate ||
       existing.targetDate !== intended.targetDate
@@ -343,6 +346,7 @@ function planProject(
       kind: "CREATE_PROJECT",
       resourceKey: `project:${intended.id}`,
       id: intended.id,
+      progressPercent: intended.progressPercent,
     });
   }
 
@@ -380,6 +384,7 @@ function planProject(
       description: intended.description,
       goal: intended.goal,
       lifecycleStatus: intended.lifecycleStatus,
+      progressPercent: intended.progressPercent,
       ownerUserId: intended.ownerUserId,
       startDate: intended.startDate,
       targetDate: intended.targetDate,

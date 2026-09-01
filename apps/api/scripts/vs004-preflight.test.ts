@@ -14,7 +14,11 @@ import {
   type ObservedPilotState,
   type PilotPreflightInput,
   type PilotPlanOperation,
+  type ObservedProject,
 } from "./vs004-preflight";
+import type {
+  PilotProjectCreateIntent,
+} from "../src/modules/projects/pilot-preparation.types";
 
 
 type MutableObservedPilotState = {
@@ -57,6 +61,18 @@ function manifestForCreation(): ValidatedPilotManifest {
       pilotUser.person.displayName ?? "New VS004 Person";
   }
   return validatePilotManifest(raw);
+}
+
+
+function manifestWithExplicitProgress(): ValidatedPilotManifest {
+  const manifest = JSON.parse(
+    readFileSync(
+      resolve(__dirname, "vs004-pilot.example.json"),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  (manifest.project as Record<string, unknown>).progressPercent = 0;
+  return manifest as unknown as ValidatedPilotManifest;
 }
 
 
@@ -209,6 +225,7 @@ function existingState(
     description: pilotManifest.project.description,
     goal: pilotManifest.project.goal,
     lifecycleStatus: pilotManifest.project.lifecycleStatus,
+    progressPercent: pilotManifest.project.progressPercent,
     ownerUserId: pilotManifest.project.ownerUserId,
     startDate: pilotManifest.project.startDate,
     targetDate: pilotManifest.project.targetDate,
@@ -282,6 +299,34 @@ test("reuses an exact observed Project without a persisted marker field", () => 
 });
 
 
+test("reuses an exact Project including progressPercent", () => {
+  const pilotManifest = manifestWithExplicitProgress();
+  const planned = buildPilotPreflightPlan(
+    input(pilotManifest, existingState(pilotManifest)),
+  );
+
+  assert.ok(
+    planned.operations.some(
+      (operation) =>
+        operation.kind === "REUSE" &&
+        operation.resourceKey === `project:${pilotManifest.project.id}`,
+    ),
+  );
+});
+
+
+test("rejects a Project progressPercent mismatch", () => {
+  const pilotManifest = manifestWithExplicitProgress();
+  const state = existingState(pilotManifest);
+  (state.projects[0] as unknown as { progressPercent: number }).progressPercent = 25;
+
+  assert.throws(
+    () => buildPilotPreflightPlan(input(pilotManifest, state)),
+    /incompatible project/i,
+  );
+});
+
+
 test("creates an absent Project without requiring an observed marker", () => {
   const pilotManifest = manifestForCreation();
   const planned = buildPilotPreflightPlan(
@@ -295,6 +340,65 @@ test("creates an absent Project without requiring an observed marker", () => {
         operation.id === pilotManifest.project.id,
     ),
   );
+});
+
+
+test("includes manifest progressPercent in the absent Project operation", () => {
+  const pilotManifest = manifestWithExplicitProgress();
+  for (const pilotUser of pilotManifest.users as unknown as Array<{
+    person: { kind: string; displayName?: string };
+  }>) {
+    pilotUser.person.kind = "new";
+    pilotUser.person.displayName = pilotUser.person.displayName ?? "New Person";
+  }
+  const planned = buildPilotPreflightPlan(
+    input(pilotManifest, emptyState()),
+  );
+  const createProject = planned.operations.find(
+    (operation) => operation.kind === "CREATE_PROJECT",
+  );
+
+  assert.equal(
+    (createProject as PilotPlanOperation & { progressPercent: number }).progressPercent,
+    pilotManifest.project.progressPercent,
+  );
+});
+
+
+test("preflight and VS004-03B use the same Project compatibility fields", () => {
+  const pilotManifest = manifest();
+  const project = pilotManifest.project;
+  const observed: ObservedProject = {
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    goal: project.goal,
+    lifecycleStatus: project.lifecycleStatus,
+    progressPercent: project.progressPercent,
+    ownerUserId: project.ownerUserId,
+    startDate: project.startDate,
+    targetDate: project.targetDate,
+  };
+  const preparationIntent: PilotProjectCreateIntent = {
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    goal: project.goal,
+    lifecycleStatus: project.lifecycleStatus,
+    progressPercent: project.progressPercent,
+    ownerUserId: project.ownerUserId,
+    startDate: project.startDate,
+    targetDate: project.targetDate,
+  };
+
+  assert.deepEqual(
+    Object.keys(observed).sort(),
+    Object.keys(preparationIntent).sort(),
+  );
+  assert.equal("marker" in observed, false);
+  assert.equal("health" in observed, false);
+  assert.equal("createdAt" in observed, false);
+  assert.equal("updatedAt" in observed, false);
 });
 
 

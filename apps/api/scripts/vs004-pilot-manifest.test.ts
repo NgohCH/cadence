@@ -109,6 +109,7 @@ function validManifest(): Record<string, unknown> {
       description: "Safe VS004 pilot example.",
       goal: "Exercise controlled project access.",
       lifecycleStatus: "active",
+      progressPercent: 0,
       ownerUserId: "00448000-0000-4000-8000-000000000002",
       startDate: "2026-09-01",
       targetDate: null,
@@ -412,6 +413,62 @@ test("rejects malformed explicit UUID identifiers", () => {
 });
 
 
+test("accepts explicit progressPercent at the lower boundary", () => {
+  const manifest = cloneManifest();
+  (manifest.project as Record<string, unknown>).progressPercent = 0;
+
+  assert.equal(validatePilotManifest(manifest).project.progressPercent, 0);
+});
+
+
+test("accepts explicit progressPercent at the upper boundary", () => {
+  const manifest = cloneManifest();
+  (manifest.project as Record<string, unknown>).progressPercent = 100;
+
+  assert.equal(validatePilotManifest(manifest).project.progressPercent, 100);
+});
+
+
+test("rejects progressPercent below zero", () => {
+  assertManifestRejects(
+    (manifest) => {
+      (manifest.project as Record<string, unknown>).progressPercent = -1;
+    },
+    /progressPercent must be an integer between 0 and 100/,
+  );
+});
+
+
+test("rejects progressPercent above 100", () => {
+  assertManifestRejects(
+    (manifest) => {
+      (manifest.project as Record<string, unknown>).progressPercent = 101;
+    },
+    /progressPercent must be an integer between 0 and 100/,
+  );
+});
+
+
+test("rejects fractional progressPercent", () => {
+  assertManifestRejects(
+    (manifest) => {
+      (manifest.project as Record<string, unknown>).progressPercent = 12.5;
+    },
+    /progressPercent must be an integer between 0 and 100/,
+  );
+});
+
+
+test("rejects missing progressPercent", () => {
+  assertManifestRejects(
+    (manifest) => {
+      delete (manifest.project as Record<string, unknown>).progressPercent;
+    },
+    /progressPercent must be an integer between 0 and 100/,
+  );
+});
+
+
 test("rejects malformed timestamps and invalid membership periods", () => {
   assertManifestRejects(
     (manifest) => {
@@ -511,6 +568,18 @@ test("produces the same manifest hash for semantically identical validated manif
   assert.equal(
     computeManifestHash(first),
     computeManifestHash(second),
+  );
+});
+
+
+test("manifestHash changes when progressPercent changes", () => {
+  const baseline = validatePilotManifest(validManifest());
+  const changed = cloneManifest();
+  (changed.project as Record<string, unknown>).progressPercent = 25;
+
+  assert.notEqual(
+    computeManifestHash(baseline),
+    computeManifestHash(validatePilotManifest(changed)),
   );
 });
 
