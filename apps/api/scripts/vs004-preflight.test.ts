@@ -205,7 +205,6 @@ function existingState(
 
   state.projects.push({
     id: pilotManifest.project.id,
-    marker: pilotManifest.project.marker,
     name: pilotManifest.project.name,
     description: pilotManifest.project.description,
     goal: pilotManifest.project.goal,
@@ -267,6 +266,38 @@ test("reuses exact compatible state and produces no repair operations", () => {
 });
 
 
+test("reuses an exact observed Project without a persisted marker field", () => {
+  const pilotManifest = manifest();
+  const planned = buildPilotPreflightPlan(
+    input(pilotManifest, existingState(pilotManifest)),
+  );
+
+  assert.ok(
+    planned.operations.some(
+      (operation) =>
+        operation.kind === "REUSE" &&
+        operation.resourceKey === `project:${pilotManifest.project.id}`,
+    ),
+  );
+});
+
+
+test("creates an absent Project without requiring an observed marker", () => {
+  const pilotManifest = manifestForCreation();
+  const planned = buildPilotPreflightPlan(
+    input(pilotManifest, emptyState()),
+  );
+
+  assert.ok(
+    planned.operations.some(
+      (operation) =>
+        operation.kind === "CREATE_PROJECT" &&
+        operation.id === pilotManifest.project.id,
+    ),
+  );
+});
+
+
 test("run correlation IDs are per-run evidence and do not change manifest hash", () => {
   const pilotManifest = manifestForCreation();
   const first = buildPilotPreflightPlan(
@@ -311,6 +342,39 @@ test("fails before planning when the runtime target is unsafe or mismatched", ()
     ),
     /safeTargetMarker/,
   );
+});
+
+
+test("matching safeTargetMarker authorizes target validation independently of Project observation", () => {
+  const pilotManifest = manifestForCreation();
+  const planned = buildPilotPreflightPlan(
+    input(pilotManifest, emptyState(), {
+      runtimeTarget: {
+        cadenceEnv: "local",
+        supabaseUrl: "http://127.0.0.1:54321",
+        supabaseProjectRef: undefined,
+        safeTargetMarker: pilotManifest.target.safeTargetMarker,
+      },
+    }),
+  );
+
+  assert.equal(
+    planned.target.safeTargetMarker,
+    pilotManifest.target.safeTargetMarker,
+  );
+});
+
+
+test("the authoritative Projects schema has no safe-target or Project marker column", () => {
+  const projectsMigration = readFileSync(
+    resolve(
+      __dirname,
+      "../../../supabase/migrations/20260808000400_projects.sql",
+    ),
+    "utf8",
+  );
+
+  assert.doesNotMatch(projectsMigration, /safe_target_marker|project_marker|\bmarker\b/i);
 });
 
 

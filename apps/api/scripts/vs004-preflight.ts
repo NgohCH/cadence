@@ -55,7 +55,6 @@ export interface ObservedAuthenticationIdentity {
 
 export interface ObservedProject {
   id: string;
-  marker: string;
   name: string;
   description: string | null;
   goal: string | null;
@@ -325,7 +324,6 @@ function planProject(
   const existing = matches[0];
   if (existing) {
     if (
-      existing.marker !== intended.marker ||
       existing.name !== intended.name ||
       existing.description !== intended.description ||
       existing.goal !== intended.goal ||
@@ -378,7 +376,6 @@ function planProject(
   return {
     createdOrExisting: existing ?? {
       id: intended.id,
-      marker: intended.marker,
       name: intended.name,
       description: intended.description,
       goal: intended.goal,
