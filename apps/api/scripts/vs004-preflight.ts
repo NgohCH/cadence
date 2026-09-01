@@ -273,13 +273,16 @@ function validateExecutionInput(input: PilotPreflightInput): void {
 }
 
 
-function validateTarget(input: PilotPreflightInput): void {
+export function validatePilotRuntimeTarget(
+  manifest: ValidatedPilotManifest,
+  runtimeTarget: PilotRuntimeTarget,
+): void {
   let safety;
   try {
     safety = validateCadenceEnvironmentSafety({
-      cadenceEnv: input.runtimeTarget.cadenceEnv,
-      supabaseUrl: input.runtimeTarget.supabaseUrl,
-      supabaseProjectRef: input.runtimeTarget.supabaseProjectRef,
+      cadenceEnv: runtimeTarget.cadenceEnv,
+      supabaseUrl: runtimeTarget.supabaseUrl,
+      supabaseProjectRef: runtimeTarget.supabaseProjectRef,
     });
   } catch (error) {
     throw preflightError(
@@ -288,7 +291,7 @@ function validateTarget(input: PilotPreflightInput): void {
     );
   }
 
-  const manifestTarget = input.manifest.target;
+  const manifestTarget = manifest.target;
   if (
     safety.cadenceEnv !== manifestTarget.environment ||
     safety.supabaseProjectRef !== manifestTarget.supabaseProjectRef
@@ -299,7 +302,7 @@ function validateTarget(input: PilotPreflightInput): void {
     );
   }
   if (
-    input.runtimeTarget.safeTargetMarker !==
+    runtimeTarget.safeTargetMarker !==
     manifestTarget.safeTargetMarker
   ) {
     throw preflightError(
@@ -307,6 +310,11 @@ function validateTarget(input: PilotPreflightInput): void {
       "Runtime safeTargetMarker does not match the manifest.",
     );
   }
+}
+
+
+function validateTarget(input: PilotPreflightInput): void {
+  validatePilotRuntimeTarget(input.manifest, input.runtimeTarget);
 }
 
 
