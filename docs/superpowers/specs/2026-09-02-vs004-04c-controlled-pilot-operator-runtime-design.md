@@ -99,8 +99,7 @@ manifest as execution authority and does not invoke the planner.
 authority. It recognizes `CADENCE_ENV`, `SUPABASE_URL`, and
 `CADENCE_SUPABASE_PROJECT_REF`, with local loopback and hosted HTTPS/project
 reference checks. The existing server-side Supabase client uses
-`SUPABASE_SECRET_KEY`; the publishable application key is
-`SUPABASE_PUBLISHABLE_KEY`.
+`SUPABASE_SECRET_KEY`.
 
 The administrative provider boundary is
 `AdministrativeAuthProvider`, with `findAccounts()` and `createAccount()`.
@@ -147,8 +146,9 @@ is:
    mutation repository, raw Supabase client, RPC, or provider write method is
    exposed to the command handler.
 7. Call `preparePilotExecution()` once.
-8. Serialize the returned `PreparedPilotExecution` without credentials and
-   write it atomically.
+8. Wrap the returned `PreparedPilotExecution` in the current versioned
+   prepared-artifact envelope, serialize it without credentials, and write it
+   atomically.
 9. Print a concise safe summary containing manifest ID, environment, Project
    ID, run correlation ID, CREATE/REUSE counts, and output path.
 10. End with `PREPARED — NOT EXECUTED` and `NO MUTATIONS PERFORMED`.
@@ -168,12 +168,19 @@ The execute handler is CLI/input orchestration only. Its flow is:
    target, evidence, and plan data.
 4. Load the current runtime target independently; do not trust a target read
    from a command-line manifest or from stale ambient state.
-5. Build the committed runtime composition boundary.
-6. Call `executeControlledPilot()` once with the loaded prepared execution.
-7. Rely on 04B to recompute the manifest hash and revalidate the target,
+5. Reserve the success-result and failure-evidence output sinks before any
+   mutation. This includes checking both final paths, validating the parent
+   directory and output capability, and proving exclusive temporary-file and
+   no-overwrite publication semantics.
+6. Build the committed runtime composition boundary only after output
+   readiness succeeds.
+7. Call `executeControlledPilot()` once with the loaded prepared execution.
+8. Rely on 04B to recompute the manifest hash and revalidate the target,
    operation allowlist, plan consistency, and module-owned current state.
-8. Atomically write the credential-free `PilotExecutionResult` on success.
-9. Print a concise safe summary containing manifest ID, run correlation ID,
+9. Wrap the credential-free `PilotExecutionResult` in the current versioned
+   result envelope and atomically publish it through the already reserved
+   success sink.
+10. Print a concise safe summary containing manifest ID, run correlation ID,
    CREATED/REUSED counts, and result path.
 
 The execute handler never loads a separate manifest, calls 04A, invokes
@@ -181,12 +188,33 @@ The execute handler never loads a separate manifest, calls 04A, invokes
 correlation ID, retries stale execution, or repairs a conflict. A stale or
 conflicting plan fails and requires a new preflight.
 
+If output reservation cannot establish the required no-overwrite publication
+semantics, execute fails before runtime composition and before any 04B call.
+If 04B succeeds but success-artifact publication unexpectedly fails, the
+process remains nonzero, performs no compensation or retry, and reports that
+execution completed but durable success-artifact publication failed. It uses
+the already reserved failure/evidence sink on a best-effort basis to preserve
+the completed `PilotExecutionResult`; this condition is never reported as a
+failure before mutation.
+
 ## 6. Prepared artifact contract
 
-The serialized `PreparedPilotExecution` is the canonical prepared artifact;
+The serialized `PreparedPilotExecution` remains the canonical authority
+payload. Its transport envelope is:
+
+```json
+{
+  "artifactType": "cadence.vs004.prepared-pilot-execution",
+  "formatVersion": 1,
+  "preparedExecution": "<exact PreparedPilotExecution>"
+}
+```
+
+The envelope is thin and non-authoritative: it adds no operations, identity,
+or authority. 04B receives the exact inner `PreparedPilotExecution`.
 04C does not invent a competing authority schema or a consumed-artifact
-ledger. The serialized fields are the exact committed fields listed in
-Section 2.2. In particular, the artifact binds the validated manifest, its
+ledger. The payload fields are the exact committed fields listed in Section
+2.2. In particular, the artifact binds the validated manifest, its
 credential-free deterministic hash, target identity, operator Person,
 per-attempt correlation ID, observed evidence, and complete preflight plan.
 
@@ -203,6 +231,20 @@ Manifest hashing remains deterministic over the validated credential-free
 manifest and independent of JSON formatting, runtime secrets, and the run
 correlation ID.
 
+The current prepared envelope is `formatVersion: 1`. Execute rejects a wrong
+`artifactType`, a missing version, or any unsupported version before runtime
+composition or mutation. It does not silently migrate an unknown or future
+prepared-artifact version. The same structural rules apply when the envelope
+is read from disk as when the inner payload is validated.
+
+VS004 artifacts are not cryptographically signed. For the M1 controlled pilot,
+operator access and the operator filesystem are trusted boundaries. Structural
+validation detects malformed or incompatible transport, while 04B verifies
+semantic plan integrity, current target, and current state. VS004 does not
+claim to protect against a malicious privileged operator deliberately forging a
+new internally consistent artifact. Cryptographic signing or an enterprise
+execution registry requires separate future change control.
+
 ## 7. Runtime composition boundary
 
 Implementation will introduce a dedicated composition boundary, separate from
@@ -216,7 +258,7 @@ buildControlledPilotRuntime()
   -> Identity/Projects/Health/Membership preparation services for 04B
 ```
 
-The likely implementation boundary, subject to the implementation audit, is:
+The implementation boundary is:
 
 - `apps/api/scripts/vs004-controlled-pilot-artifact.ts` and its tests for
   safe JSON loading, structural validation, and atomic writing;
@@ -249,15 +291,32 @@ RPC, browser route, or HTTP endpoint.
 
 ## 8. Artifact write and overwrite semantics
 
-All prepared, success, and failure artifacts use one atomic writer:
+All prepared, success, and failure artifacts use one atomic writer and an
+execution output reservation abstraction. Conceptually, the reservation
+provides `reserveExecutionOutputs(successPath, failurePath)`, exclusive
+temporary/reservation resources for both destinations, and publication or
+cleanup operations. It is a transport/file capability, not an execution
+authority.
 
-1. Refuse an existing final output path by default.
-2. Serialize complete credential-free JSON with stable formatting.
-3. Create a temporary sibling file exclusively, with restrictive permissions
+Before 04B is constructed or invoked, the execute command must:
+
+1. Refuse an existing success final path.
+2. Refuse an existing failure final path when it would prevent required
+   failure evidence.
+3. Validate the parent directory, permissions, and output capability.
+4. Create required sibling temporary/reservation resources exclusively.
+5. Prove that final publication cannot silently replace an existing artifact.
+6. Fail before mutation if the platform cannot provide these semantics.
+
+After this reservation succeeds, all prepared, success, and failure artifacts
+use the reserved atomic writer:
+
+1. Serialize complete credential-free JSON with stable formatting.
+2. Write to the reserved temporary sibling file with restrictive permissions
    where supported.
-4. Write UTF-8 content and flush/close it.
-5. Atomically rename the temporary sibling to the requested final path.
-6. Remove the temporary file after a handled failure when safe.
+3. Flush/close it.
+4. Atomically rename the temporary sibling to the requested final path.
+5. Remove temporary/reservation files after a handled failure when safe.
 
 There is no `--force` option in VS004-04C and no silent overwrite. If the
 platform cannot provide the required exclusive-create and rename behavior,
@@ -266,14 +325,17 @@ artifact. Cross-platform implementation must treat rename/replace behavior as
 an explicit adapter concern and must verify that the final path was not
 silently replaced.
 
-An existing prepared artifact or result artifact is therefore preserved by
-default. A failed temporary write never counts as an accepted final artifact.
+An existing prepared artifact, result artifact, or required failure artifact is
+therefore preserved by default. A failed temporary write never counts as an
+accepted final artifact. The implementation plan must audit the exact
+cross-platform reservation and rename mechanism.
 
 ## 9. Failure artifact semantics
 
 If 04B fails after one or more safe outcomes, the execute command exits
-nonzero, writes no success result, and attempts to write a separate
-credential-free failure artifact at `<requested-result-path>.failed.json`.
+nonzero, writes no success result, and publishes a separate credential-free
+failure artifact at `<requested-result-path>.failed.json` through the already
+reserved failure sink.
 The failure artifact includes only safe context: manifest ID/hash, run
 correlation ID, bound target identity, failure category, failed operation when
 known, completed outcomes, and safe timestamps/status. It does not serialize
@@ -286,6 +348,15 @@ create a persistent execution ledger. If failure-artifact writing itself
 fails, the process remains nonzero and emits a concise safe diagnostic that
 the evidence could not be persisted. It must not replace the original
 execution failure with a success status or attempt compensation.
+
+If 04B completes successfully but publishing the success artifact fails, the
+failure/evidence sink is used on a best-effort basis for a failure envelope
+whose safe evidence records `executionCompleted`, the success-publication
+failure, and the completed `PilotExecutionResult`. The process remains
+nonzero, does not rerun 04B or start a new preflight, and does not claim that
+execution failed before mutation. If this evidence publication also fails,
+the process reports both the completed execution and the inability to persist
+durable evidence.
 
 Preflight failures do not produce an executable prepared artifact. If a
 previous output path exists, it is not overwritten while reporting the
@@ -301,20 +372,48 @@ validation:
 | Environment | `CADENCE_ENV` | target identity only; never secret |
 | Supabase URL | `SUPABASE_URL` | target validation; not serialized as a secret-bearing config object |
 | Supabase project reference | `CADENCE_SUPABASE_PROJECT_REF` | target identity only |
-| Safe target marker | new 04C runtime target setting, proposed as `CADENCE_SAFE_TARGET_MARKER` because no committed equivalent exists | safe target metadata may be serialized only as target identity; never Project state |
+| Safe target marker | `CADENCE_SAFE_TARGET_MARKER` | safe target metadata may be serialized only as target identity; never Project state |
 | Server Supabase credential | `SUPABASE_SECRET_KEY` | runtime composition only; never artifact/log |
-| Publishable application key | `SUPABASE_PUBLISHABLE_KEY` | runtime composition only; never artifact/log |
 | First-account credential | existing protected runtime input such as `CADENCE_LOCAL_DEV_PASSWORD`, where required by 03A | runtime/provider input only; never artifact/log |
 
-The proposed safe-marker variable is target metadata, not a new authority
-store. Implementation must confirm there is no repository-standard name
-before adding configuration wiring. No duplicate secret variable or provider
-credential format is introduced.
+`CADENCE_SAFE_TARGET_MARKER` is target metadata, not a new authority store.
+It remains unrelated to Project database state. No duplicate secret variable or
+provider credential format is introduced.
 
 Runtime configuration is independently loaded for each command. Execute does
 not trust serialized credentials or configuration from the prepared artifact.
 
-## 11. Logging and exit behavior
+## 11. Result and failure transport envelopes
+
+The successful result uses the committed `PilotExecutionResult` as its exact
+authority payload in this thin envelope:
+
+```json
+{
+  "artifactType": "cadence.vs004.pilot-execution-result",
+  "formatVersion": 1,
+  "result": "<exact PilotExecutionResult>"
+}
+```
+
+Failure evidence uses an analogous thin envelope:
+
+```json
+{
+  "artifactType": "cadence.vs004.pilot-execution-failure",
+  "formatVersion": 1,
+  "failure": "<credential-free failure evidence>"
+}
+```
+
+The failure payload contains the committed safe error context and completed
+outcomes. In the exceptional post-success-publication case it additionally
+records that execution completed and carries the completed result as safe
+evidence. These envelopes add no operations or execution authority. Readers
+reject wrong artifact types, missing versions, and unsupported future versions
+without silently migrating them.
+
+## 12. Logging and exit behavior
 
 No existing stable numeric CLI taxonomy was found, so the initial design uses
 exit code `0` for success and a nonzero exit code for every failure class:
@@ -336,7 +435,7 @@ manifest, login lists unless operationally necessary, raw database rows,
 provider responses, passwords, tokens, or arbitrary caught exception text.
 Detailed safe evidence belongs in the artifacts.
 
-## 12. Preserved execution boundaries
+## 13. Preserved execution boundaries
 
 The operator runtime preserves these boundaries:
 
@@ -356,7 +455,7 @@ The operator runtime preserves these boundaries:
   authority. Bootstrap remains narrow, server-side, operator-only, and is not
   a browser or public HTTP authority path.
 
-## 13. Implementation test strategy
+## 14. Implementation test strategy
 
 Implementation must use isolated tests and must not execute bootstrap against
 the validated local database. At minimum it must cover:
@@ -367,9 +466,19 @@ the validated local database. At minimum it must cover:
 - malformed JSON and structurally invalid nested data;
 - invalid credential-shaped fields and a credential scan;
 - existing final output refusal;
+- existing result output fails before any 04B call;
+- unavailable output directory/publication capability fails before 04B;
+- existing failure-evidence destination fails before mutation when it would
+  prevent required evidence;
 - successful atomic write;
 - write/rename failure leaves no accepted partial final artifact;
 - success/result/failure artifacts remain credential-free.
+- unexpected success-artifact publication failure preserves completed outcomes
+  through the reserved failure/evidence sink without compensation or retry.
+- valid current prepared/result/failure envelope versions;
+- wrong artifact type, missing version, and unsupported future version;
+- prepared payload is unchanged through envelope round trip;
+- unsupported prepared artifact is rejected before 04B.
 
 ### Preflight command
 
@@ -388,6 +497,8 @@ the validated local database. At minimum it must cover:
 - exactly one 04B invocation;
 - successful result artifact;
 - partial execution failure artifact with completed outcomes;
+- success-publication failure after successful 04B is distinguished from
+  execution failure and preserves safe completed evidence;
 - stale/conflict failure requires a new preflight;
 - no retry, repair, overwrite, or compensation.
 
@@ -400,7 +511,7 @@ the validated local database. At minimum it must cover:
   browser exposure is available to command handlers;
 - no second authority model is introduced.
 
-## 14. VS004, M1, VS005, and VS006 boundary
+## 15. VS004, M1, VS005, and VS006 boundary
 
 04C completes the controlled bootstrap operator mechanism: controlled manifest
 input, reviewable read-only preflight, prepared execution transport, and
@@ -421,13 +532,18 @@ commitment, and it moves no commitment beyond M3.
 No migration, schema change, database reset, local live bootstrap, or package
 command is part of this design-only checkpoint.
 
-## 15. Design self-review checklist
+## 16. Design self-review checklist
 
 - Preflight uses the canonical validator and 04A read-only orchestration; it
   cannot mutate.
 - Execute consumes only a structurally validated prepared execution and calls
   04B; it cannot plan.
 - Prepared, result, and failure artifacts exclude credentials and secrets.
+- Prepared, result, and failure artifacts use explicit type/version envelopes;
+  unknown versions are rejected without migration.
+- Execute reserves success and failure output sinks before 04B; post-success
+  publication failure is reported as completed execution with evidence loss,
+  never as pre-mutation failure.
 - Atomic output refuses existing final paths and has no force/overwrite mode.
 - Failure evidence preserves completed outcomes without becoming execution
   authority.
