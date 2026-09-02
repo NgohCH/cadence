@@ -9,6 +9,7 @@ import type {
   PilotProjectHealthPreparationFailureEvidence,
   PilotProjectHealthPreparationIntent,
   PilotProjectHealthPreparationResult,
+  PilotProjectHealthPreparedAction,
   PilotProjectHealthRecord,
 } from "./pilot-preparation.types";
 
@@ -46,6 +47,7 @@ export class ProjectHealthPilotPreparationService {
   async preparePilotHealth(
     intent: PilotProjectHealthPreparationIntent,
     context: PilotProjectHealthPreparationContext,
+    action: PilotProjectHealthPreparedAction = "CREATE",
   ): Promise<PilotProjectHealthPreparationResult> {
     try {
       validateInput(intent, context);
@@ -53,6 +55,14 @@ export class ProjectHealthPilotPreparationService {
       if (observed) {
         assertCompatible(intent, observed);
         return result(intent, context, observed, "REUSED");
+      }
+
+      if (action === "REUSE") {
+        throw preparationError(
+          "PROJECT_HEALTH",
+          "STALE_PLAN",
+          "Prepared Project Health reuse target is absent.",
+        );
       }
 
       await this.createHealth(intent);

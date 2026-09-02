@@ -131,6 +131,19 @@ test("reuses exact Project with zero writes", async () => {
 });
 
 
+test("planned Project REUSE fails stale when the Project is absent without creating", async () => {
+  const repository = new FakeProjectsPilotPreparationRepository();
+
+  await assert.rejects(
+    service(repository).preparePilotProject(projectIntent(), context(), "REUSE"),
+    (error: unknown) =>
+      error instanceof ProjectsPilotPreparationError &&
+      error.code === "STALE_PLAN",
+  );
+  assert.deepEqual(repository.writes, []);
+});
+
+
 test("rejects incompatible Project attributes without writes", async () => {
   const repository = new FakeProjectsPilotPreparationRepository();
   repository.project = existingProject({ name: "Different project" });

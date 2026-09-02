@@ -36,6 +36,9 @@ export interface PilotProjectPreparationContext {
 }
 
 
+export type PilotProjectPreparedAction = "CREATE" | "REUSE";
+
+
 export type PilotProjectPreparedResource =
   | "PROJECT"
   | "PROJECT_HEALTH";
@@ -83,4 +86,5 @@ export type PilotProjectPreparationErrorCode =
   | "CONFLICT"
   | "READ_FAILED"
   | "CREATE_FAILED"
-  | "POSTCONDITION_FAILED";
+  | "POSTCONDITION_FAILED"
+  | "STALE_PLAN";

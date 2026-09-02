@@ -259,6 +259,7 @@ test("plans the complete default topology from read-only in-memory state", () =>
     new Set([
       "CREATE_PERSON",
       "CREATE_CADENCE_USER",
+      "CREATE_AUTH_ACCOUNT",
       "CREATE_AUTH_IDENTITY",
       "CREATE_PROJECT",
       "CREATE_PROJECT_HEALTH",
@@ -269,6 +270,24 @@ test("plans the complete default topology from read-only in-memory state", () =>
   );
   assert.equal(planned.manifestHash, computeManifestHash(pilotManifest));
   assert.equal(planned.runCorrelationId, runCorrelationId);
+});
+
+
+test("plans Auth-account CREATE and REUSE independently from authentication identity", () => {
+  const emptyPlan = buildPilotPreflightPlan(input(manifestForCreation(), emptyState()));
+  const emptyAuthOperations = emptyPlan.operations.filter(
+    (operation) => operation.kind === "CREATE_AUTH_ACCOUNT",
+  );
+  assert.equal(emptyAuthOperations.length, manifestForCreation().users.length);
+  assert.equal(emptyAuthOperations.every((operation) => operation.resourceKey.startsWith("auth-account:")), true);
+
+  const exactManifest = manifest();
+  const exactPlan = buildPilotPreflightPlan(input(exactManifest, existingState(exactManifest)));
+  const reusedAuthOperations = exactPlan.operations.filter(
+    (operation) => operation.resourceKey.startsWith("auth-account:"),
+  );
+  assert.equal(reusedAuthOperations.length, exactManifest.users.length);
+  assert.equal(reusedAuthOperations.every((operation) => operation.kind === "REUSE" && operation.id), true);
 });
 
 

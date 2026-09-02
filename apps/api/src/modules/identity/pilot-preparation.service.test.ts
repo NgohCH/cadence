@@ -284,6 +284,95 @@ test("creates missing Person, Auth account, Cadence User, and authentication ide
 });
 
 
+test("planned Identity REUSE fails stale when a required resource is absent without creating", async () => {
+  const setup = service();
+
+  await assert.rejects(
+    setup.service.preparePilotIdentity(intent(), context(), {
+      PERSON: "REUSE",
+      CADENCE_USER: "REUSE",
+      AUTHENTICATION_IDENTITY: "REUSE",
+    }),
+    (error: unknown) =>
+      error instanceof PilotPreparationError &&
+      error.code === "STALE_PLAN",
+  );
+  assert.equal(
+    setup.repository.calls.some((call) => call.startsWith("create")),
+    false,
+  );
+  assert.equal(setup.provider.calls.includes("createAccount"), false);
+});
+
+
+test("Identity validates all REUSE resources before creating another planned resource", async () => {
+  const setup = service();
+
+  await assert.rejects(
+    setup.service.preparePilotIdentity(intent(), context(), {
+      PERSON: "REUSE",
+      CADENCE_USER: "CREATE",
+      AUTHENTICATION_IDENTITY: "CREATE",
+    }),
+    (error: unknown) =>
+      error instanceof PilotPreparationError &&
+      error.code === "STALE_PLAN",
+  );
+  assert.equal(setup.repository.calls.some((call) => call.startsWith("create")), false);
+  assert.equal(setup.provider.calls.includes("createAccount"), false);
+});
+
+
+test("Auth-account REUSE cannot inherit CREATE from authentication identity", async () => {
+  const setup = service();
+  setup.repository.persons.push({ id: personId, displayName: "Pilot Owner" });
+
+  await assert.rejects(
+    setup.service.preparePilotIdentity(intent(), context(), {
+      AUTH_ACCOUNT: "REUSE",
+      PERSON: "REUSE",
+      CADENCE_USER: "CREATE",
+      AUTHENTICATION_IDENTITY: "CREATE",
+    }),
+    (error: unknown) =>
+      error instanceof PilotPreparationError &&
+      error.code === "STALE_PLAN",
+  );
+  assert.equal(setup.provider.calls.includes("createAccount"), false);
+  assert.equal(setup.repository.calls.some((call) => call.startsWith("create")), false);
+});
+
+
+test("mixed Auth-account and authentication-identity actions remain independent", async () => {
+  const setup = service();
+  setup.repository.persons.push({ id: personId, displayName: "Pilot Owner" });
+  setup.provider.accounts.push({
+    provider: "local",
+    providerSubjectId: authSubject,
+    loginIdentifier: "owner@cadence.test",
+    status: "active",
+  });
+
+  const result = await setup.service.preparePilotIdentity(intent(), context(), {
+    AUTH_ACCOUNT: "REUSE",
+    PERSON: "REUSE",
+    CADENCE_USER: "CREATE",
+    AUTHENTICATION_IDENTITY: "CREATE",
+  });
+
+  assert.deepEqual(
+    result.resources.map((resource) => [resource.resource, resource.status]),
+    [
+      ["AUTH_ACCOUNT", "REUSED"],
+      ["PERSON", "REUSED"],
+      ["CADENCE_USER", "CREATED"],
+      ["AUTHENTICATION_IDENTITY", "CREATED"],
+    ],
+  );
+  assert.equal(setup.provider.calls.includes("createAccount"), false);
+});
+
+
 test("reuses exact Person without rewriting it", async () => {
   const setup = service();
   setup.repository.persons.push({ id: personId, displayName: "Pilot Owner" });

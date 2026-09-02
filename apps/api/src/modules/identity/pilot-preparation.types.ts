@@ -57,6 +57,15 @@ export type PilotPreparedResource =
   | "AUTHENTICATION_IDENTITY";
 
 
+export type PilotIdentityPreparedAction = "CREATE" | "REUSE";
+
+
+export type PilotIdentityResourceActions = Readonly<Partial<Record<
+  PilotPreparedResource,
+  PilotIdentityPreparedAction
+>>>;
+
+
 export interface PilotPreparationResourceEvidence {
   resource: PilotPreparedResource;
   status: "CREATED" | "REUSED";

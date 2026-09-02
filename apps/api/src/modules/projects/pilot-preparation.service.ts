@@ -10,6 +10,7 @@ import type {
   PilotProjectPreparationIntent,
   PilotProjectPreparationResult,
   PilotProjectRecord,
+  PilotProjectPreparedAction,
 } from "./pilot-preparation.types";
 
 
@@ -46,6 +47,7 @@ export class ProjectsPilotPreparationService {
   async preparePilotProject(
     intent: PilotProjectPreparationIntent,
     context: PilotProjectPreparationContext,
+    action: PilotProjectPreparedAction = "CREATE",
   ): Promise<PilotProjectPreparationResult> {
     try {
       validateInput(intent, context);
@@ -62,6 +64,13 @@ export class ProjectsPilotPreparationService {
           id: project.id,
         });
       } else {
+        if (action === "REUSE") {
+          throw preparationError(
+            "PROJECT",
+            "STALE_PLAN",
+            "Prepared Project reuse target is absent.",
+          );
+        }
         await this.createProject(intent.project);
         project = await this.readProject(intent.project.id);
         if (!project) {

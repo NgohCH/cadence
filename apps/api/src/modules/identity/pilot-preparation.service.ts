@@ -16,6 +16,7 @@ import type {
   PilotIdentityPreparationContext,
   PilotIdentityPreparationIntent,
   PilotIdentityPreparationResult,
+  PilotIdentityResourceActions,
   PilotPreparationErrorCategory,
   PilotPreparationFailureEvidence,
   PilotPreparationResourceEvidence,
@@ -36,6 +37,7 @@ export class PilotPreparationError extends Error {
     | "INVALID_INPUT"
     | "MISSING"
     | "CONFLICT"
+    | "STALE_PLAN"
     | "PROVIDER_FAILED"
     | "PERSISTENCE_FAILED"
     | "POSTCONDITION_FAILED";
@@ -63,12 +65,14 @@ export class PilotPreparationService {
   async preparePilotIdentity(
     intent: PilotIdentityPreparationIntent,
     context: PilotIdentityPreparationContext,
+    resourceActions: PilotIdentityResourceActions = {},
   ): Promise<PilotIdentityPreparationResult> {
     validateInput(intent, context);
 
     try {
       const observed = await this.readObservedState(intent, context);
       const account = validateObservedState(intent, context, observed);
+      validateReusePreconditions(intent, observed, account, resourceActions);
       const resources: PilotPreparationResourceEvidence[] = [];
 
       const preparedAccount = await this.ensureAuthAccount(
@@ -76,11 +80,13 @@ export class PilotPreparationService {
         context,
         account,
         resources,
+        resourceActions.AUTH_ACCOUNT ?? "CREATE",
       );
       const person = await this.ensurePerson(
         intent,
         observed.person,
         resources,
+        resourceActions.PERSON ?? "CREATE",
       );
       const cadenceUser = await this.ensureCadenceUser(
         intent,
@@ -88,6 +94,7 @@ export class PilotPreparationService {
         person.id,
         observed.cadenceUser,
         resources,
+        resourceActions.CADENCE_USER ?? "CREATE",
       );
       const identity = await this.ensureAuthenticationIdentity(
         intent,
@@ -95,6 +102,7 @@ export class PilotPreparationService {
         person.id,
         observed.authenticationIdentities,
         resources,
+        resourceActions.AUTHENTICATION_IDENTITY ?? "CREATE",
       );
 
       return deepFreeze({
@@ -204,6 +212,7 @@ export class PilotPreparationService {
     context: PilotIdentityPreparationContext,
     existing: AdministrativeAuthAccount | null,
     resources: PilotPreparationResourceEvidence[],
+    action: "CREATE" | "REUSE",
   ): Promise<AdministrativeAuthAccount> {
     if (existing) {
       resources.push({
@@ -212,6 +221,13 @@ export class PilotPreparationService {
         id: existing.providerSubjectId,
       });
       return existing;
+    }
+    if (action === "REUSE") {
+      throw preparationError(
+        "PROVIDER",
+        "STALE_PLAN",
+        "Prepared Auth account reuse target is absent.",
+      );
     }
 
     let created: AdministrativeAuthAccount;
@@ -260,6 +276,7 @@ export class PilotPreparationService {
     intent: PilotIdentityPreparationIntent,
     observed: CadencePerson | null,
     resources: PilotPreparationResourceEvidence[],
+    action: "CREATE" | "REUSE",
   ): Promise<CadencePerson> {
     if (observed) {
       resources.push({
@@ -268,6 +285,13 @@ export class PilotPreparationService {
         id: observed.id,
       });
       return observed;
+    }
+    if (action === "REUSE") {
+      throw preparationError(
+        "PERSON",
+        "STALE_PLAN",
+        "Prepared Person reuse target is absent.",
+      );
     }
     if (intent.person.kind !== "new") {
       throw preparationError(
@@ -312,6 +336,7 @@ export class PilotPreparationService {
     personId: string,
     existing: PilotCadenceUserRecord | null,
     resources: PilotPreparationResourceEvidence[],
+    action: "CREATE" | "REUSE",
   ): Promise<PilotCadenceUserRecord> {
     const expected = {
       id: intent.cadenceUser.id,
@@ -337,6 +362,13 @@ export class PilotPreparationService {
         id: existing.id,
       });
       return existing;
+    }
+    if (action === "REUSE") {
+      throw preparationError(
+        "CADENCE_USER",
+        "STALE_PLAN",
+        "Prepared Cadence User reuse target is absent.",
+      );
     }
     try {
       const created = await this.repository.createCadenceUser(expected);
@@ -368,6 +400,7 @@ export class PilotPreparationService {
     personId: string,
     existing: readonly AuthenticationIdentity[],
     resources: PilotPreparationResourceEvidence[],
+    action: "CREATE" | "REUSE",
   ): Promise<AuthenticationIdentity> {
     const expected = {
       id: intent.authentication.identityId ?? randomUUID(),
@@ -400,6 +433,13 @@ export class PilotPreparationService {
         id: exact.id,
       });
       return exact;
+    }
+    if (action === "REUSE") {
+      throw preparationError(
+        "AUTHENTICATION_IDENTITY",
+        "STALE_PLAN",
+        "Prepared authentication identity reuse target is absent.",
+      );
     }
     try {
       const created = await this.repository.createAuthenticationIdentity(expected);
@@ -437,6 +477,57 @@ interface ObservedState {
   identityIdIdentities: readonly AuthenticationIdentity[];
   subjectIdentities: readonly AuthenticationIdentity[];
   accounts: readonly AdministrativeAuthAccount[];
+}
+
+
+function validateReusePreconditions(
+  intent: PilotIdentityPreparationIntent,
+  observed: ObservedState,
+  account: AdministrativeAuthAccount | null,
+  resourceActions: PilotIdentityResourceActions,
+): void {
+  if (resourceActions.AUTH_ACCOUNT === "REUSE" && !account) {
+    throw preparationError(
+      "PROVIDER",
+      "STALE_PLAN",
+      "Prepared Auth account reuse target is absent.",
+    );
+  }
+  if (resourceActions.PERSON === "REUSE" && !observed.person) {
+    throw preparationError(
+      "PERSON",
+      "STALE_PLAN",
+      "Prepared Person reuse target is absent.",
+    );
+  }
+  if (resourceActions.CADENCE_USER === "REUSE" && !observed.cadenceUser) {
+    throw preparationError(
+      "CADENCE_USER",
+      "STALE_PLAN",
+      "Prepared Cadence User reuse target is absent.",
+    );
+  }
+  if (resourceActions.AUTHENTICATION_IDENTITY !== "REUSE") {
+    return;
+  }
+
+  const providerSubjectId = intent.authentication.providerSubjectId ??
+    account?.providerSubjectId;
+  const identity = observed.authenticationIdentities.find(
+    (candidate) =>
+      (intent.authentication.identityId !== undefined &&
+        candidate.id === intent.authentication.identityId) ||
+      (providerSubjectId !== undefined &&
+        candidate.provider === intent.authentication.provider &&
+        candidate.providerSubjectId === providerSubjectId),
+  );
+  if (!account || !identity) {
+    throw preparationError(
+      "AUTHENTICATION_IDENTITY",
+      "STALE_PLAN",
+      "Prepared authentication identity reuse target is absent.",
+    );
+  }
 }
 
 

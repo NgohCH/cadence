@@ -130,6 +130,19 @@ test("reuses exact current Project Health with zero writes", async () => {
 });
 
 
+test("planned Project Health REUSE fails stale when Health is absent without creating", async () => {
+  const repository = new FakeProjectHealthPreparationRepository();
+
+  await assert.rejects(
+    service(repository).preparePilotHealth(healthIntent(), context(), "REUSE"),
+    (error: unknown) =>
+      error instanceof ProjectHealthPilotPreparationError &&
+      error.code === "STALE_PLAN",
+  );
+  assert.deepEqual(repository.writes, []);
+});
+
+
 test("rejects conflicting current Project Health without overwrite", async () => {
   const repository = new FakeProjectHealthPreparationRepository();
   repository.health = existingHealth({ healthStatus: "blocked" });

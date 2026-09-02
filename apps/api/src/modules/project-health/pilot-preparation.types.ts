@@ -35,6 +35,9 @@ export interface PilotProjectHealthPreparationContext {
 }
 
 
+export type PilotProjectHealthPreparedAction = "CREATE" | "REUSE";
+
+
 export interface PilotProjectHealthResourceEvidence {
   resource: "PROJECT_HEALTH";
   status: "CREATED" | "REUSED";
@@ -76,4 +79,5 @@ export type ProjectHealthPreparationErrorCode =
   | "CONFLICT"
   | "READ_FAILED"
   | "CREATE_FAILED"
-  | "POSTCONDITION_FAILED";
+  | "POSTCONDITION_FAILED"
+  | "STALE_PLAN";

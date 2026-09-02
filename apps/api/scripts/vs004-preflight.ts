@@ -156,6 +156,7 @@ export interface PilotPreflightInput {
 export type PilotPlanOperationKind =
   | "CREATE_PERSON"
   | "CREATE_CADENCE_USER"
+  | "CREATE_AUTH_ACCOUNT"
   | "CREATE_AUTH_IDENTITY"
   | "CREATE_PROJECT"
   | "CREATE_PROJECT_HEALTH"
@@ -547,6 +548,16 @@ function planAuthentication(
 
   const account = accountMatches[0];
   const identity = identityMatches[0];
+  const authAccountResourceKey = `auth-account:${authIntent.provider}:${authIntent.providerSubjectId ?? authIntent.loginIdentifier}`;
+  if (account) {
+    addReuse(operations, authAccountResourceKey, intended.key, account.id);
+  } else {
+    operations.push({
+      kind: "CREATE_AUTH_ACCOUNT",
+      resourceKey: authAccountResourceKey,
+      manifestKey: intended.key,
+    });
+  }
   const expectedSubject = authIntent.providerSubjectId;
   const identityAccount = identity
     ? observed.authAccounts.find((candidate) => candidate.id === identity.authUserId)
