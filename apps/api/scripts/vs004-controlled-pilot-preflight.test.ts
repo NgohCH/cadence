@@ -56,6 +56,7 @@ import {
 import {
   computeManifestHash,
   validatePilotManifest,
+  type ValidatedPilotManifest,
 } from "./vs004-pilot-manifest";
 
 
@@ -202,7 +203,7 @@ class FakeMembershipReader implements ProjectMembershipPilotObservationRepositor
   constructor(readonly events: string[] = []) {}
   readonly calls: string[] = [];
   memberships: ProjectMembership[] = [];
-  assignments = new Map<string, ProjectRoleAssignment[]>();
+  projectAssignments: ProjectRoleAssignment[] = [];
   transfers: ProjectRoleTransferRecord[] = [];
   failure: Error | undefined;
 
@@ -213,11 +214,11 @@ class FakeMembershipReader implements ProjectMembershipPilotObservationRepositor
     return this.memberships;
   }
 
-  async listRoleAssignments(membershipId: string): Promise<ProjectRoleAssignment[]> {
-    this.calls.push(`assignments:${membershipId}`);
-    this.events.push(`membership:assignments:${membershipId}`);
+  async listRoleAssignmentsForProject(projectId: string): Promise<ProjectRoleAssignment[]> {
+    this.calls.push(`assignments-project:${projectId}`);
+    this.events.push(`membership:assignments-project:${projectId}`);
     if (this.failure) throw this.failure;
-    return this.assignments.get(membershipId) ?? [];
+    return this.projectAssignments;
   }
 
   async listProtectedRoleTransfers(projectId: string): Promise<ProjectRoleTransferRecord[]> {
@@ -266,6 +267,45 @@ function input(
     runtimeTarget: target(manifestRecord),
     runCorrelationId: firstRunId,
     ...overrides,
+  };
+}
+
+
+function observedMembership(
+  pilotManifest: ValidatedPilotManifest,
+  userKey: string,
+): ProjectMembership {
+  const user = pilotManifest.users.find((candidate) => candidate.key === userKey)!;
+  return {
+    id: user.membership.id,
+    projectId: pilotManifest.project.id,
+    personId: user.person.id,
+    effectiveFrom: user.membership.effectiveFrom,
+    effectiveTo: user.membership.effectiveTo,
+    status: "ACTIVE",
+    grantedBy: user.membership.grantedByPersonId,
+    createdAt: user.membership.effectiveFrom,
+    terminationReason: null,
+  };
+}
+
+
+function observedAssignment(
+  pilotManifest: ValidatedPilotManifest,
+  membership: ProjectMembership,
+  id: string,
+  role: ProjectRoleAssignment["role"],
+): ProjectRoleAssignment {
+  return {
+    id,
+    projectId: pilotManifest.project.id,
+    membershipId: membership.id,
+    role,
+    effectiveFrom: membership.effectiveFrom,
+    effectiveTo: membership.effectiveTo,
+    assignedBy: membership.grantedBy!,
+    changeReason: null,
+    createdAt: membership.createdAt,
   };
 }
 
@@ -447,7 +487,7 @@ test("project, health, memberships, assignments, and protected history use read-
     terminationReason: null,
   };
   setup.membership.memberships = [membership];
-  setup.membership.assignments.set(membership.id, [{
+  setup.membership.projectAssignments = [{
     id: "00444000-0000-4000-8000-000000000002",
     projectId: membership.projectId,
     membershipId: membership.id,
@@ -457,7 +497,7 @@ test("project, health, memberships, assignments, and protected history use read-
     assignedBy: operatorPersonId,
     changeReason: "pilot",
     createdAt: membership.createdAt,
-  }]);
+  }];
 
   const result = await preparePilotExecution(input(), setup.typed, (plannerInput) => ({
     manifestId: plannerInput.manifest.manifestId,
@@ -476,11 +516,117 @@ test("project, health, memberships, assignments, and protected history use read-
   assert.equal(setup.projectHealth.calls.length, 1);
   assert.deepEqual(setup.membership.calls, [
     `memberships:${membership.projectId}`,
-    `assignments:${membership.id}`,
+    `assignments-project:${membership.projectId}`,
     `transfers:${membership.projectId}`,
   ]);
   assert.equal(result.observedEvidence.membershipCount, 1);
   assert.equal(result.observedEvidence.roleAssignmentCount, 1);
+});
+
+
+test("reads project-wide role assignments into the planner input", async () => {
+  const setup = sources();
+  const pilotManifest = validatePilotManifest(creationManifest());
+  const membership = observedMembership(pilotManifest, "observer");
+  const assignment = observedAssignment(
+    pilotManifest,
+    membership,
+    "00444000-0000-0000-0000-000000000001",
+    "PROJECT_OBSERVER",
+  );
+  setup.membership.memberships = [membership];
+  setup.membership.projectAssignments = [assignment];
+
+  let observedAssignmentCount = 0;
+  await preparePilotExecution(input(pilotManifest), setup.typed, (plannerInput) => {
+    observedAssignmentCount = plannerInput.observed.roleAssignments.length;
+    return {
+      manifestId: plannerInput.manifest.manifestId,
+      manifestHash: computeManifestHash(plannerInput.manifest),
+      target: {
+        environment: plannerInput.manifest.target.environment,
+        projectId: plannerInput.manifest.project.id,
+        safeTargetMarker: plannerInput.manifest.target.safeTargetMarker,
+      },
+      operatorPersonId: plannerInput.manifest.operator.personId,
+      runCorrelationId: plannerInput.runCorrelationId,
+      operations: [],
+    };
+  });
+
+  assert.equal(observedAssignmentCount, 1);
+  assert.deepEqual(setup.membership.calls, [
+    `memberships:${pilotManifest.project.id}`,
+    `assignments-project:${pilotManifest.project.id}`,
+    `transfers:${pilotManifest.project.id}`,
+  ]);
+});
+
+
+test("rejects an orphan project-wide role assignment before planner invocation", async () => {
+  const setup = sources();
+  const pilotManifest = validatePilotManifest(creationManifest());
+  setup.membership.projectAssignments = [{
+    id: "00444000-0000-0000-0000-000000000099",
+    projectId: pilotManifest.project.id,
+    membershipId: "00442000-0000-0000-0000-000000000099",
+    role: "PROJECT_MEMBER",
+    effectiveFrom: "2026-09-01T00:00:00.000Z",
+    effectiveTo: null,
+    assignedBy: operatorPersonId,
+    changeReason: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+  }];
+  let plannerCalls = 0;
+
+  await assert.rejects(
+    preparePilotExecution(input(pilotManifest), setup.typed, (plannerInput) => {
+      plannerCalls += 1;
+      return buildPilotPreflightPlan(plannerInput);
+    }),
+    (error: unknown) => {
+      assert.equal((error as { category: string }).category, "MEMBERSHIP_OBSERVATION");
+      return true;
+    },
+  );
+  assert.equal(plannerCalls, 0);
+  assert.ok(setup.membership.calls.includes(`assignments-project:${pilotManifest.project.id}`));
+});
+
+
+test("passes complete project-wide assignments to the existing planner for contradiction validation", async () => {
+  const setup = sources();
+  const pilotManifest = validatePilotManifest(creationManifest());
+  const membership = observedMembership(pilotManifest, "observer");
+  setup.membership.memberships = [membership];
+  setup.membership.projectAssignments = [
+    observedAssignment(
+      pilotManifest,
+      membership,
+      "00444000-0000-0000-0000-000000000001",
+      "PROJECT_MEMBER",
+    ),
+    observedAssignment(
+      pilotManifest,
+      membership,
+      "00444000-0000-0000-0000-000000000002",
+      "PROJECT_OBSERVER",
+    ),
+  ];
+  let plannerCalls = 0;
+
+  await assert.rejects(
+    preparePilotExecution(input(pilotManifest), setup.typed, (plannerInput) => {
+      plannerCalls += 1;
+      return buildPilotPreflightPlan(plannerInput);
+    }),
+    (error: unknown) => {
+      assert.equal((error as { category: string }).category, "PREFLIGHT_CONFLICT");
+      return true;
+    },
+  );
+  assert.equal(plannerCalls, 1);
+  assert.equal(setup.membership.projectAssignments.length, 2);
 });
 
 

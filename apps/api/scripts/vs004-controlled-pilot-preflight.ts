@@ -367,17 +367,18 @@ async function collectObservedPilotState(
     "MEMBERSHIP_OBSERVATION",
     () => sources.membership.listMembershipsForProject(manifest.project.id),
   );
-  const roleAssignments: ProjectRoleAssignment[] = [];
-  for (const membership of memberships) {
-    const assignments = await observe(
-      "MEMBERSHIP_OBSERVATION",
-      () => sources.membership.listRoleAssignments(membership.id),
-    );
-    roleAssignments.push(...assignments);
-  }
+  const roleAssignments = await observe(
+    "MEMBERSHIP_OBSERVATION",
+    () => sources.membership.listRoleAssignmentsForProject(manifest.project.id),
+  );
   const protectedTransfers = await observe(
     "MEMBERSHIP_OBSERVATION",
     () => sources.membership.listProtectedRoleTransfers(manifest.project.id),
+  );
+  validateProjectWideRoleAssignmentLinks(
+    manifest.project.id,
+    memberships,
+    roleAssignments,
   );
 
   return {
@@ -393,6 +394,31 @@ async function collectObservedPilotState(
     roleAssignments: roleAssignments.map(roleAssignmentToObserved),
     protectedTransfers: protectedTransfers.map(transferToObserved),
   };
+}
+
+
+function validateProjectWideRoleAssignmentLinks(
+  projectId: string,
+  memberships: readonly ProjectMembership[],
+  roleAssignments: readonly ProjectRoleAssignment[],
+): void {
+  const membershipIds = new Set(
+    memberships
+      .filter((membership) => membership.projectId === projectId)
+      .map((membership) => membership.id),
+  );
+  for (const assignment of roleAssignments) {
+    if (
+      assignment.projectId !== projectId ||
+      !membershipIds.has(assignment.membershipId)
+    ) {
+      throw new ControlledPilotPreflightError(
+        "MEMBERSHIP_OBSERVATION",
+        "Project-wide role assignment cannot be mapped to an observed membership.",
+        { runCorrelationId: "pending" },
+      );
+    }
+  }
 }
 
 

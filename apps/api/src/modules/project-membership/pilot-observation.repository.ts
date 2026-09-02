@@ -16,6 +16,6 @@ import type {
  */
 export interface ProjectMembershipPilotObservationRepository {
   listMembershipsForProject(projectId: string): Promise<ProjectMembership[]>;
-  listRoleAssignments(membershipId: string): Promise<ProjectRoleAssignment[]>;
+  listRoleAssignmentsForProject(projectId: string): Promise<ProjectRoleAssignment[]>;
   listProtectedRoleTransfers(projectId: string): Promise<ProjectRoleTransferRecord[]>;
 }
