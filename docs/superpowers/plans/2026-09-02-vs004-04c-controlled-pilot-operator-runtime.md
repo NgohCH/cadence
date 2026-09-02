@@ -14,13 +14,15 @@
 
 - `pilot:preflight` accepts a manifest and runtime configuration, invokes read-only 04A, and writes a prepared artifact; it never invokes 04B.
 - `pilot:execute` accepts only a prepared artifact and independently loaded runtime configuration; it never accepts a manifest as execution authority and never invokes 04A or `buildPilotPreflightPlan()`.
+- `PilotRuntimeTarget.projectId` is required and is independently loaded from `CADENCE_PILOT_PROJECT_ID`; it must match both `manifest.project.id` and `PreparedPilotExecution.target.projectId` before planning or mutation.
+- 04A must observe project-wide role assignments through `ProjectRoleAssignmentReadRepository.listRoleAssignmentsForProject()` and fail closed on an assignment that cannot be matched to an observed membership.
 - Prepared, result, and failure artifacts use `artifactType` plus `formatVersion: 1`; wrong type, missing version, and unsupported version fail without migration.
 - `PreparedPilotExecution` remains the canonical prepared authority payload; envelopes add transport metadata only.
 - Execute must reserve both success and failure output destinations before constructing or invoking mutation execution.
 - Existing final output paths are refused; no `--force`, silent overwrite, automatic command chaining, `--yes`, or `--execute-after-preflight` option is added.
 - A successful 04B run followed by success-publication failure is reported as completed execution with failed durable success evidence; it is never retried or compensated.
 - Runtime secrets are loaded only from process configuration and never enter artifacts, result/error objects, or normal console output.
-- `CADENCE_SAFE_TARGET_MARKER` is target metadata only. `SUPABASE_PUBLISHABLE_KEY` is not an 04C requirement unless a later audit proves a committed 04C adapter needs it.
+- `CADENCE_SAFE_TARGET_MARKER` and `CADENCE_PILOT_PROJECT_ID` are target metadata only. `SUPABASE_PUBLISHABLE_KEY` is not an 04C requirement.
 - `ProjectAuthorisationService` remains the sole normal application Project authority. 04C does not expose a browser route, HTTP route, or alternate authorization model.
 - Projects, Project Health, Identity, and Project Membership persistence remain module-owned. The command handlers receive application contracts, not repositories, RPCs, or raw Supabase clients.
 - Stable Person identity, canonical membership/role/protected-transfer history, R03 retained-field rules, VS001/VS002/VS003 behavior, and the VS004 frozen contract remain unchanged.
@@ -40,13 +42,16 @@ The implementation must use these committed facts:
 - `AdministrativeAuthProvider` exposes `findAccounts()` and `createAccount()`. `SupabaseAdministrativeAuthProvider` is the only provider-specific administrative Auth adapter audited for this work.
 - `SupabaseIdentityPilotPreparationRepository`, `SupabaseProjectsPilotPreparationRepository`, `SupabaseProjectHealthPilotPreparationRepository`, `SupabaseProjectMembershipRepository`, `SupabaseProjectMemberAdmissionRepository`, `SupabaseProjectRoleManagementRepository`, and `SupabaseProjectMembershipPilotPreparationRepository` are the existing module-owned adapters used by 03A, 03B, and 04B0.
 - 04A's `ControlledPilotObservationSources` requires a narrower `PilotAuthAccountReader`, `IdentityPilotObservationRepository`, `ProjectsPilotObservationRepository`, `ProjectHealthPilotObservationRepository`, and `ProjectMembershipPilotObservationRepository`. Runtime composition must pass read-only views even when a concrete adapter also has writes.
-- The current Membership adapters split the necessary read methods: `SupabaseProjectMembershipRepository` supplies canonical memberships and per-membership role assignments; `SupabaseProjectMembershipPilotPreparationRepository` supplies project-wide role-assignment and protected-transfer read ports. A composition mapper will combine only those read methods into 04A's observation shape. It will not write persistence or create a new domain authority.
+- The current Membership adapters split the necessary read methods: `SupabaseProjectMembershipRepository` supplies canonical memberships; `SupabaseProjectMembershipPilotPreparationRepository` supplies project-wide role assignments and protected-transfer reads. The prerequisite 04A hardening will use project-wide assignments as the authoritative assignment observation, retain unmappable assignments for fail-closed validation, and will not filter them through per-membership queries.
 - The existing server and worker construct a server-side `createClient()` with `SUPABASE_URL` and `SUPABASE_SECRET_KEY`, with session persistence and refresh disabled. No shared 04C client factory or artifact utility exists.
-- The API package uses npm scripts and `node --import tsx`; its normal `typecheck` includes `src/**/*.ts` and excludes scripts. Script tests therefore use explicit `node --import tsx --test ...` commands, and 04C adds an explicit script typecheck project rather than weakening the API typecheck.
+- The API package uses npm scripts and `node --import tsx`; its normal `typecheck` includes `src/**/*.ts` and excludes scripts. Script tests therefore use explicit `node --import tsx --test ...` commands. Task 3 creates `apps/api/tsconfig.scripts.json` before any later task invokes it, without weakening the API typecheck.
 - The repository has root npm wrappers and separate `apps/api/package.json` scripts. There is no pnpm workspace file. Package command wiring belongs in the last implementation task.
 
 Final planned files:
 
+- Modify `apps/api/scripts/vs004-preflight.ts` and its named tests for the required independent runtime Project ID assertion.
+- Modify `apps/api/scripts/vs004-controlled-pilot-preflight.ts` and its named tests for project-wide role-assignment observation and orphan fail-closed validation.
+- Modify `apps/api/src/modules/project-membership/pilot-observation.repository.ts` for the project-wide read-only observation method.
 - Create `apps/api/scripts/vs004-controlled-pilot-artifact.ts` and `.test.ts` for versioned envelope types, structural validation, and credential-free serialization.
 - Create `apps/api/scripts/vs004-controlled-pilot-file.ts` and `.test.ts` for JSON file reads, no-overwrite publication, and output reservation.
 - Create `apps/api/scripts/vs004-controlled-pilot-runtime-config.ts` and `.test.ts` for environment-to-target/configuration loading.
@@ -56,17 +61,108 @@ Final planned files:
 - Create `apps/api/scripts/vs004-controlled-pilot-preflight-cli.ts` as a thin process entrypoint.
 - Create `apps/api/scripts/vs004-controlled-pilot-execute-command.ts` and `.test.ts` for the testable execute handler.
 - Create `apps/api/scripts/vs004-controlled-pilot-execute-cli.ts` as a thin process entrypoint.
-- Create `apps/api/tsconfig.scripts.json` to typecheck the 04C scripts without changing the existing `src`-only API typecheck.
+- Create `apps/api/scripts/vs004-controlled-pilot-preflight-cli.test.ts` and `apps/api/scripts/vs004-controlled-pilot-execute-cli.test.ts` for thin entrypoint behavior.
+- Create `apps/api/scripts/vs004-controlled-pilot-package.test.ts` for package command wiring and safe help/argument checks.
+- Create `apps/api/tsconfig.scripts.json` in Task 3 to typecheck the 04C scripts without changing the existing `src`-only API typecheck.
 - Modify `apps/api/package.json` and root `package.json` only in the final package-wiring task.
 
 No existing source, migration, fixture, governance, or web file is otherwise in scope.
 
-## Task 1: Versioned Artifact Transport
+## Task 1: Harden Independent Project Runtime-Target Safety
+
+**Files:**
+
+- Modify: `apps/api/scripts/vs004-preflight.ts`
+- Test: `apps/api/scripts/vs004-preflight.test.ts`
+- Test: `apps/api/scripts/vs004-controlled-pilot-preflight.test.ts`
+- Test: `apps/api/scripts/vs004-controlled-pilot-execution.test.ts`
+- Read: `apps/api/scripts/vs004-controlled-pilot-preflight.ts`
+- Read: `apps/api/scripts/vs004-controlled-pilot-execution.ts`
+
+**Interfaces:**
+
+- Consumes: `PilotTargetDeclaration`, `ValidatedPilotManifest`, `PilotRuntimeTarget`, `validatePilotRuntimeTarget()`, `preparePilotExecution()`, and `executeControlledPilot()`.
+- Produces: a required `PilotRuntimeTarget.projectId: string` field and a target validator that rejects a runtime Project ID different from `manifest.project.id` before observation or mutation.
+
+- [ ] **Step 1: Write the failing target-safety tests**
+
+Add tests to the three named committed test files. Construct a runtime target with `projectId` in the test fixture and assert that an exact project target succeeds while a runtime Project ID different from the manifest Project ID fails with the existing target category before any observation or service call. Keep the existing environment, URL, Supabase project-reference, and safe-marker mismatch tests unchanged and passing. Do not add an environment loader or a new configuration variable in this task.
+
+- [ ] **Step 2: Run the focused tests and confirm RED**
+
+Run from `apps/api`:
+
+```text
+node --import tsx --test scripts/vs004-preflight.test.ts scripts/vs004-controlled-pilot-preflight.test.ts scripts/vs004-controlled-pilot-execution.test.ts
+```
+
+Expected RED: the current `PilotRuntimeTarget` has no required `projectId`, so the new runtime-project mismatch test cannot exercise the required target assertion and the production validator does not reject the mismatch.
+
+- [ ] **Step 3: Implement the minimum target correction**
+
+Add required `projectId: string` to `PilotRuntimeTarget`. In `validatePilotRuntimeTarget()`, compare it directly with `manifest.project.id` after the canonical environment-safety and safe-marker checks. Update every named 04A/04B test construction and assertion to provide the independent runtime Project ID. Preserve `PreparedPilotExecution.target.projectId` and its existing consistency checks; do not infer or overwrite the runtime value from the manifest.
+
+- [ ] **Step 4: Run focused GREEN tests and target regressions**
+
+Run the same focused command and confirm target mismatch fails before reads or writes, exact match succeeds, and all prior target checks remain green.
+
+- [ ] **Step 5: Commit the target-safety checkpoint**
+
+```text
+git add apps/api/scripts/vs004-preflight.ts apps/api/scripts/vs004-preflight.test.ts apps/api/scripts/vs004-controlled-pilot-preflight.test.ts apps/api/scripts/vs004-controlled-pilot-execution.test.ts
+git commit -m "fix(vs004): bind pilot runtime to project target"
+```
+
+## Task 2: Harden 04A Project-Wide Membership Observation
+
+**Files:**
+
+- Modify: `apps/api/src/modules/project-membership/pilot-observation.repository.ts`
+- Modify: `apps/api/scripts/vs004-controlled-pilot-preflight.ts`
+- Test: `apps/api/scripts/vs004-controlled-pilot-preflight.test.ts`
+- Test: `apps/api/scripts/vs004-preflight.test.ts`
+- Read: `apps/api/src/modules/project-membership/project-role-assignment-read.repository.ts`
+- Read: `apps/api/src/infrastructure/database/supabase-project-membership-pilot-preparation.repository.ts`
+
+**Interfaces:**
+
+- Consumes: `ProjectMembershipPilotObservationRepository`, `ProjectMembershipRepository.listMembershipsForProject()`, and `ProjectRoleAssignmentReadRepository.listRoleAssignmentsForProject()`.
+- Produces: a read-only observation boundary whose assignment method is `listRoleAssignmentsForProject(projectId)`, plus a 04A collector that reads memberships, all project-wide role assignments, and protected transfers before planning.
+
+- [ ] **Step 1: Write the failing project-wide observation tests**
+
+Extend the named preflight fixtures with a project-wide role-assignment read. Add tests proving that an assignment for an observed membership is included, an assignment referencing an unobserved/orphan membership is not omitted and causes a `MEMBERSHIP_OBSERVATION` failure before planner invocation, contradictory project-wide assignment evidence fails closed, and the normal complete topology still prepares successfully with no write-capable dependency. Add an ordering assertion that the project-wide role read completes before the planner is called.
+
+- [ ] **Step 2: Run the focused tests and confirm RED**
+
+```text
+node --import tsx --test scripts/vs004-controlled-pilot-preflight.test.ts scripts/vs004-preflight.test.ts
+```
+
+Expected RED: the committed observation interface and collector only expose/iterate `listRoleAssignments(membershipId)`, so a project-wide orphan assignment is either unavailable to the collector or silently absent from the observed state.
+
+- [ ] **Step 3: Implement the minimum read-path correction**
+
+Change the 04A membership observation port to use `listRoleAssignmentsForProject(projectId)` backed by the existing `ProjectRoleAssignmentReadRepository` capability. In `collectObservedPilotState()`, read the complete membership list, then read the complete project-wide assignment list, then read protected transfers; do not loop over memberships to reconstruct the assignment set. Preserve all returned assignments in the observed state. Extend observed-state validation to require each assignment to reference an observed membership in the same Project; throw a categorized preflight observation failure for an unmappable or contradictory assignment. Do not add writes, filtering, reconciliation, or migration behavior.
+
+- [ ] **Step 4: Run focused GREEN tests and 04A regressions**
+
+Run the same focused command and confirm project-wide assignments, orphan failures, contradiction failures, complete-topology preparation, read-all ordering, and zero-mutation behavior pass.
+
+- [ ] **Step 5: Commit the observation checkpoint**
+
+```text
+git add apps/api/src/modules/project-membership/pilot-observation.repository.ts apps/api/scripts/vs004-controlled-pilot-preflight.ts apps/api/scripts/vs004-controlled-pilot-preflight.test.ts apps/api/scripts/vs004-preflight.test.ts
+git commit -m "fix(vs004): observe project-wide pilot roles"
+```
+
+## Task 3: Versioned Artifact Transport and Script Compilation Boundary
 
 **Files:**
 
 - Create: `apps/api/scripts/vs004-controlled-pilot-artifact.ts`
 - Test: `apps/api/scripts/vs004-controlled-pilot-artifact.test.ts`
+- Create: `apps/api/tsconfig.scripts.json`
 - Read: `apps/api/scripts/vs004-controlled-pilot-preflight.ts`
 - Read: `apps/api/scripts/vs004-controlled-pilot-execution.ts`
 - Read: `apps/api/scripts/vs004-pilot-manifest.ts`
@@ -162,32 +258,39 @@ node --import tsx --test scripts/vs004-controlled-pilot-artifact.test.ts
 
 Expected RED: the artifact module and its envelope parsers are not yet defined, so the test file cannot import the required exports or reports the missing transport behavior. Record the failing command and the intended missing behavior before adding production code.
 
-- [ ] **Step 3: Implement the minimum transport layer**
+- [ ] **Step 3: Implement the minimum transport layer and compilation boundary**
 
-Implement literal discriminator/version constants, explicit object/array/string/number/boolean guards, nested validation for the committed prepared/result shapes, and stable JSON serialization. Reject secret-shaped fields rather than stripping them. Build failure evidence from selected safe fields only; never serialize `Error` objects, stack traces, raw provider responses, or raw database responses.
+Implement literal discriminator/version constants, explicit object/array/string/number/boolean guards, nested validation for the committed prepared/result shapes, and stable JSON serialization. Reject secret-shaped fields rather than stripping them. Build failure evidence from selected safe fields only; never serialize `Error` objects, stack traces, raw provider responses, or raw database responses. Create `apps/api/tsconfig.scripts.json` with `extends: "./tsconfig.json"`, `rootDir: "."`, strict compiler settings matching the API configuration, and includes covering `scripts/vs004-controlled-pilot-*.ts` plus the imported committed 04A/04B/preflight scripts. Do not alter `apps/api/tsconfig.json`.
 
 - [ ] **Step 4: Run focused GREEN tests**
 
-Run the same `node --import tsx --test scripts/vs004-controlled-pilot-artifact.test.ts` command. Expected result: all artifact tests pass, including wrong-type/version rejection and credential scans.
-
-- [ ] **Step 5: Commit the transport checkpoint**
+Run:
 
 ```text
-git add apps/api/scripts/vs004-controlled-pilot-artifact.ts apps/api/scripts/vs004-controlled-pilot-artifact.test.ts
+node --import tsx --test scripts/vs004-controlled-pilot-artifact.test.ts
+npx tsc --noEmit -p tsconfig.scripts.json
+```
+
+Expected result: all artifact tests and the initial script compilation boundary pass, including wrong-type/version rejection and credential scans.
+
+- [ ] **Step 5: Commit the transport and compilation-boundary checkpoint**
+
+```text
+git add apps/api/scripts/vs004-controlled-pilot-artifact.ts apps/api/scripts/vs004-controlled-pilot-artifact.test.ts apps/api/tsconfig.scripts.json
 git commit -m "feat(vs004): add operator artifact transport"
 ```
 
-## Task 2: Atomic Publication and Execute-Output Reservation
+## Task 4: Atomic Publication and Execute-Output Reservation
 
 **Files:**
 
 - Create: `apps/api/scripts/vs004-controlled-pilot-file.ts`
 - Test: `apps/api/scripts/vs004-controlled-pilot-file.test.ts`
-- Read: Node `fs/promises` documentation and current Windows PowerShell behavior during implementation; do not assume `rename()` is no-replace on every supported platform.
+- Read: Node `fs/promises` documentation and the validated Windows probe evidence; final publication must use the specified hard-link primitive.
 
 **Interfaces:**
 
-- Consumes: envelope serializers from Task 1 and output paths supplied by command handlers.
+- Consumes: envelope serializers from Task 3 and output paths supplied by command handlers.
 - Produces:
 
 ```ts
@@ -195,6 +298,7 @@ export interface PilotArtifactFileSystem {
   readUtf8(path: string): Promise<string>;
   fileExists(path: string): Promise<boolean>;
   directoryIsWritable(path: string): Promise<boolean>;
+  probeHardLinkSupport(path: string): Promise<void>;
   createExclusiveSibling(path: string): Promise<{
     readonly tempPath: string;
     readonly close: () => Promise<void>;
@@ -228,9 +332,9 @@ export async function reserveExecutionOutputs(
 ): Promise<ExecutionOutputReservation>;
 ```
 
-The concrete Node adapter must create sibling temporary files exclusively, flush and close them, and publish with a verified no-replace mechanism. The reservation must check both final paths, parent directory availability/writability, and exclusive reservation collisions before 04B. If the supported platform cannot guarantee no silent replacement, `reserveExecutionOutputs()` fails before returning a reservation. Keep reservation cleanup idempotent and never delete a pre-existing final artifact.
+The concrete Node adapter must create sibling temporary files exclusively, write complete UTF-8 JSON, call `FileHandle.sync()`, close them, hard-link the completed sibling to the final path, and unlink the sibling. It must not use `rename()` or copy/replace semantics for final publication. The reservation must check both final paths, parent directory availability/writability, hard-link support in that same directory, and exclusive reservation collisions before 04B. If the supported platform cannot guarantee no silent replacement, `reserveExecutionOutputs()` fails before returning a reservation. Keep reservation cleanup idempotent and never delete a pre-existing final artifact. The readiness check cannot prevent an external process from creating a final path later; a publication-time `EEXIST` is handled by the post-execution publication-failure semantics.
 
-For Windows, explicitly test destination-exists behavior and the selected no-replace publication primitive. If the cross-platform primitive cannot satisfy the invariant, keep the operation behind the injected port and fail closed; do not weaken the invariant by calling plain replacement semantics.
+For Windows, explicitly test destination-exists behavior and the selected hard-link publication primitive. The local validated evidence is Node `v24.13.0` on `win32 x64`, where `open(..., "wx")` and `link()` return `EEXIST` for an existing destination while `rename()` replaces it. If the cross-platform primitive cannot satisfy the invariant, keep the operation behind the injected port and fail closed; do not weaken the invariant by calling replacement rename or copy semantics.
 
 - [ ] **Step 1: Write failing filesystem and reservation tests**
 
@@ -244,10 +348,12 @@ Use an in-memory fake `PilotArtifactFileSystem` for deterministic failures and a
 6. successful prepared publication leaves one complete final file;
 7. successful result/failure reservation publishes each destination without overwrite;
 8. simulated write failure removes temporary state and leaves no accepted final file;
-9. simulated rename/publication failure leaves no accepted partial final file;
+9. simulated hard-link/publication failure leaves no accepted partial final file;
 10. unused success/failure reservations clean up their temporary resources;
 11. publication after successful 04B can fail deterministically for command-layer testing;
-12. reservation exposes no database/provider/mutation capability.
+12. `open(..., "wx")` and hard-link publication return `EEXIST` for destination collisions;
+13. `EACCES`/`EPERM`, unsupported-link, write, sync, hard-link, and relevant cleanup failures fail closed without an accepted final artifact;
+14. reservation exposes no database/provider/mutation capability.
 
 - [ ] **Step 2: Run the focused tests and confirm RED**
 
@@ -259,7 +365,7 @@ Expected RED: the file-system port, reservation implementation, and no-replace p
 
 - [ ] **Step 3: Implement the narrow file and reservation layer**
 
-Implement the injected port, the Node `fs/promises` adapter, exclusive sibling creation, UTF-8 write/flush/close, no-replace publication, and safe cleanup. Do not expose a generic delete or overwrite operation to command handlers. Make `reserveExecutionOutputs()` reserve both success and `<successPath>.failed.json` before it returns.
+Implement the injected port, the Node `fs/promises` adapter, exclusive sibling creation, UTF-8 write/`FileHandle.sync()`/close, a same-directory hard-link capability probe, same-directory hard-link publication, and safe cleanup. Do not call `rename()` or copy/replace semantics for final publication. Do not expose a generic delete or overwrite operation to command handlers. Make `reserveExecutionOutputs()` reserve both success and `<successPath>.failed.json` before it returns, and fail closed when the same-directory hard-link capability probe or no-replace guarantee is unavailable.
 
 - [ ] **Step 4: Run focused GREEN tests**
 
@@ -272,7 +378,7 @@ git add apps/api/scripts/vs004-controlled-pilot-file.ts apps/api/scripts/vs004-c
 git commit -m "feat(vs004): add atomic pilot artifact publication"
 ```
 
-## Task 3: Runtime Configuration and Target Loading
+## Task 5: Runtime Configuration and Target Loading
 
 **Files:**
 
@@ -301,13 +407,13 @@ export function loadControlledPilotRuntimeConfiguration(
 ): ControlledPilotRuntimeConfiguration;
 ```
 
-`runtimeTarget` contains only `cadenceEnv`, `supabaseUrl`, `supabaseProjectRef`, and `safeTargetMarker`. Project ID remains manifest-bound and is checked by 04A/04B against the prepared target. Require nonblank `CADENCE_SAFE_TARGET_MARKER` and map it exactly to `safeTargetMarker`. Reuse `validateCadenceEnvironmentSafety()`; do not duplicate URL, environment, or project-reference rules.
+`runtimeTarget` contains required `cadenceEnv`, `supabaseUrl`, `supabaseProjectRef`, `safeTargetMarker`, and `projectId`. Load `projectId` from nonblank `CADENCE_PILOT_PROJECT_ID`, map it exactly to `runtimeTarget.projectId`, and rely on Task 1 plus 04A/04B to compare it with the manifest and prepared target. Require nonblank `CADENCE_SAFE_TARGET_MARKER` and map it exactly to `safeTargetMarker`. Reuse `validateCadenceEnvironmentSafety()`; do not duplicate URL, environment, or Supabase project-reference rules.
 
-Require `CADENCE_ENV`, `SUPABASE_URL`, `CADENCE_SAFE_TARGET_MARKER`, and `SUPABASE_SECRET_KEY`. Require `CADENCE_SUPABASE_PROJECT_REF` only through the existing hosted-environment validator. Load the audited first-account credential `CADENCE_LOCAL_DEV_PASSWORD` as protected runtime-only input when present; do not add another password variable. Do not read or require `SUPABASE_PUBLISHABLE_KEY` for 04C.
+Require `CADENCE_ENV`, `SUPABASE_URL`, `CADENCE_SAFE_TARGET_MARKER`, `CADENCE_PILOT_PROJECT_ID`, and `SUPABASE_SECRET_KEY`. Require `CADENCE_SUPABASE_PROJECT_REF` only through the existing hosted-environment validator. Load the audited first-account credential `CADENCE_LOCAL_DEV_PASSWORD` as protected runtime-only input when present; do not add another password variable. Do not read or require `SUPABASE_PUBLISHABLE_KEY` for 04C.
 
 - [ ] **Step 1: Write failing configuration tests**
 
-Cover missing/blank required values, malformed environment, local URL/project-reference mismatch, hosted URL/project-reference mismatch, unsupported environment, safe-marker loading and target binding, secret presence without leakage into the returned safe target, and absence of publishable-key dependency.
+Cover missing/blank required values, malformed environment, local URL/project-reference mismatch, hosted URL/project-reference mismatch, unsupported environment, safe-marker loading and target binding, pilot Project ID loading and binding, secret presence without leakage into the returned safe target, and absence of publishable-key dependency.
 
 - [ ] **Step 2: Run the focused tests and confirm RED**
 
@@ -336,7 +442,7 @@ git add apps/api/scripts/vs004-controlled-pilot-runtime-config.ts apps/api/scrip
 git commit -m "feat(vs004): load controlled pilot runtime target"
 ```
 
-## Task 4: Read-Only Observation Composition Mapper
+## Task 6: Read-Only Observation Composition Mapper
 
 **Files:**
 
@@ -346,17 +452,22 @@ git commit -m "feat(vs004): load controlled pilot runtime target"
 - Read: `apps/api/src/modules/project-membership/project-membership.repository.ts`
 - Read: `apps/api/src/modules/project-membership/project-role-assignment-read.repository.ts`
 - Read: `apps/api/src/modules/project-membership/project-role-transfer-read.repository.ts`
+- Read: `apps/api/src/modules/project-membership/pilot-observation.repository.ts`
 
 **Interfaces:**
 
-- Consumes: `ControlledPilotObservationSources`, `ProjectMembershipRepository`, and `ProjectRoleTransferReadRepository`.
+- Consumes: `ProjectMembershipRepository`, `ProjectRoleAssignmentReadRepository`, `ProjectRoleTransferReadRepository`, and `ProjectMembershipPilotObservationRepository`.
 - Produces:
 
 ```ts
 export interface MembershipObservationReads {
   readonly memberships: Pick<
     ProjectMembershipRepository,
-    "listMembershipsForProject" | "listRoleAssignments"
+    "listMembershipsForProject"
+  >;
+  readonly roleAssignments: Pick<
+    ProjectRoleAssignmentReadRepository,
+    "listRoleAssignmentsForProject"
   >;
   readonly protectedTransfers: Pick<
     ProjectRoleTransferReadRepository,
@@ -373,11 +484,11 @@ export function createReadOnlyAuthAccountReader(
 ): PilotAuthAccountReader;
 ```
 
-The mapper must expose only the three 04A membership observation methods. It must not accept a `ProjectMembershipPilotPreparationService`, a write repository, an RPC, or a raw Supabase client. Its `listRoleAssignments(membershipId)` delegates only to the existing canonical membership read port; protected transfer reads delegate only to the existing transfer read port.
+The mapper must expose only the three 04A membership observation methods: `listMembershipsForProject(projectId)`, `listRoleAssignmentsForProject(projectId)`, and `listProtectedRoleTransfers(projectId)`. It must not accept a `ProjectMembershipPilotPreparationService`, a write repository, an RPC, or a raw Supabase client. Membership reads delegate to the existing canonical membership read port, project-wide assignment reads delegate to `ProjectRoleAssignmentReadRepository`, and protected transfer reads delegate to the existing transfer read port. No assignment is filtered because it lacks a matching membership.
 
 - [ ] **Step 1: Write failing mapper and capability tests**
 
-Test that all required reads are delegated, returned values are preserved, read failures propagate, and the mapper's TypeScript dependency surface contains no write method, service, raw client, or RPC operation. Test the Auth read facade separately and prove `createAccount` is not part of its type.
+Test that membership, project-wide role-assignment, and protected-transfer reads are each delegated, returned values are preserved, read failures propagate, project-wide orphan assignments are preserved for 04A fail-closed validation, and the mapper's TypeScript dependency surface contains no write method, service, raw client, or RPC operation. Test the Auth read facade separately and prove `createAccount` is not part of its type.
 
 - [ ] **Step 2: Run the focused tests and confirm RED**
 
@@ -402,13 +513,15 @@ git add apps/api/scripts/vs004-controlled-pilot-observation-adapters.ts apps/api
 git commit -m "feat(vs004): compose read-only pilot observations"
 ```
 
-## Task 5: Controlled Pilot Runtime Composition
+## Task 7: Phase-Specific Controlled Pilot Runtime Composition
 
 **Files:**
 
 - Create: `apps/api/scripts/vs004-controlled-pilot-runtime.ts`
 - Test: `apps/api/scripts/vs004-controlled-pilot-runtime.test.ts`
 - Read: `apps/api/src/infrastructure/auth/supabase-administrative-auth-provider.ts`
+- Read: `apps/api/src/infrastructure/auth/administrative-auth-provider.ts`
+- Read: `@supabase/supabase-js` `SupabaseClient` type
 - Read: `apps/api/src/infrastructure/database/supabase-identity-pilot-preparation.repository.ts`
 - Read: `apps/api/src/infrastructure/database/supabase-projects-pilot-preparation.repository.ts`
 - Read: `apps/api/src/infrastructure/database/supabase-project-health-pilot-preparation.repository.ts`
@@ -423,29 +536,39 @@ git commit -m "feat(vs004): compose read-only pilot observations"
 
 **Interfaces:**
 
-- Consumes: `ControlledPilotRuntimeConfiguration`, the audited Supabase adapter constructors, `ControlledPilotObservationSources`, and `ControlledPilotExecutionServices`.
+- Consumes: `ControlledPilotRuntimeConfiguration`, `SupabaseClient`, `AdministrativeAuthProvider`, the audited Supabase adapter constructors, `ControlledPilotObservationSources`, and `ControlledPilotExecutionServices`.
 - Produces:
 
 ```ts
-export interface ControlledPilotRuntime {
-  readonly observationSources: ControlledPilotObservationSources;
-  readonly executionServices: ControlledPilotExecutionServices;
+export interface ControlledPilotRuntimeFactories {
+  readonly createSupabaseClient: (configuration: ControlledPilotRuntimeConfiguration) => SupabaseClient;
+  readonly createAdministrativeAuthProvider: (client: SupabaseClient) => AdministrativeAuthProvider;
+  readonly createObservationSources: (input: { client: SupabaseClient; authProvider: AdministrativeAuthProvider }) => ControlledPilotObservationSources;
+  readonly createExecutionServices: (input: { client: SupabaseClient; authProvider: AdministrativeAuthProvider; configuration: ControlledPilotRuntimeConfiguration }) => ControlledPilotExecutionServices;
 }
 
-export function buildControlledPilotRuntime(
+export function buildControlledPilotObservationRuntime(
   configuration: ControlledPilotRuntimeConfiguration,
-): ControlledPilotRuntime;
+  factories?: ControlledPilotRuntimeFactories,
+): ControlledPilotObservationSources;
+
+export function buildControlledPilotExecutionServices(
+  configuration: ControlledPilotRuntimeConfiguration,
+  factories?: ControlledPilotRuntimeFactories,
+): ControlledPilotExecutionServices;
 ```
 
-Construct one server-side Supabase client with `SUPABASE_URL` and `SUPABASE_SECRET_KEY`, disabling auto-refresh, session persistence, and URL session detection as the existing server/worker do. Construct `SupabaseAdministrativeAuthProvider`, the Identity preparation repository/service, Projects preparation repository/service, Project Health preparation repository/service, canonical Membership/admission/role repositories, the 04B0 pilot-preparation read adapter, and `ProjectMembershipPilotPreparationService` using their committed constructors.
+The default factories construct one server-side Supabase client with `SUPABASE_URL` and `SUPABASE_SECRET_KEY`, disabling auto-refresh, session persistence, and URL session detection as the existing server/worker do. They construct `SupabaseAdministrativeAuthProvider`, the Identity preparation repository/service, Projects preparation repository/service, Project Health preparation repository/service, canonical Membership/admission/role repositories, the 04B0 pilot-preparation read adapter, and `ProjectMembershipPilotPreparationService` using their committed constructors. The observation builder exposes only read-only views and does not construct mutation services. The execution builder is called only after execute output readiness succeeds.
 
-Return read-only object views for 04A: the administrative provider is narrowed to `findAccounts`; Identity, Projects, and Project Health adapters are narrowed to their observation interfaces; the Membership mapper from Task 4 is used. Return 04B application services through `ControlledPilotExecutionServices`; do not return repositories or the raw client.
+`ControlledPilotRuntimeFactories` is the deterministic test seam. Tests inject a fake client factory, provider factory, module repository/adapter factories, and preparation-service factories through the two phase builders; no module-global monkeypatching or live Supabase is permitted. The client and repositories remain private to composition and are never returned to command handlers.
+
+Return read-only object views for 04A: the administrative provider is narrowed to `findAccounts`; Identity, Projects, and Project Health adapters are narrowed to their observation interfaces; the Membership mapper from Task 6 is used. Return 04B application services through `ControlledPilotExecutionServices`; do not return repositories or the raw client.
 
 The Identity service facade must bind `configuration.firstAccountPassword` into the existing `PilotIdentityPreparationContext.password` only when invoking the committed Identity service. The password must not be included in `PreparedPilotExecution`, `PilotExecutionResult`, `ControlledPilotExecutionError`, or console output. This facade does not create a new provider or authority model.
 
 - [ ] **Step 1: Write failing composition tests**
 
-Use fake Supabase client construction and fake module repositories/services. Test that the runtime exposes both capability groups, 04A can call every required read, 04B can call every committed preparation method, the Identity password is bound only inside the service call, and no handler-facing dependency exposes raw Supabase, repository mutation methods, direct RPCs, `ProjectAuthorisationService`, or HTTP routes. Verify Projects and Project Health are separate and that Project Health is not passed through the Projects observation/preparation boundary.
+Inject fake `ControlledPilotRuntimeFactories` rather than patching module globals. Test that the observation builder exposes every required read and no mutation method, the execution builder exposes every committed preparation method and no repository/client, the Identity password is bound only inside the service call, and no handler-facing dependency exposes raw Supabase, repository mutation methods, direct RPCs, `ProjectAuthorisationService`, or HTTP routes. Verify Projects and Project Health are separate and that Project Health is not passed through the Projects observation/preparation boundary.
 
 - [ ] **Step 2: Run the focused tests and confirm RED**
 
@@ -453,11 +576,11 @@ Use fake Supabase client construction and fake module repositories/services. Tes
 node --import tsx --test scripts/vs004-controlled-pilot-runtime.test.ts
 ```
 
-Expected RED: `buildControlledPilotRuntime()` and its service/read-only capability boundaries are absent.
+Expected RED: the phase-specific builders and injected factory boundary are absent.
 
 - [ ] **Step 3: Implement the composition boundary**
 
-Implement only construction and narrowing. Keep all business decisions in 04A, 04B, and the existing module services. Do not add table queries, RPC calls, or operation derivation in the runtime composition file.
+Implement only phase-specific construction and narrowing. Keep all business decisions in 04A, 04B, and the existing module services. Do not add table queries, RPC calls, or operation derivation in the runtime composition file. Ensure the preflight builder cannot construct or return mutation services and the execution builder is invoked only after output reservation.
 
 - [ ] **Step 4: Run focused GREEN tests and script typecheck**
 
@@ -477,7 +600,7 @@ git add apps/api/scripts/vs004-controlled-pilot-runtime.ts apps/api/scripts/vs00
 git commit -m "feat(vs004): compose controlled pilot runtime"
 ```
 
-## Task 6: Testable Preflight Command Handler
+## Task 8: Testable Preflight Command Handler
 
 **Files:**
 
@@ -556,7 +679,7 @@ git add apps/api/scripts/vs004-controlled-pilot-preflight-command.ts apps/api/sc
 git commit -m "feat(vs004): add pilot preflight command handler"
 ```
 
-## Task 7: Testable Execute Command Handler
+## Task 9: Testable Execute Command Handler
 
 **Files:**
 
@@ -655,27 +778,27 @@ git add apps/api/scripts/vs004-controlled-pilot-execute-command.ts apps/api/scri
 git commit -m "feat(vs004): add pilot execute command handler"
 ```
 
-## Task 8: Thin CLI Entrypoints
+## Task 10: Thin CLI Entrypoints
 
 **Files:**
 
 - Create: `apps/api/scripts/vs004-controlled-pilot-preflight-cli.ts`
 - Create: `apps/api/scripts/vs004-controlled-pilot-execute-cli.ts`
-- Create: `apps/api/tsconfig.scripts.json`
-- Test through: command-handler tests and package command checks in Task 9
+- Test: `apps/api/scripts/vs004-controlled-pilot-preflight-cli.test.ts`
+- Test: `apps/api/scripts/vs004-controlled-pilot-execute-cli.test.ts`
 
 **Interfaces:**
 
 - Consumes: exported command handlers, runtime configuration loader, runtime composition, Node process arguments/environment, Node file adapter, and console writer.
 - Produces: two process entrypoints only; no new domain or persistence interface.
 
-Each entrypoint must be a small `main()` adapter that obtains `process.argv.slice(2)`, delegates `--help` without loading runtime configuration, uses the runtime configuration loader and Node file adapter, and narrows `buildControlledPilotRuntime()` to the handler's capability group. The execute entrypoint must pass a `buildExecutionServices(configuration)` factory so runtime composition occurs only after the handler has reserved both output sinks. It invokes the handler once and sets `process.exitCode` to the returned `exitCode`. It must not contain business logic, table access, RPC calls, planner invocation, or a second error model. `pilot:preflight` receives only `observationSources`; `pilot:execute` receives only the deferred execution-service factory.
+Each entrypoint must be a small `main()` adapter that obtains `process.argv.slice(2)`, delegates `--help` without loading runtime configuration, uses the runtime configuration loader and Node file adapter, and calls only the phase-specific `buildControlledPilotObservationRuntime()` or deferred `buildControlledPilotExecutionServices()` builder. The execute entrypoint must pass the execution-service factory so runtime composition occurs only after the handler has reserved both output sinks. It invokes the handler once and sets `process.exitCode` to the returned `exitCode`. It must not contain business logic, table access, RPC calls, planner invocation, or a second error model. `pilot:preflight` receives only `observationSources`; `pilot:execute` receives only the deferred execution-service factory.
 
-Add `apps/api/tsconfig.scripts.json` with `extends: "./tsconfig.json"`, `rootDir: "."`, `include` for `scripts/vs004-controlled-pilot-*.ts` plus the committed 04A/04B/preflight scripts imported by them, and the same strict compiler options as the API config. Do not alter the existing `apps/api/tsconfig.json` include/exclude behavior.
+Use the `apps/api/tsconfig.scripts.json` created in Task 3; do not alter its include/exclude behavior in this task.
 
-- [ ] **Step 1: Write failing entrypoint/typecheck checks**
+- [ ] **Step 1: Write failing entrypoint tests and typecheck checks**
 
-Add handler-level assertions that entrypoint dependencies are phase-specific, add `--help` assertions that do not load runtime configuration, and run a script typecheck command that references the not-yet-created `tsconfig.scripts.json`.
+Add the named preflight and execute entrypoint tests. Assert that dependencies are phase-specific, `--help` does not load runtime configuration, and each entrypoint delegates exactly once with the expected capability group. Run the script typecheck against the already-created `tsconfig.scripts.json`.
 
 - [ ] **Step 2: Run checks and confirm RED**
 
@@ -683,11 +806,11 @@ Add handler-level assertions that entrypoint dependencies are phase-specific, ad
 npx tsc --noEmit -p tsconfig.scripts.json
 ```
 
-Expected RED: the script typecheck project and entrypoint files do not yet exist.
+Expected RED: the entrypoint files and their tests do not yet exist, while the Task 3 script typecheck project is already present.
 
-- [ ] **Step 3: Implement thin entrypoints and script tsconfig**
+- [ ] **Step 3: Implement the thin entrypoints**
 
-Implement only argument delegation, runtime composition narrowing, safe top-level failure handling, and exit-code assignment. Top-level errors must use concise safe text and must not print caught objects.
+Implement only argument delegation, phase-specific runtime composition, safe top-level failure handling, and exit-code assignment. Top-level errors must use concise safe text and must not print caught objects.
 
 - [ ] **Step 4: Run GREEN typecheck**
 
@@ -700,21 +823,22 @@ Expected result: all 04C scripts and their committed imported script/module type
 - [ ] **Step 5: Commit the entrypoint checkpoint**
 
 ```text
-git add apps/api/scripts/vs004-controlled-pilot-preflight-cli.ts apps/api/scripts/vs004-controlled-pilot-execute-cli.ts apps/api/tsconfig.scripts.json
+git add apps/api/scripts/vs004-controlled-pilot-preflight-cli.ts apps/api/scripts/vs004-controlled-pilot-preflight-cli.test.ts apps/api/scripts/vs004-controlled-pilot-execute-cli.ts apps/api/scripts/vs004-controlled-pilot-execute-cli.test.ts
 git commit -m "feat(vs004): add pilot operator entrypoints"
 ```
 
-## Task 9: Package Command Wiring
+## Task 11: Package Command Wiring
 
 **Files:**
 
 - Modify: `apps/api/package.json`
 - Modify: root `package.json`
+- Test: `apps/api/scripts/vs004-controlled-pilot-package.test.ts`
 - Read: `apps/api/package-lock.json` and root `package-lock.json`; scripts-only changes must not alter lockfiles.
 
 **Interfaces:**
 
-- Consumes: the two thin entrypoints from Task 8.
+- Consumes: the two thin entrypoints from Task 10 and `apps/api/scripts/vs004-controlled-pilot-package.test.ts`.
 - Produces these npm commands:
 
 ```json
@@ -735,9 +859,9 @@ Add API-package scripts with those exact commands. Add root wrappers using the e
 
 Do not load a fixed `.env.local`, `.env.qa`, or `.env.beta` file in the generic commands; runtime configuration must come from the operator's explicitly selected process environment. Do not add `--force`, `--yes`, `--execute-after-preflight`, manifest input to execute, a live database command, or a package command that chains preflight into execute.
 
-- [ ] **Step 1: Write failing package-command checks**
+- [ ] **Step 1: Write failing package-command checks in the named test file**
 
-Add or extend a package/script test that asserts both command names are absent before wiring and that the desired API entrypoint strings are the expected command targets. Add help/argument checks using injected handler dependencies so no live target is accessed.
+Create `apps/api/scripts/vs004-controlled-pilot-package.test.ts`. Before wiring, run this test against the current package manifests and observe the expected RED because the two required commands are absent. The final assertions must require both exact API entrypoint strings, both exact root wrappers, and no prohibited flags or command chaining. Add help/argument checks using injected handler dependencies so no live target is accessed.
 
 - [ ] **Step 2: Run the checks and confirm RED**
 
@@ -768,15 +892,15 @@ Expected results: help is safe and non-mutating; invalid/manifest-to-execute arg
 - [ ] **Step 5: Commit package wiring**
 
 ```text
-git add package.json apps/api/package.json
+git add package.json apps/api/package.json apps/api/scripts/vs004-controlled-pilot-package.test.ts
 git commit -m "chore(vs004): wire pilot operator commands"
 ```
 
-## Task 10: Full Regression, Security, and Scope Verification
+## Task 12: Full Regression, Security, and Scope Verification
 
 **Files:**
 
-- Modify only files required by a failing test from Tasks 1–9. Do not update governance documents, VS004 status, fixtures, migrations, schema, web code, `HANDOFF.md`, `CHANGELOG.md`, or traceability in this task.
+- Read-only verification; modify no files when all checks pass. If a real defect is found, modify only the exact file required by its RED/GREEN corrective checkpoint. Do not update governance documents, VS004 status, fixtures, migrations, schema, web code, `HANDOFF.md`, `CHANGELOG.md`, or traceability in this task.
 
 **Interfaces:**
 
@@ -788,7 +912,7 @@ git commit -m "chore(vs004): wire pilot operator commands"
 From `apps/api` run:
 
 ```text
-node --import tsx --test scripts/vs004-controlled-pilot-artifact.test.ts scripts/vs004-controlled-pilot-file.test.ts scripts/vs004-controlled-pilot-runtime-config.test.ts scripts/vs004-controlled-pilot-observation-adapters.test.ts scripts/vs004-controlled-pilot-runtime.test.ts scripts/vs004-controlled-pilot-preflight-command.test.ts scripts/vs004-controlled-pilot-execute-command.test.ts
+node --import tsx --test scripts/vs004-controlled-pilot-artifact.test.ts scripts/vs004-controlled-pilot-file.test.ts scripts/vs004-controlled-pilot-runtime-config.test.ts scripts/vs004-controlled-pilot-observation-adapters.test.ts scripts/vs004-controlled-pilot-runtime.test.ts scripts/vs004-controlled-pilot-preflight-command.test.ts scripts/vs004-controlled-pilot-execute-command.test.ts scripts/vs004-controlled-pilot-preflight-cli.test.ts scripts/vs004-controlled-pilot-execute-cli.test.ts scripts/vs004-controlled-pilot-package.test.ts
 ```
 
 Expected result: all 04C artifact, reservation, composition, preflight, execute, and security tests pass with zero failures.
@@ -820,14 +944,14 @@ Expected result: both the existing API source typecheck and explicit VS004 scrip
 
 - [ ] **Step 5: Run package-level safe command checks**
 
-Run the help and invalid-argument commands from Task 9. Run preflight only with injected/fake observations in tests; do not point it at the validated local database. Confirm execute cannot be invoked without a prepared artifact and cannot accept a manifest argument.
+Run the help and invalid-argument commands from Task 11. Run preflight only with injected/fake observations in tests; do not point it at the validated local database. Confirm execute cannot be invoked without a prepared artifact and cannot accept a manifest argument.
 
 - [ ] **Step 6: Run static authority and secret scans**
 
 From the repository root run:
 
 ```text
-rg -n "buildPilotPreflightPlan|\.rpc\(|\.insert\(|\.update\(|\.delete\(" apps/api/scripts/vs004-controlled-pilot-preflight-command.ts apps/api/scripts/vs004-controlled-pilot-preflight-cli.ts apps/api/scripts/vs004-controlled-pilot-execute-command.ts apps/api/scripts/vs004-controlled-pilot-execute-cli.ts
+rg -n "buildPilotPreflightPlan|\.rpc\(|\.insert\(|\.update\(|\.delete\(" apps/api/scripts/vs004-controlled-pilot-preflight-command.ts apps/api/scripts/vs004-controlled-pilot-preflight-cli.ts apps/api/scripts/vs004-controlled-pilot-execute-command.ts apps/api/scripts/vs004-controlled-pilot-execute-cli.ts apps/api/scripts/vs004-controlled-pilot-runtime.ts apps/api/scripts/vs004-controlled-pilot-observation-adapters.ts
 rg -n "SUPABASE_SECRET_KEY|CADENCE_LOCAL_DEV_PASSWORD|password|bearer|token|service.role|access_token|refresh_token" apps/api/scripts/vs004-controlled-pilot-artifact.ts apps/api/scripts/vs004-controlled-pilot-file.ts apps/api/scripts/vs004-controlled-pilot-preflight-command.ts apps/api/scripts/vs004-controlled-pilot-execute-command.ts
 git diff --check
 ```
@@ -838,45 +962,49 @@ The first scan must find no direct planner, RPC, or table-write usage in command
 
 ```text
 git status --short
-git diff --stat
-git diff --name-only
+git diff --stat 63fec7f..HEAD
+git diff --name-only 63fec7f..HEAD
+git diff --check 63fec7f..HEAD
 git diff --check
 ```
 
-Confirm the only implementation files are the planned 04C files plus the two package manifests and script tsconfig; no lockfile changed; no schema/migration/database-reset command was added; no module ownership, permission semantics, governance status, VS003 fixture, or browser code changed; and no 04C command can invoke mutation without a prepared artifact and pre-reserved output sinks.
+Confirm the only implementation files are the planned 04C files plus the explicitly named Task 1/Task 2 prerequisite safety files, the two package manifests, the named test files, and script tsconfig; no lockfile changed; no schema/migration/database-reset command was added; no module ownership, permission semantics, governance status, VS003 fixture, or browser code changed; and no 04C command can invoke mutation without a prepared artifact and pre-reserved output sinks. The committed baseline comparison, not only the clean working-tree diff, is the complete scope review.
 
-- [ ] **Step 8: Commit the verification checkpoint**
+- [ ] **Step 8: Close the verification gate without a ceremonial commit**
 
-```text
-git add apps/api/scripts/vs004-controlled-pilot-artifact.ts apps/api/scripts/vs004-controlled-pilot-artifact.test.ts apps/api/scripts/vs004-controlled-pilot-file.ts apps/api/scripts/vs004-controlled-pilot-file.test.ts apps/api/scripts/vs004-controlled-pilot-runtime-config.ts apps/api/scripts/vs004-controlled-pilot-runtime-config.test.ts apps/api/scripts/vs004-controlled-pilot-observation-adapters.ts apps/api/scripts/vs004-controlled-pilot-observation-adapters.test.ts apps/api/scripts/vs004-controlled-pilot-runtime.ts apps/api/scripts/vs004-controlled-pilot-runtime.test.ts apps/api/scripts/vs004-controlled-pilot-preflight-command.ts apps/api/scripts/vs004-controlled-pilot-preflight-command.test.ts apps/api/scripts/vs004-controlled-pilot-preflight-cli.ts apps/api/scripts/vs004-controlled-pilot-execute-command.ts apps/api/scripts/vs004-controlled-pilot-execute-command.test.ts apps/api/scripts/vs004-controlled-pilot-execute-cli.ts apps/api/tsconfig.scripts.json package.json apps/api/package.json
-git commit -m "test(vs004): verify controlled pilot operator runtime"
-```
+If all verification passes and no files changed during the verification task, do not run `git commit`; record the clean status and stop. If verification discovers a real defect, fix only that defect through its own RED/GREEN checkpoint, commit the narrowly scoped correction, rerun the complete Task 12 gate, and stop without creating an empty verification commit.
 
 ## Checkpoint Commit Sequence
 
 The intended reviewable history is:
 
-1. `feat(vs004): add operator artifact transport`
-2. `feat(vs004): add atomic pilot artifact publication`
-3. `feat(vs004): load controlled pilot runtime target`
-4. `feat(vs004): compose read-only pilot observations`
-5. `feat(vs004): compose controlled pilot runtime`
-6. `feat(vs004): add pilot preflight command handler`
-7. `feat(vs004): add pilot execute command handler`
-8. `feat(vs004): add pilot operator entrypoints`
-9. `chore(vs004): wire pilot operator commands`
-10. `test(vs004): verify controlled pilot operator runtime`
+1. `fix(vs004): bind pilot runtime to project target`
+2. `fix(vs004): observe project-wide pilot roles`
+3. `feat(vs004): add operator artifact transport`
+4. `feat(vs004): add atomic pilot artifact publication`
+5. `feat(vs004): load controlled pilot runtime target`
+6. `feat(vs004): compose read-only pilot observations`
+7. `feat(vs004): compose controlled pilot runtime`
+8. `feat(vs004): add pilot preflight command handler`
+9. `feat(vs004): add pilot execute command handler`
+10. `feat(vs004): add pilot operator entrypoints`
+11. `chore(vs004): wire pilot operator commands`
+
+There is no final verification commit. The last implementation commit is followed by the baseline comparison, regression, security, and scope gate in Task 12.
 
 Each commit must be made only after its task's RED test, minimal GREEN implementation, focused regression, and scope review. No commit in this plan may include a database reset, live bootstrap invocation, migration, governance update, or VS005/VS006 work.
 
 ## Plan Self-Review
 
 - Every design section is covered by a task: two-command separation, thin transport envelopes, strict structural validation, output readiness before 04B, post-success publication failure, runtime configuration, module composition, safe logging, trust/security rules, package commands, and M1/VS005/VS006 boundaries.
-- The current committed names are used for `PreparedPilotExecution`, `PilotExecutionResult`, `ControlledPilotExecutionError`, `preparePilotExecution()`, `executeControlledPilot()`, `ControlledPilotObservationSources`, and `ControlledPilotExecutionServices`.
+- The independent `CADENCE_PILOT_PROJECT_ID` safety assertion is implemented before operator-runtime tasks in Task 1, and project-wide role observation/orphan fail-closed validation is implemented before composition in Task 2.
+- The current committed names are used for `PilotRuntimeTarget`, `PreparedPilotExecution`, `PilotExecutionResult`, `ControlledPilotExecutionError`, `preparePilotExecution()`, `executeControlledPilot()`, `ControlledPilotObservationSources`, and `ControlledPilotExecutionServices`.
 - The only new cross-module read code is a method-shape mapper; it has no persistence ownership and no writes.
 - Preflight receives observation-only capabilities; execute receives application preparation services only.
 - Execute reserves result and failure destinations before runtime composition and before 04B.
+- Runtime composition is phase-specific and mutation services are constructed only after execute output readiness.
 - Unsupported envelope versions fail before 04B and are never migrated.
 - Secret-bearing configuration terminates in runtime composition and never enters transport/evidence/logging.
 - Package wiring is last and adds exactly two commands without chaining or live-database convenience behavior.
-- The plan contains no open implementation decision.
+- Final scope review compares the complete tree with committed baseline `63fec7f`.
+- All implementation interfaces are fixed in the tasks, and the plan contains no ceremonial verification commit.
