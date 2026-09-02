@@ -305,6 +305,109 @@ describe("VS004 pilot artifact file transport", () => {
     assert.equal([...fileSystem.files.keys()].some((path) => path.includes(".pilot-")), false);
   });
 
+  it("consumes success publication eligibility after cleanup failure", async () => {
+    const fileSystem = new FakeFileSystem();
+    const reservation = await reserveExecutionOutputs(
+      fileSystem,
+      "C:/pilot/result.json",
+      "C:/pilot/result.json.failed.json",
+    );
+    fileSystem.cleanupFailuresRemaining = 1;
+    await reservation.publishSuccess("FIRST");
+    const writesBeforeSecondAttempt = fileSystem.events.filter((event) => event.startsWith("write:")).length;
+
+    await assert.rejects(
+      reservation.publishSuccess("SECOND"),
+      (error: unknown) => error instanceof PilotArtifactFileError && error.category === "PUBLICATION",
+    );
+
+    assert.equal(fileSystem.events.filter((event) => event.startsWith("write:")).length, writesBeforeSecondAttempt);
+    assert.equal(fileSystem.files.get("C:/pilot/result.json"), "FIRST");
+  });
+
+  it("consumes failure publication eligibility after cleanup failure", async () => {
+    const fileSystem = new FakeFileSystem();
+    const reservation = await reserveExecutionOutputs(
+      fileSystem,
+      "C:/pilot/result.json",
+      "C:/pilot/result.json.failed.json",
+    );
+    fileSystem.cleanupFailuresRemaining = 1;
+    await reservation.publishFailure("FIRST");
+    const writesBeforeSecondAttempt = fileSystem.events.filter((event) => event.startsWith("write:")).length;
+
+    await assert.rejects(
+      reservation.publishFailure("SECOND"),
+      (error: unknown) => error instanceof PilotArtifactFileError && error.category === "PUBLICATION",
+    );
+
+    assert.equal(fileSystem.events.filter((event) => event.startsWith("write:")).length, writesBeforeSecondAttempt);
+    assert.equal(fileSystem.files.get("C:/pilot/result.json.failed.json"), "FIRST");
+  });
+
+  it("consumes publication eligibility after a primary failure", async () => {
+    const fileSystem = new FakeFileSystem();
+    const reservation = await reserveExecutionOutputs(
+      fileSystem,
+      "C:/pilot/result.json",
+      "C:/pilot/result.json.failed.json",
+    );
+    fileSystem.failWrite = true;
+    await assert.rejects(
+      reservation.publishSuccess("FIRST"),
+      (error: unknown) => error instanceof PilotArtifactFileError && error.category === "PUBLICATION",
+    );
+    fileSystem.failWrite = false;
+    const writesBeforeSecondAttempt = fileSystem.events.filter((event) => event.startsWith("write:")).length;
+
+    await assert.rejects(
+      reservation.publishSuccess("SECOND"),
+      (error: unknown) => error instanceof PilotArtifactFileError && error.category === "PUBLICATION",
+    );
+    assert.equal(fileSystem.events.filter((event) => event.startsWith("write:")).length, writesBeforeSecondAttempt);
+
+    await reservation.publishFailure("failure evidence");
+    assert.equal(fileSystem.files.get("C:/pilot/result.json.failed.json"), "failure evidence");
+  });
+
+  it("retains only failed cleanup ownership across releaseUnused retries", async () => {
+    const fileSystem = new FakeFileSystem();
+    const reservation = await reserveExecutionOutputs(
+      fileSystem,
+      "C:/pilot/result.json",
+      "C:/pilot/result.json.failed.json",
+    );
+    fileSystem.cleanupFailuresRemaining = 1;
+
+    await assert.rejects(reservation.releaseUnused());
+    const remainingAfterFirstRelease = [...fileSystem.files.keys()];
+    assert.equal(remainingAfterFirstRelease.length, 1);
+    assert.equal(remainingAfterFirstRelease[0].includes(".pilot-"), true);
+
+    await reservation.releaseUnused();
+    assert.equal(fileSystem.files.size, 0);
+  });
+
+  it("does not restore publication after cleanup-only retry", async () => {
+    const fileSystem = new FakeFileSystem();
+    const reservation = await reserveExecutionOutputs(
+      fileSystem,
+      "C:/pilot/result.json",
+      "C:/pilot/result.json.failed.json",
+    );
+    fileSystem.cleanupFailuresRemaining = 1;
+    await reservation.publishSuccess("FIRST");
+    await reservation.releaseUnused();
+    const writesBeforeSecondAttempt = fileSystem.events.filter((event) => event.startsWith("write:")).length;
+
+    await assert.rejects(
+      reservation.publishSuccess("SECOND"),
+      (error: unknown) => error instanceof PilotArtifactFileError && error.category === "PUBLICATION",
+    );
+    assert.equal(fileSystem.events.filter((event) => event.startsWith("write:")).length, writesBeforeSecondAttempt);
+    assert.equal(fileSystem.files.get("C:/pilot/result.json"), "FIRST");
+  });
+
   it("keeps primary write, sync, and link failures categorized as PUBLICATION", async () => {
     const failures: FakeFileSystem[] = [];
     const writeFailure = new FakeFileSystem();
@@ -445,5 +548,37 @@ describe("VS004 pilot artifact file transport", () => {
     assert.equal(await readFile(finalPath, "utf8"), "complete ✓");
     const remaining = await readdir(directory);
     assert.deepEqual(remaining, ["artifact.json"]);
+  });
+
+  it("keeps a real Windows final artifact immutable after failed temp cleanup", async (t) => {
+    if (process.platform !== "win32") {
+      t.skip("Windows-specific filesystem regression");
+      return;
+    }
+
+    const directory = await mkdtemp(join(tmpdir(), "cadence-vs004-alias-"));
+    temporaryDirectories.push(directory);
+    const fileSystem = createNodePilotArtifactFileSystem();
+    const finalPath = join(directory, "result.json");
+    const failurePath = `${finalPath}.failed.json`;
+    const originalRemove = fileSystem.removeIfPresent.bind(fileSystem);
+    let failFirstTempCleanup = true;
+    fileSystem.removeIfPresent = async (path) => {
+      if (failFirstTempCleanup && path.endsWith(".tmp")) {
+        failFirstTempCleanup = false;
+        const error = new Error("EACCES") as Error & { readonly code: string };
+        error.code = "EACCES";
+        throw error;
+      }
+      return originalRemove(path);
+    };
+
+    const reservation = await reserveExecutionOutputs(fileSystem, finalPath, failurePath);
+    await reservation.publishSuccess("FIRST");
+    await assert.rejects(reservation.publishSuccess("SECOND"));
+    assert.equal(await readFile(finalPath, "utf8"), "FIRST");
+
+    await reservation.releaseUnused();
+    assert.deepEqual(await readdir(directory), ["result.json"]);
   });
 });

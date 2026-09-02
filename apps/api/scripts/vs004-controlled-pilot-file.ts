@@ -149,19 +149,36 @@ function createReservation(
   successTempPath: string,
   failureTempPath: string,
 ): ExecutionOutputReservation {
-  let successTemp: string | undefined = successTempPath;
-  let failureTemp: string | undefined = failureTempPath;
+  type ReservationKind = "success" | "failure";
+  type ReservationState = {
+    publicationAvailable: boolean;
+    cleanupTemp: string | undefined;
+  };
+
+  const states: Record<ReservationKind, ReservationState> = {
+    success: { publicationAvailable: true, cleanupTemp: successTempPath },
+    failure: { publicationAvailable: true, cleanupTemp: failureTempPath },
+  };
 
   const publish = async (
-    kind: "success" | "failure",
+    kind: ReservationKind,
     content: string,
   ): Promise<void> => {
-    const tempPath = kind === "success" ? successTemp : failureTemp;
+    const state = states[kind];
     const finalPath = kind === "success" ? successPath : failurePath;
+    if (!state.publicationAvailable) {
+      throw new PilotArtifactFileError(
+        "PUBLICATION",
+        `${kind} artifact publication has already been consumed.`,
+      );
+    }
+    state.publicationAvailable = false;
+
+    const tempPath = state.cleanupTemp;
     if (tempPath === undefined) {
       throw new PilotArtifactFileError(
         "PUBLICATION",
-        `${kind} artifact reservation is no longer available.`,
+        `${kind} artifact reservation has no owned temporary path.`,
       );
     }
 
@@ -169,7 +186,9 @@ function createReservation(
       await fileSystem.writeAndFlush(tempPath, content);
       await fileSystem.publishNoReplace(tempPath, finalPath);
     } catch (error) {
-      await cleanupOwnedSibling(fileSystem, tempPath);
+      if (await tryCleanupOwnedSibling(fileSystem, tempPath)) {
+        state.cleanupTemp = undefined;
+      }
       throw wrapFileError(
         "PUBLICATION",
         `Unable to publish reserved ${kind} artifact without replacement: ${finalPath}.`,
@@ -177,15 +196,8 @@ function createReservation(
       );
     }
 
-    try {
-      await fileSystem.removeIfPresent(tempPath);
-      if (kind === "success") {
-        successTemp = undefined;
-      } else {
-        failureTemp = undefined;
-      }
-    } catch {
-      // The final hard link is already durable; releaseUnused may retry this owned cleanup.
+    if (await tryCleanupOwnedSibling(fileSystem, tempPath)) {
+      state.cleanupTemp = undefined;
     }
   };
 
@@ -196,18 +208,18 @@ function createReservation(
     publishFailure: (content) => publish("failure", content),
     releaseUnused: async () => {
       const errors: unknown[] = [];
-      for (const tempPath of [successTemp, failureTemp]) {
+      for (const state of Object.values(states)) {
+        const tempPath = state.cleanupTemp;
         if (tempPath === undefined) {
           continue;
         }
         try {
           await fileSystem.removeIfPresent(tempPath);
+          state.cleanupTemp = undefined;
         } catch (error) {
           errors.push(error);
         }
       }
-      successTemp = undefined;
-      failureTemp = undefined;
       if (errors.length > 0) {
         throw wrapFileError("PUBLICATION", "Unable to clean reserved temporary files.", errors[0]);
       }
@@ -277,10 +289,20 @@ async function cleanupOwnedSibling(
   fileSystem: PilotArtifactFileSystem,
   tempPath: string,
 ): Promise<void> {
+  await tryCleanupOwnedSibling(fileSystem, tempPath);
+}
+
+
+async function tryCleanupOwnedSibling(
+  fileSystem: PilotArtifactFileSystem,
+  tempPath: string,
+): Promise<boolean> {
   try {
     await fileSystem.removeIfPresent(tempPath);
+    return true;
   } catch {
     // Cleanup never targets a final destination and must not mask the primary failure.
+    return false;
   }
 }
 
