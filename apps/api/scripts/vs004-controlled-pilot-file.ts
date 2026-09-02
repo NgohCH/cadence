@@ -118,9 +118,9 @@ export async function reserveExecutionOutputs(
   let successSibling: { readonly tempPath: string; readonly close: () => Promise<void> } | undefined;
   let failureSibling: { readonly tempPath: string; readonly close: () => Promise<void> } | undefined;
   try {
-    successSibling = await createSibling(fileSystem, successPath);
+    successSibling = await createSibling(fileSystem, successPath, "READINESS");
     await successSibling.close();
-    failureSibling = await createSibling(fileSystem, failurePath);
+    failureSibling = await createSibling(fileSystem, failurePath, "READINESS");
     await failureSibling.close();
   } catch (error) {
     if (successSibling !== undefined) {
@@ -168,12 +168,6 @@ function createReservation(
     try {
       await fileSystem.writeAndFlush(tempPath, content);
       await fileSystem.publishNoReplace(tempPath, finalPath);
-      await fileSystem.removeIfPresent(tempPath);
-      if (kind === "success") {
-        successTemp = undefined;
-      } else {
-        failureTemp = undefined;
-      }
     } catch (error) {
       await cleanupOwnedSibling(fileSystem, tempPath);
       throw wrapFileError(
@@ -181,6 +175,17 @@ function createReservation(
         `Unable to publish reserved ${kind} artifact without replacement: ${finalPath}.`,
         error,
       );
+    }
+
+    try {
+      await fileSystem.removeIfPresent(tempPath);
+      if (kind === "success") {
+        successTemp = undefined;
+      } else {
+        failureTemp = undefined;
+      }
+    } catch {
+      // The final hard link is already durable; releaseUnused may retry this owned cleanup.
     }
   };
 
@@ -254,12 +259,13 @@ async function assertWritable(
 async function createSibling(
   fileSystem: PilotArtifactFileSystem,
   finalPath: string,
+  category: PilotFileErrorCategory = "PUBLICATION",
 ): Promise<{ readonly tempPath: string; readonly close: () => Promise<void> }> {
   try {
     return await fileSystem.createExclusiveSibling(finalPath);
   } catch (error) {
     throw wrapFileError(
-      "PUBLICATION",
+      category,
       `Unable to create an exclusive temporary sibling for ${finalPath}.`,
       error,
     );

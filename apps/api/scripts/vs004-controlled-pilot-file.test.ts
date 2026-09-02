@@ -6,6 +6,7 @@ import { after, describe, it } from "node:test";
 
 import {
   createNodePilotArtifactFileSystem,
+  PilotArtifactFileError,
   type ExecutionOutputReservation,
   type PilotArtifactFileSystem,
   publishJsonNoReplace,
@@ -23,6 +24,7 @@ class FakeFileSystem implements PilotArtifactFileSystem {
   failSync = false;
   failLink: string | undefined;
   failCleanup = false;
+  cleanupFailuresRemaining = 0;
   private nextTemp = 0;
 
   async readUtf8(path: string): Promise<string> {
@@ -103,6 +105,10 @@ class FakeFileSystem implements PilotArtifactFileSystem {
 
   async removeIfPresent(path: string): Promise<void> {
     this.events.push(`unlink:${path}`);
+    if (this.cleanupFailuresRemaining > 0) {
+      this.cleanupFailuresRemaining -= 1;
+      throw new Error("EACCES");
+    }
     if (this.failCleanup) {
       throw new Error("EACCES");
     }
@@ -204,6 +210,16 @@ describe("VS004 pilot artifact file transport", () => {
     );
   });
 
+  it("classifies reservation sibling creation failure as READINESS", async () => {
+    const fileSystem = new FakeFileSystem();
+    fileSystem.failCreate = true;
+
+    await assert.rejects(
+      reserveExecutionOutputs(fileSystem, "C:/pilot/result.json", "C:/pilot/result.json.failed.json"),
+      (error: unknown) => error instanceof PilotArtifactFileError && error.category === "READINESS",
+    );
+  });
+
   it("does not publish until complete content is written and flushed", async () => {
     const fileSystem = new FakeFileSystem();
     await publishJsonNoReplace(fileSystem, "C:/pilot/result.json", "complete");
@@ -255,6 +271,75 @@ describe("VS004 pilot artifact file transport", () => {
 
     await assert.rejects(publishJsonNoReplace(fileSystem, "C:/pilot/result.json", "content"), /EEXIST/);
     assert.equal(fileSystem.files.get("C:/pilot/result.json"), "external");
+  });
+
+  it("treats hard-link success as publication success when temp cleanup fails", async () => {
+    const fileSystem = new FakeFileSystem();
+    const reservation = await reserveExecutionOutputs(
+      fileSystem,
+      "C:/pilot/result.json",
+      "C:/pilot/result.json.failed.json",
+    );
+    fileSystem.cleanupFailuresRemaining = 1;
+
+    await reservation.publishSuccess("complete");
+
+    assert.equal(fileSystem.files.get("C:/pilot/result.json"), "complete");
+    assert.equal([...fileSystem.files.keys()].some((path) => path.includes(".pilot-")), true);
+  });
+
+  it("allows releaseUnused to retry an owned temp cleanup after publication", async () => {
+    const fileSystem = new FakeFileSystem();
+    const reservation = await reserveExecutionOutputs(
+      fileSystem,
+      "C:/pilot/result.json",
+      "C:/pilot/result.json.failed.json",
+    );
+    fileSystem.cleanupFailuresRemaining = 1;
+    await reservation.publishSuccess("complete");
+    fileSystem.cleanupFailuresRemaining = 0;
+
+    await reservation.releaseUnused();
+
+    assert.equal(fileSystem.files.get("C:/pilot/result.json"), "complete");
+    assert.equal([...fileSystem.files.keys()].some((path) => path.includes(".pilot-")), false);
+  });
+
+  it("keeps primary write, sync, and link failures categorized as PUBLICATION", async () => {
+    const failures: FakeFileSystem[] = [];
+    const writeFailure = new FakeFileSystem();
+    writeFailure.failWrite = true;
+    failures.push(writeFailure);
+    const syncFailure = new FakeFileSystem();
+    syncFailure.failSync = true;
+    failures.push(syncFailure);
+    const linkFailure = new FakeFileSystem();
+    linkFailure.failLink = "EEXIST";
+    failures.push(linkFailure);
+
+    for (const fileSystem of failures) {
+      await assert.rejects(
+        publishJsonNoReplace(fileSystem, "C:/pilot/result.json", "content"),
+        (error: unknown) => error instanceof PilotArtifactFileError && error.category === "PUBLICATION",
+      );
+    }
+  });
+
+  it("keeps direct releaseUnused cleanup failure explicit as PUBLICATION", async () => {
+    const fileSystem = new FakeFileSystem();
+    const reservation = await reserveExecutionOutputs(
+      fileSystem,
+      "C:/pilot/result.json",
+      "C:/pilot/result.json.failed.json",
+    );
+    fileSystem.failCleanup = true;
+
+    await assert.rejects(
+      reservation.releaseUnused(),
+      (error: unknown) => error instanceof PilotArtifactFileError && error.category === "PUBLICATION",
+    );
+    assert.equal(fileSystem.files.has("C:/pilot/result.json"), false);
+    assert.equal(fileSystem.files.has("C:/pilot/result.json.failed.json"), false);
   });
 
   it("cleans unused reservations and makes cleanup idempotent", async () => {
