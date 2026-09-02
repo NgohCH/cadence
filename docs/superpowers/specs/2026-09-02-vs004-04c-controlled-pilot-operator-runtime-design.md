@@ -50,8 +50,26 @@ database state.
 `apps/api/scripts/vs004-preflight.ts` provides `PilotRuntimeTarget` and
 `validatePilotRuntimeTarget()`. Runtime target identity includes `cadenceEnv`,
 `supabaseUrl`, `supabaseProjectRef`, `safeTargetMarker`, and `projectId`.
-Target validation requires the declared target and runtime target to agree;
-the safe-target marker is never compared with a Project row.
+The current committed `PilotRuntimeTarget` type does not yet include
+`projectId`; adding that required field and its safety checks is a prerequisite
+before 04C operator implementation. The future validator must require
+`runtimeTarget.projectId === manifest.project.id` in addition to the committed
+environment, Supabase, and safe-marker checks. The safe-target marker is never
+compared with a Project row.
+
+`CADENCE_SUPABASE_PROJECT_REF` identifies the Supabase deployment target.
+`CADENCE_PILOT_PROJECT_ID` independently identifies the Cadence Project that
+the operator-selected runtime is allowed to target. The latter is target
+metadata, not manifest authority, Project state, or application authorization.
+The safety chain is:
+
+```text
+CADENCE_PILOT_PROJECT_ID
+  -> PilotRuntimeTarget.projectId
+  -> manifest.project.id
+  -> PreparedPilotExecution.target.projectId
+  -> 04B revalidation before mutation
+```
 
 ### 2.2 Prepared execution
 
@@ -172,7 +190,7 @@ The execute handler is CLI/input orchestration only. Its flow is:
    mutation. This includes checking both final paths, validating the parent
    directory and output capability, and proving exclusive temporary-file and
    no-overwrite publication semantics.
-6. Build the committed runtime composition boundary only after output
+6. Build the phase-specific execution composition boundary only after output
    readiness succeeds.
 7. Call `executeControlledPilot()` once with the loaded prepared execution.
 8. Rely on 04B to recompute the manifest hash and revalidate the target,
@@ -247,14 +265,16 @@ execution registry requires separate future change control.
 
 ## 7. Runtime composition boundary
 
-Implementation will introduce a dedicated composition boundary, separate from
-CLI parsing. The expected responsibilities are:
+Implementation will introduce dedicated phase-specific composition boundaries,
+separate from CLI parsing. The expected responsibilities are:
 
 ```text
-buildControlledPilotRuntime()
+buildControlledPilotObservationRuntime(configuration, factories)
   -> current environment/configuration validation
-  -> provider and database adapter construction
   -> typed read-only observation views for 04A
+
+buildControlledPilotExecutionServices(configuration, factories)
+  -> provider and database adapter construction
   -> Identity/Projects/Health/Membership preparation services for 04B
 ```
 
@@ -276,7 +296,16 @@ and services. Where a committed adapter has both read and write capability,
 the 04A dependency is passed as a narrow read-only typed view; the command
 handler is never given the adapter or raw client. The 04B dependency is the
 module-owned application preparation service, not its repository, RPC, or
-Supabase client.
+Supabase client. Mutation-capable services are not constructed by the
+preflight composition and are not constructed by execute until output
+readiness has succeeded.
+
+Both builders accept one explicit injected factory bundle for deterministic
+tests. The bundle can construct the server-side Supabase client, administrative
+Auth provider, module repositories/adapters, observation views, and preparation
+services. Production defaults use the committed concrete constructors; tests
+provide fakes without module-global monkeypatching. Raw clients remain private
+to composition and never cross into either command handler.
 
 The Identity composition facade may bind protected runtime-only account
 creation credentials while exposing the existing preparation service shape to
@@ -305,7 +334,8 @@ Before 04B is constructed or invoked, the execute command must:
    failure evidence.
 3. Validate the parent directory, permissions, and output capability.
 4. Create required sibling temporary/reservation resources exclusively.
-5. Prove that final publication cannot silently replace an existing artifact.
+5. Establish same-directory hard-link publication capability and prove that
+   final publication cannot silently replace an existing artifact.
 6. Fail before mutation if the platform cannot provide these semantics.
 
 After this reservation succeeds, all prepared, success, and failure artifacts
@@ -314,16 +344,28 @@ use the reserved atomic writer:
 1. Serialize complete credential-free JSON with stable formatting.
 2. Write to the reserved temporary sibling file with restrictive permissions
    where supported.
-3. Flush/close it.
-4. Atomically rename the temporary sibling to the requested final path.
-5. Remove temporary/reservation files after a handled failure when safe.
+3. Call `FileHandle.sync()` and close it.
+4. Publish by hard-linking the completed sibling temporary file to the final
+   path, which fails with an existing-destination error rather than replacing
+   the destination.
+5. Unlink the temporary sibling after successful publication and remove
+   temporary/reservation files after a handled failure when safe.
 
-There is no `--force` option in VS004-04C and no silent overwrite. If the
-platform cannot provide the required exclusive-create and rename behavior,
-the command fails rather than accepting a possibly partial or replaced
-artifact. Cross-platform implementation must treat rename/replace behavior as
-an explicit adapter concern and must verify that the final path was not
-silently replaced.
+There is no `--force` option in VS004-04C and no silent overwrite. On the
+validated Windows environment (`win32 x64`, Node `v24.13.0`, npm `11.19.1`),
+`open(path, "wx")` and `link(temp, final)` both reject an existing destination
+with `EEXIST`, while `rename(temp, final)` replaces an existing destination.
+Therefore replacement `rename()` is prohibited as the final publication
+primitive. The temporary file must be a sibling of the final file so the hard
+link is on the same filesystem.
+
+The readiness boundary cannot prevent an uncooperative external process from
+creating the final path after readiness succeeds. If that race occurs after
+mutation begins, `link()` returns an existing-destination failure and the
+post-success publication-failure semantics apply. Unsupported hard links,
+network/FAT filesystems, permission failures, or any platform unable to
+provide the same no-replace guarantee fail before 04B; the implementation must
+not fall back to replacement rename or copy semantics.
 
 An existing prepared artifact, result artifact, or required failure artifact is
 therefore preserved by default. A failed temporary write never counts as an
@@ -373,6 +415,7 @@ validation:
 | Supabase URL | `SUPABASE_URL` | target validation; not serialized as a secret-bearing config object |
 | Supabase project reference | `CADENCE_SUPABASE_PROJECT_REF` | target identity only |
 | Safe target marker | `CADENCE_SAFE_TARGET_MARKER` | safe target metadata may be serialized only as target identity; never Project state |
+| Cadence pilot Project ID | `CADENCE_PILOT_PROJECT_ID` | independent non-secret target assertion; may appear in credential-free target evidence; never Project authority |
 | Server Supabase credential | `SUPABASE_SECRET_KEY` | runtime composition only; never artifact/log |
 | First-account credential | existing protected runtime input such as `CADENCE_LOCAL_DEV_PASSWORD`, where required by 03A | runtime/provider input only; never artifact/log |
 
@@ -479,6 +522,10 @@ the validated local database. At minimum it must cover:
 - wrong artifact type, missing version, and unsupported future version;
 - prepared payload is unchanged through envelope round trip;
 - unsupported prepared artifact is rejected before 04B.
+- `CADENCE_PILOT_PROJECT_ID` mismatch fails before planning or mutation, while
+  an exact project-target match succeeds.
+- final publication uses the no-replace hard-link contract and never uses
+  replacement `rename()` semantics.
 
 ### Preflight command
 
@@ -511,6 +558,17 @@ the validated local database. At minimum it must cover:
   browser exposure is available to command handlers;
 - no second authority model is introduced.
 
+### Observation completeness and target safety
+
+- 04A obtains project-wide role assignments through the existing
+  `ProjectRoleAssignmentReadRepository.listRoleAssignmentsForProject()` port
+  in addition to membership and protected-transfer reads.
+- Assignments that cannot be matched to an observed membership are retained
+  as evidence and cause fail-closed preflight validation; they are never
+  filtered out.
+- A prepared Project ID mismatch against independently loaded
+  `CADENCE_PILOT_PROJECT_ID` fails before 04B.
+
 ## 15. VS004, M1, VS005, and VS006 boundary
 
 04C completes the controlled bootstrap operator mechanism: controlled manifest
@@ -536,6 +594,11 @@ command is part of this design-only checkpoint.
 
 - Preflight uses the canonical validator and 04A read-only orchestration; it
   cannot mutate.
+- Runtime target identity includes the independently loaded
+  `CADENCE_PILOT_PROJECT_ID`, and it is checked against the manifest and
+  prepared target.
+- 04A observes project-wide role assignments and fails closed on unmappable
+  or contradictory assignments.
 - Execute consumes only a structurally validated prepared execution and calls
   04B; it cannot plan.
 - Prepared, result, and failure artifacts exclude credentials and secrets.
@@ -544,7 +607,9 @@ command is part of this design-only checkpoint.
 - Execute reserves success and failure output sinks before 04B; post-success
   publication failure is reported as completed execution with evidence loss,
   never as pre-mutation failure.
-- Atomic output refuses existing final paths and has no force/overwrite mode.
+- Atomic output uses same-directory hard-link publication, refuses existing
+  final paths, and has no force/overwrite mode; replacement `rename()` is not
+  used.
 - Failure evidence preserves completed outcomes without becoming execution
   authority.
 - Runtime composition, not CLI parsing, constructs adapters and services.
