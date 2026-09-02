@@ -189,6 +189,24 @@ test("does not echo arbitrary argument values in parser errors", () => {
 });
 
 
+test("rejects option-like tokens in preflight path value positions", () => {
+  for (const argv of [
+    ["--manifest", "--force", "--out", "prepared.json"],
+    ["--manifest", "--execute-after-preflight", "--out", "prepared.json"],
+    ["--manifest", "--anything", "--out", "prepared.json"],
+  ]) {
+    assert.throws(
+      () => parsePreflightArguments(argv),
+      (error: unknown) => {
+        assert.equal(error instanceof Error, true);
+        assert.equal((error as Error).message.includes(argv[1]!), false);
+        return true;
+      },
+    );
+  }
+});
+
+
 test("runs read-only preflight in order and publishes the exact prepared payload", async () => {
   const events: string[] = [];
   const original = prepared();

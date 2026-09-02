@@ -53,7 +53,7 @@ export function parsePreflightArguments(
     }
 
     const value = argv[index + 1];
-    if (value === undefined || value === "--manifest" || value === "--out" || !value.trim()) {
+    if (value === undefined || value.startsWith("--") || !value.trim()) {
       throw new Error(`Missing value for ${option}.`);
     }
 

@@ -68,7 +68,7 @@ export function parseExecuteArguments(
     }
 
     const value = argv[index + 1];
-    if (value === undefined || value === "--prepared" || value === "--out" || !value.trim()) {
+    if (value === undefined || value.startsWith("--") || !value.trim()) {
       throw new Error(`Missing value for ${option}.`);
     }
 

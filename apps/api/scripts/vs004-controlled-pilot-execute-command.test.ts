@@ -269,6 +269,26 @@ test("does not echo arbitrary argument values in parser errors", () => {
 });
 
 
+test("rejects option-like tokens in execute path value positions", () => {
+  for (const argv of [
+    ["--prepared", "--manifest", "--out", "result.json"],
+    ["--prepared", "--force", "--out", "result.json"],
+    ["--prepared", "--yes", "--out", "result.json"],
+    ["--prepared", "--execute-after-preflight", "--out", "result.json"],
+    ["--prepared", "--anything", "--out", "result.json"],
+  ]) {
+    assert.throws(
+      () => parseExecuteArguments(argv),
+      (error: unknown) => {
+        assert.equal(error instanceof Error, true);
+        assert.equal((error as Error).message.includes(argv[1]!), false);
+        return true;
+      },
+    );
+  }
+});
+
+
 test("rejects malformed prepared transport before configuration, reservation, services, or execution", async () => {
   let configurationCalls = 0;
   let reservationCalls = 0;
