@@ -111,18 +111,42 @@ export function buildControlledPilotExecutionServices(
   });
 
   return Object.freeze({
-    ...services,
-    identity: {
-      preparePilotIdentity: (intent, context, resourceActions) =>
-        services.identity.preparePilotIdentity(
+    identity: Object.freeze({
+      preparePilotIdentity: (
+        ...args: Parameters<typeof services.identity.preparePilotIdentity>
+      ) => {
+        const [intent, context, resourceActions] = args;
+        return services.identity.preparePilotIdentity(
           intent,
           {
             ...context,
             password: configuration.firstAccountPassword,
           },
           resourceActions,
-        ),
-    },
+        );
+      },
+    }),
+    projects: Object.freeze({
+      preparePilotProject: (
+        ...args: Parameters<typeof services.projects.preparePilotProject>
+      ) => services.projects.preparePilotProject(...args),
+    }),
+    projectHealth: Object.freeze({
+      preparePilotHealth: (
+        ...args: Parameters<typeof services.projectHealth.preparePilotHealth>
+      ) => services.projectHealth.preparePilotHealth(...args),
+    }),
+    membership: Object.freeze({
+      prepareMembership: (
+        ...args: Parameters<typeof services.membership.prepareMembership>
+      ) => services.membership.prepareMembership(...args),
+      prepareOrdinaryRoleAssignment: (
+        ...args: Parameters<typeof services.membership.prepareOrdinaryRoleAssignment>
+      ) => services.membership.prepareOrdinaryRoleAssignment(...args),
+      prepareProtectedRoleAppointment: (
+        ...args: Parameters<typeof services.membership.prepareProtectedRoleAppointment>
+      ) => services.membership.prepareProtectedRoleAppointment(...args),
+    }),
   });
 }
 

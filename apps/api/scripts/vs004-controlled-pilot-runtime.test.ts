@@ -182,6 +182,37 @@ function factories(
   };
 }
 
+function reachableOwnDataProperties(root: unknown): Array<{
+  path: string;
+  value: unknown;
+}> {
+  const seen = new Set<object>();
+  const reachable: Array<{ path: string; value: unknown }> = [];
+
+  function visit(value: unknown, path: string): void {
+    if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+      return;
+    }
+    if (seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+
+    for (const key of Object.getOwnPropertyNames(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor)) {
+        continue;
+      }
+      const childPath = `${path}.${key}`;
+      reachable.push({ path: childPath, value: descriptor.value });
+      visit(descriptor.value, childPath);
+    }
+  }
+
+  visit(root, "runtime");
+  return reachable;
+}
+
 
 test("observation runtime constructs only client, Auth, and observation sources", () => {
   const events: string[] = [];
@@ -250,6 +281,124 @@ test("execution runtime calls client, Auth, and execution factories without obse
   assert.equal("repository" in result, false);
   assert.equal("configuration" in result, false);
   assert.doesNotMatch(JSON.stringify(result), /secret|password/i);
+});
+
+
+test("real default execution runtime does not expose concrete infrastructure through its object graph", () => {
+  const runtime = buildControlledPilotExecutionServices({
+    ...configuration(password),
+    supabaseSecretKey: "VS004_SENTINEL_SECRET_MUST_NOT_BE_REACHABLE",
+    firstAccountPassword: "VS004_SENTINEL_PASSWORD_MUST_NOT_BE_REACHABLE",
+  });
+  const reachable = reachableOwnDataProperties(runtime);
+  const exposed = reachable.filter(({ path, value }) =>
+    /repository|client|authProvider|configuration|supabaseKey|supabaseSecretKey|firstAccountPassword/i.test(path) ||
+    value === "VS004_SENTINEL_SECRET_MUST_NOT_BE_REACHABLE" ||
+    value === "VS004_SENTINEL_PASSWORD_MUST_NOT_BE_REACHABLE",
+  );
+
+  assert.deepEqual(exposed, [], exposed.map(({ path }) => path).join(", "));
+});
+
+
+test("execution facades expose exactly the committed method surfaces", () => {
+  const runtime = buildControlledPilotExecutionServices(
+    configuration(password),
+    factories([]),
+  );
+
+  assert.deepEqual(Object.keys(runtime.identity), ["preparePilotIdentity"]);
+  assert.deepEqual(Object.keys(runtime.projects), ["preparePilotProject"]);
+  assert.deepEqual(Object.keys(runtime.projectHealth), ["preparePilotHealth"]);
+  assert.deepEqual(Object.keys(runtime.membership).sort(), [
+    "prepareMembership",
+    "prepareOrdinaryRoleAssignment",
+    "prepareProtectedRoleAppointment",
+  ]);
+});
+
+
+test("execution facades delegate all committed preparation methods unchanged", async () => {
+  const calls: string[] = [];
+  const expected = {
+    identity: { resources: [], evidence: {} },
+    project: { resources: [], evidence: {} },
+    health: { resources: [], evidence: {} },
+    membership: { resourceKey: "membership", actualResult: "REUSED", resourceId: "membership", evidence: {} },
+    ordinary: { resourceKey: "ordinary", actualResult: "REUSED", resourceId: "ordinary", evidence: {} },
+    protected: { resourceKey: "protected", actualResult: "REUSED", resourceId: "protected", evidence: {} },
+  };
+  const services = {
+    identity: {
+      preparePilotIdentity: async (...args: unknown[]) => {
+        calls.push(`identity:${args.length}`);
+        return expected.identity;
+      },
+    },
+    projects: {
+      preparePilotProject: async (...args: unknown[]) => {
+        calls.push(`project:${args.length}`);
+        return expected.project;
+      },
+    },
+    projectHealth: {
+      preparePilotHealth: async (...args: unknown[]) => {
+        calls.push(`health:${args.length}`);
+        return expected.health;
+      },
+    },
+    membership: {
+      prepareMembership: async (...args: unknown[]) => {
+        calls.push(`membership:${args.length}`);
+        return expected.membership;
+      },
+      prepareOrdinaryRoleAssignment: async (...args: unknown[]) => {
+        calls.push(`ordinary:${args.length}`);
+        return expected.ordinary;
+      },
+      prepareProtectedRoleAppointment: async (...args: unknown[]) => {
+        calls.push(`protected:${args.length}`);
+        return expected.protected;
+      },
+    },
+  } as unknown as ControlledPilotExecutionServices;
+  const runtime = buildControlledPilotExecutionServices(
+    configuration(password),
+    factories([], services),
+  );
+
+  assert.equal(
+    await runtime.identity.preparePilotIdentity({} as never, {} as never),
+    expected.identity,
+  );
+  assert.equal(
+    await runtime.projects.preparePilotProject({} as never, {} as never, "REUSE"),
+    expected.project,
+  );
+  assert.equal(
+    await runtime.projectHealth.preparePilotHealth({} as never, {} as never, "REUSE"),
+    expected.health,
+  );
+  assert.equal(
+    await runtime.membership.prepareMembership({} as never),
+    expected.membership,
+  );
+  assert.equal(
+    await runtime.membership.prepareOrdinaryRoleAssignment({} as never),
+    expected.ordinary,
+  );
+  assert.equal(
+    await runtime.membership.prepareProtectedRoleAppointment({} as never),
+    expected.protected,
+  );
+  assert.deepEqual(calls, [
+    "identity:3",
+    "project:3",
+    "health:3",
+    "membership:1",
+    "ordinary:1",
+    "protected:1",
+  ]);
 });
 
 
