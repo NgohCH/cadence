@@ -156,8 +156,9 @@ is:
 2. Load JSON from the operator-supplied manifest path.
 3. Pass the value through `validatePilotManifest()` exactly as the canonical
    manifest validator requires.
-4. Load the current runtime target/configuration and validate it with the
-   existing environment-safety rules and `validatePilotRuntimeTarget()`.
+4. Load the current runtime target/configuration, including the independent
+   `CADENCE_PILOT_PROJECT_ID` assertion, and validate it with the existing
+   environment-safety rules and `validatePilotRuntimeTarget()`.
 5. Establish one fresh nonblank run correlation ID for this preparation
    attempt. It is not derived from the manifest hash.
 6. Build 04A read-only observation dependencies. No preparation service,
@@ -184,8 +185,9 @@ The execute handler is CLI/input orchestration only. Its flow is:
 3. Structurally validate and deserialize the exact
    `PreparedPilotExecution` shape before use, including nested manifest,
    target, evidence, and plan data.
-4. Load the current runtime target independently; do not trust a target read
-   from a command-line manifest or from stale ambient state.
+4. Load the current runtime target independently, including
+   `CADENCE_PILOT_PROJECT_ID`; do not trust a target read from a command-line
+   manifest or from stale ambient state.
 5. Reserve the success-result and failure-evidence output sinks before any
    mutation. This includes checking both final paths, validating the parent
    directory and output capability, and proving exclusive temporary-file and
