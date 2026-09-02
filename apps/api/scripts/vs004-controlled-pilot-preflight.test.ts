@@ -88,12 +88,13 @@ function creationManifest(): Record<string, unknown> {
 
 function target(manifest: Record<string, unknown>): PilotRuntimeTarget {
   const declaration = (manifest.target ?? {}) as Record<string, string | null>;
-  return {
+  const project = manifest.project as { id?: string } | undefined;
+  return Object.assign({
     cadenceEnv: declaration.environment ?? "local",
     supabaseUrl: "http://127.0.0.1:54321",
     supabaseProjectRef: undefined,
     safeTargetMarker: declaration.safeTargetMarker!,
-  };
+  }, { projectId: project?.id ?? "" }) as PilotRuntimeTarget;
 }
 
 
@@ -303,6 +304,7 @@ test("unsafe environment fails before authoritative reads", async () => {
           cadenceEnv: "local",
           supabaseUrl: "https://not-local.example.test",
           supabaseProjectRef: undefined,
+          projectId: (creationManifest() as { project: { id: string } }).project.id,
           safeTargetMarker: "VS004_LOCAL_PILOT_TARGET",
         },
       }),
@@ -325,6 +327,7 @@ test("Supabase project-reference mismatch fails before authoritative reads", asy
           cadenceEnv: "qa",
           supabaseUrl: "https://declared-ref.supabase.co",
           supabaseProjectRef: "declared-ref",
+          projectId: (creationManifest() as { project: { id: string } }).project.id,
           safeTargetMarker: "VS004_LOCAL_PILOT_TARGET",
         },
       }),
@@ -356,6 +359,27 @@ test("safeTargetMarker mismatch fails before Project observation", async () => {
     /safeTargetMarker|TARGET/i,
   );
   assert.equal(setup.projects.calls.length, 0);
+});
+
+
+test("runtime Project target mismatch fails before observation and planning", async () => {
+  const setup = sources();
+  const pilotManifest = creationManifest();
+  const runtimeTarget = Object.assign(target(pilotManifest), {
+    projectId: "00440000-0000-4000-8000-000000000099",
+  }) as PilotRuntimeTarget;
+
+  await assert.rejects(
+    preparePilotExecution(
+      input(pilotManifest, { runtimeTarget }),
+      setup.typed,
+    ),
+    (error: unknown) => {
+      assert.equal((error as { category: string }).category, "TARGET");
+      return true;
+    },
+  );
+  assert.equal(setup.events.length, 0);
 });
 
 

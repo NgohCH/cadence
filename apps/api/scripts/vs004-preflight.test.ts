@@ -15,6 +15,7 @@ import {
   type PilotPreflightInput,
   type PilotPlanOperation,
   type ObservedProject,
+  type PilotRuntimeTarget,
 } from "./vs004-preflight";
 import type {
   PilotProjectCreateIntent,
@@ -113,12 +114,12 @@ function input(
 ): PilotPreflightInput {
   return {
     manifest: pilotManifest,
-    runtimeTarget: {
+    runtimeTarget: Object.assign({
       cadenceEnv: "local",
       supabaseUrl: "http://127.0.0.1:54321",
       supabaseProjectRef: undefined,
       safeTargetMarker: pilotManifest.target.safeTargetMarker,
-    },
+    }, { projectId: pilotManifest.project.id }) as PilotRuntimeTarget,
     observed,
     runCorrelationId,
     ...overrides,
@@ -695,6 +696,7 @@ test("fails before planning when the runtime target is unsafe or mismatched", ()
           cadenceEnv: "local",
           supabaseUrl: "https://production.example.test",
           supabaseProjectRef: undefined,
+          projectId: manifest().project.id,
           safeTargetMarker: "VS004_LOCAL_PILOT_TARGET",
         },
       }),
@@ -709,6 +711,7 @@ test("fails before planning when the runtime target is unsafe or mismatched", ()
           cadenceEnv: "local",
           supabaseUrl: "http://127.0.0.1:54321",
           supabaseProjectRef: undefined,
+          projectId: manifest().project.id,
           safeTargetMarker: "WRONG_TARGET",
         },
       }),
@@ -726,6 +729,7 @@ test("matching safeTargetMarker authorizes target validation independently of Pr
         cadenceEnv: "local",
         supabaseUrl: "http://127.0.0.1:54321",
         supabaseProjectRef: undefined,
+        projectId: pilotManifest.project.id,
         safeTargetMarker: pilotManifest.target.safeTargetMarker,
       },
     }),
@@ -734,6 +738,24 @@ test("matching safeTargetMarker authorizes target validation independently of Pr
   assert.equal(
     planned.target.safeTargetMarker,
     pilotManifest.target.safeTargetMarker,
+  );
+});
+
+
+test("rejects an independent runtime Project target mismatch before planning", () => {
+  const pilotManifest = manifestForCreation();
+  assert.throws(
+    () => buildPilotPreflightPlan(
+      input(pilotManifest, emptyState(), {
+        runtimeTarget: Object.assign({
+          cadenceEnv: "local",
+          supabaseUrl: "http://127.0.0.1:54321",
+          supabaseProjectRef: undefined,
+          safeTargetMarker: pilotManifest.target.safeTargetMarker,
+        }, { projectId: "00440000-0000-4000-8000-000000000099" }) as PilotRuntimeTarget,
+      }),
+    ),
+    /project.*target|projectId|TARGET/i,
   );
 });
 

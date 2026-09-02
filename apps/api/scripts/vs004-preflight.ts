@@ -141,6 +141,7 @@ export interface PilotRuntimeTarget {
   cadenceEnv: string | undefined;
   supabaseUrl: string | undefined;
   supabaseProjectRef: string | undefined;
+  projectId: string;
   safeTargetMarker: string;
 }
 
@@ -322,6 +323,12 @@ export function validatePilotRuntimeTarget(
     throw preflightError(
       "TARGET",
       "Runtime safeTargetMarker does not match the manifest.",
+    );
+  }
+  if (runtimeTarget.projectId !== manifest.project.id) {
+    throw preflightError(
+      "TARGET",
+      "Runtime pilot Project target does not match the manifest.",
     );
   }
 }

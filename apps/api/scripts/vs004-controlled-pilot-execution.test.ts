@@ -27,12 +27,12 @@ import type {
 
 
 const runCorrelationId = "00449000-0000-4000-8000-000000000099";
-const target: PilotRuntimeTarget = {
+const target: PilotRuntimeTarget = Object.assign({
   cadenceEnv: "local",
   supabaseUrl: "http://127.0.0.1:54321",
   supabaseProjectRef: undefined,
   safeTargetMarker: "VS004_LOCAL_PILOT_TARGET",
-};
+}, { projectId: "00440000-0000-4000-8000-000000000001" });
 
 
 function manifest(): ValidatedPilotManifest {
@@ -388,6 +388,7 @@ test("revalidates environment, URL, project reference, and safe target before ca
     ["URL", { ...target, supabaseUrl: "http://127.0.0.1:54322" }],
     ["project reference", { ...target, supabaseProjectRef: "unexpected-ref" }],
     ["safe marker", { ...target, safeTargetMarker: "WRONG" }],
+    ["project", Object.assign({}, target, { projectId: "00440000-0000-4000-8000-000000000099" })],
   ];
   for (const [label, runtimeTarget] of mismatches) {
     await t.test(label, async () => {
