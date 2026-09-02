@@ -272,6 +272,256 @@ test("plans the complete default topology from read-only in-memory state", () =>
 });
 
 
+test("ordinary replacement operations carry the exact declared initial predecessor", () => {
+  const pilotManifest = manifestForCreation();
+  const observer = pilotManifest.users.find(
+    (user) => user.role === "PROJECT_OBSERVER",
+  );
+  assert.ok(observer);
+
+  const operation = buildPilotPreflightPlan(
+    input(pilotManifest, emptyState()),
+  ).operations.find(
+    (candidate) => candidate.kind === "CHANGE_ORDINARY_ROLE" &&
+      candidate.manifestKey === observer.key,
+  );
+
+  assert.deepEqual(operation?.expectedPredecessor, {
+    assignmentId: observer.membership.initialRoleAssignmentId,
+    projectId: pilotManifest.project.id,
+    membershipId: observer.membership.id,
+    role: "PROJECT_MEMBER",
+    effectiveFrom: observer.membership.effectiveFrom,
+    effectiveTo: observer.membership.effectiveTo,
+    assignedByPersonId: observer.membership.grantedByPersonId,
+    changeReason: null,
+  });
+});
+
+
+function observerStateWithAssignment(
+  pilotManifest: ValidatedPilotManifest,
+  assignment: ObservedPilotState["roleAssignments"][number],
+): MutableObservedPilotState {
+  const observer = pilotManifest.users.find(
+    (user) => user.role === "PROJECT_OBSERVER",
+  );
+  assert.ok(observer);
+  const state = emptyState();
+  state.memberships.push({
+    id: observer.membership.id,
+    projectId: pilotManifest.project.id,
+    personId: observer.person.id,
+    effectiveFrom: observer.membership.effectiveFrom,
+    effectiveTo: observer.membership.effectiveTo,
+    status: "ACTIVE",
+    grantedByPersonId: observer.membership.grantedByPersonId,
+    createdAt: observer.membership.effectiveFrom,
+  });
+  state.roleAssignments.push(assignment);
+  return state;
+}
+
+
+function observerPredecessor(
+  pilotManifest: ValidatedPilotManifest,
+  overrides: Partial<ObservedPilotState["roleAssignments"][number]> = {},
+): ObservedPilotState["roleAssignments"][number] {
+  const observer = pilotManifest.users.find(
+    (user) => user.role === "PROJECT_OBSERVER",
+  );
+  assert.ok(observer);
+  return {
+    id: observer.membership.initialRoleAssignmentId,
+    projectId: pilotManifest.project.id,
+    membershipId: observer.membership.id,
+    role: "PROJECT_MEMBER",
+    effectiveFrom: observer.membership.effectiveFrom,
+    effectiveTo: observer.membership.effectiveTo,
+    assignedBy: observer.membership.grantedByPersonId,
+    changeReason: null,
+    createdAt: observer.membership.effectiveFrom,
+    ...overrides,
+  };
+}
+
+
+test("rejects an observed ordinary predecessor with the wrong assignment ID", () => {
+  const pilotManifest = manifestForCreation();
+  const observed = observerStateWithAssignment(
+    pilotManifest,
+    observerPredecessor(pilotManifest, {
+      id: "00443000-0000-4000-8000-000000000099",
+    }),
+  );
+
+  assert.throws(
+    () => buildPilotPreflightPlan(input(pilotManifest, observed)),
+    /ordinary role|ROLE|predecessor/i,
+  );
+});
+
+
+test("rejects an observed predecessor with the correct ID but wrong role", () => {
+  const pilotManifest = manifestForCreation();
+  const observed = observerStateWithAssignment(
+    pilotManifest,
+    observerPredecessor(pilotManifest, { role: "PROJECT_AUDITOR" }),
+  );
+
+  assert.throws(
+    () => buildPilotPreflightPlan(input(pilotManifest, observed)),
+    /ordinary role|ROLE|predecessor/i,
+  );
+});
+
+
+test("rejects an observed predecessor with the correct ID and role but wrong period", () => {
+  const pilotManifest = manifestForCreation();
+  const observed = observerStateWithAssignment(
+    pilotManifest,
+    observerPredecessor(pilotManifest, {
+      effectiveFrom: "2026-09-02T00:00:00.000Z",
+    }),
+  );
+
+  assert.throws(
+    () => buildPilotPreflightPlan(input(pilotManifest, observed)),
+    /ordinary role|ROLE|predecessor/i,
+  );
+});
+
+
+test("rejects an observed predecessor with the correct identity but wrong assigner", () => {
+  const pilotManifest = manifestForCreation();
+  const observed = observerStateWithAssignment(
+    pilotManifest,
+    observerPredecessor(pilotManifest, {
+      assignedBy: "00441000-0000-4000-8000-000000000099",
+    }),
+  );
+
+  assert.throws(
+    () => buildPilotPreflightPlan(input(pilotManifest, observed)),
+    /ordinary role|ROLE|predecessor/i,
+  );
+});
+
+
+test("rejects an observed predecessor with non-null change reason", () => {
+  const pilotManifest = manifestForCreation();
+  const observed = observerStateWithAssignment(
+    pilotManifest,
+    observerPredecessor(pilotManifest, { changeReason: "unexpected" }),
+  );
+
+  assert.throws(
+    () => buildPilotPreflightPlan(input(pilotManifest, observed)),
+    /ordinary role|ROLE|predecessor/i,
+  );
+});
+
+
+test("accepts only the exact manifest initial PROJECT_MEMBER predecessor", () => {
+  const pilotManifest = manifestForCreation();
+  const observer = pilotManifest.users.find(
+    (user) => user.role === "PROJECT_OBSERVER",
+  );
+  assert.ok(observer);
+  const planned = buildPilotPreflightPlan(
+    input(
+      pilotManifest,
+      observerStateWithAssignment(pilotManifest, observerPredecessor(pilotManifest)),
+    ),
+  );
+  const operation = planned.operations.find(
+    (candidate) => candidate.kind === "CHANGE_ORDINARY_ROLE" &&
+      candidate.manifestKey === observer.key,
+  );
+
+  assert.equal(operation?.kind, "CHANGE_ORDINARY_ROLE");
+  assert.deepEqual(operation?.expectedPredecessor, {
+    assignmentId: observer.membership.initialRoleAssignmentId,
+    projectId: pilotManifest.project.id,
+    membershipId: observer.membership.id,
+    role: "PROJECT_MEMBER",
+    effectiveFrom: observer.membership.effectiveFrom,
+    effectiveTo: observer.membership.effectiveTo,
+    assignedByPersonId: observer.membership.grantedByPersonId,
+    changeReason: null,
+  });
+});
+
+
+test("plans the manifest-declared predecessor before membership exists", () => {
+  const pilotManifest = manifestForCreation();
+  const observer = pilotManifest.users.find(
+    (user) => user.role === "PROJECT_OBSERVER",
+  );
+  assert.ok(observer);
+  const operation = buildPilotPreflightPlan(
+    input(pilotManifest, emptyState()),
+  ).operations.find(
+    (candidate) => candidate.kind === "CHANGE_ORDINARY_ROLE" &&
+      candidate.manifestKey === observer.key,
+  );
+
+  assert.equal(operation?.kind, "CHANGE_ORDINARY_ROLE");
+  assert.equal(
+    operation?.expectedPredecessor?.assignmentId,
+    observer.membership.initialRoleAssignmentId,
+  );
+  assert.equal(operation?.expectedPredecessor?.role, "PROJECT_MEMBER");
+});
+
+
+test("reuses an exact final Observer without generating a repair operation", () => {
+  const pilotManifest = manifestForCreation();
+  const observer = pilotManifest.users.find(
+    (user) => user.role === "PROJECT_OBSERVER",
+  );
+  assert.ok(observer);
+  const finalAssignment = observerPredecessor(pilotManifest, {
+    id: observer.roleAssignmentId,
+    role: "PROJECT_OBSERVER",
+  });
+  const planned = buildPilotPreflightPlan(
+    input(pilotManifest, observerStateWithAssignment(pilotManifest, finalAssignment)),
+  );
+
+  assert.ok(
+    planned.operations.some(
+      (operation) => operation.kind === "REUSE" &&
+        operation.resourceKey === `role-assignment:${observer.roleAssignmentId}`,
+    ),
+  );
+  assert.equal(
+    planned.operations.some(
+      (operation) => operation.kind === "CHANGE_ORDINARY_ROLE" &&
+        operation.manifestKey === observer.key,
+    ),
+    false,
+  );
+});
+
+
+test("rejects multiple current ordinary assignments instead of choosing one predecessor", () => {
+  const pilotManifest = manifestForCreation();
+  const first = observerPredecessor(pilotManifest);
+  const second = observerPredecessor(pilotManifest, {
+    id: "00443000-0000-4000-8000-000000000099",
+    role: "PROJECT_AUDITOR",
+  });
+  const observed = observerStateWithAssignment(pilotManifest, first);
+  observed.roleAssignments.push(second);
+
+  assert.throws(
+    () => buildPilotPreflightPlan(input(pilotManifest, observed)),
+    /overlapping ordinary role|ROLE/i,
+  );
+});
+
+
 test("reuses exact compatible state and produces no repair operations", () => {
   const pilotManifest = manifest();
   const planned = buildPilotPreflightPlan(

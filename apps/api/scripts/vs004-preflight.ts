@@ -173,6 +173,19 @@ export interface PilotPlanOperation {
   readonly progressPercent?: number;
   readonly role?: ProjectRole;
   readonly reason?: string;
+  readonly expectedPredecessor?: PilotPlanOrdinaryRolePredecessor;
+}
+
+
+export interface PilotPlanOrdinaryRolePredecessor {
+  readonly assignmentId: string;
+  readonly projectId: string;
+  readonly membershipId: string;
+  readonly role: Extract<ProjectRole, "PROJECT_MEMBER" | "PROJECT_OBSERVER" | "PROJECT_AUDITOR">;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly assignedByPersonId: string;
+  readonly changeReason: string | null;
 }
 
 
@@ -750,15 +763,38 @@ function planRole(
       }
       throw preflightError("ROLE", `Initial ordinary role assignment is missing for ${intended.key}.`);
     }
-    if (active.length > 0 && active[0].role !== intended.role) {
-      operations.push({
-        kind: "CHANGE_ORDINARY_ROLE",
-        resourceKey: `role-assignment:${intended.roleAssignmentId}`,
-        manifestKey: intended.key,
-        id: intended.roleAssignmentId,
-        role: intended.role,
-      });
-      return;
+    const expectedPredecessor = {
+      assignmentId: intended.membership.initialRoleAssignmentId,
+      projectId,
+      membershipId,
+      role: "PROJECT_MEMBER" as const,
+      effectiveFrom: intended.membership.effectiveFrom,
+      effectiveTo: intended.membership.effectiveTo,
+      assignedByPersonId: intended.membership.grantedByPersonId,
+      changeReason: null,
+    };
+    const predecessor = assignments.find(
+      (assignment) => assignment.id === expectedPredecessor.assignmentId,
+    );
+    if (!predecessor) {
+      if (
+        assignments.length > 0 ||
+        observed.memberships.some((membership) => membership.id === membershipId)
+      ) {
+        throw preflightError("ROLE", `The manifest-declared initial PROJECT_MEMBER predecessor is missing for ${intended.key}.`);
+      }
+    } else if (
+      predecessor.projectId !== expectedPredecessor.projectId ||
+      predecessor.membershipId !== expectedPredecessor.membershipId ||
+      predecessor.role !== expectedPredecessor.role ||
+      predecessor.effectiveFrom !== expectedPredecessor.effectiveFrom ||
+      predecessor.effectiveTo !== expectedPredecessor.effectiveTo ||
+      predecessor.assignedBy !== expectedPredecessor.assignedByPersonId ||
+      predecessor.changeReason !== expectedPredecessor.changeReason ||
+      ordinaryActive.length !== 1 ||
+      ordinaryActive[0]?.id !== expectedPredecessor.assignmentId
+    ) {
+      throw preflightError("ROLE", `The observed ordinary role state conflicts with the manifest-declared predecessor for ${intended.key}.`);
     }
     operations.push({
       kind: "CHANGE_ORDINARY_ROLE",
@@ -766,6 +802,7 @@ function planRole(
       manifestKey: intended.key,
       id: intended.roleAssignmentId,
       role: intended.role,
+      expectedPredecessor,
     });
     return;
   }
