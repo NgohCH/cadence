@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist-scripts"
+  },
+  "include": [
+    "scripts/vs004-controlled-pilot-artifact.ts",
+    "scripts/vs004-controlled-pilot-artifact.test.ts",
+    "scripts/vs004-controlled-pilot-preflight.ts",
+    "scripts/vs004-controlled-pilot-execution.ts",
+    "scripts/vs004-preflight.ts",
+    "scripts/vs004-pilot-manifest.ts",
+    "src/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "dist-scripts"]
+}

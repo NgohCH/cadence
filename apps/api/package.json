@@ -18,6 +18,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "node --import tsx --test src/**/*.test.ts",
+    "pilot:preflight": "node --import tsx scripts/vs004-controlled-pilot-preflight-cli.ts",
+    "pilot:execute": "node --import tsx scripts/vs004-controlled-pilot-execute-cli.ts",
     "local:bootstrap": "npm run env:local:check && node --env-file=.env.local --import tsx scripts/bootstrap-local-dev.ts",
     "local:bootstrap:vs003": "npm run env:local:check && node --env-file=.env.local --import tsx scripts/bootstrap-vs003-runtime.ts",
     "test:vs003-fixture": "node --import tsx --test scripts/bootstrap-vs003-runtime.test.ts",
