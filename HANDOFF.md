@@ -43,13 +43,28 @@ DH-001 is DEFERRED / NOT BASELINED. It creates no new C/F requirement, changes
 no requirement counts, does not reopen VS002/R03, and does not change VS005
 scope.
 
-The Governance Baseline v1.0 is merged. M1 — Controlled Pilot is active. VS-001
-and VS-002 remain closed. VS003 implementation and runtime verification are
-complete candidates; this checkpoint reconciles the closure evidence only.
-VS004 — Controlled Pilot Bootstrap and Access, VS005 — Pilot Runtime and Worker
-Scheduling, and VS006 — Pilot Operations, Recovery and Support remain planned
-M1 slices. VS004 starts only after the VS003 closure commit under the
-single-stream rule.
+The Governance Baseline v1.0 is merged. M1 — Controlled Pilot remains active.
+
+VS-001 and VS-002 remain closed.
+
+VS003 — Durable Discussion Read and Return Path is closed and merged.
+
+VS004 — Controlled Pilot Bootstrap and Access is closed and merged. Its
+controlled operator runtime, two-stage preflight/execute flow, runtime target
+binding, artifact safety, and bootstrap preparation path are now part of the
+main integration baseline.
+
+DH-001 — Progressive Project Formalisation and Complex Governance is recorded
+as DEFERRED / NOT BASELINED and creates no VS005 scope change.
+
+VS005 — Pilot Runtime and Worker Scheduling is the next planned M1 vertical
+slice and has not started.
+
+VS006 — Pilot Operations, Recovery and Support remains planned after VS005
+under the single-stream rule.
+
+The Pilot Activation Gate has not yet been satisfied and no real-user M1 pilot
+activation is claimed at this checkpoint.
 
 ## Project
 
@@ -61,33 +76,64 @@ Conceptualized and prepared by Ngoh Chee Hung.
 
 v0.1 - Development
 
-## Current Branch
+## Current Integration Baseline
 
-`feature/vs-003-implementation`
+`main`
 
-## Current Implementation Work
+The implementation baseline is the merged `main` branch. No VS005
+implementation branch exists at this checkpoint.
 
-Vertical Slice:
+## Current Delivery State
 
-`VS003 - Durable Discussion Read and Return Path`
+Next Vertical Slice:
+
+`VS005 - Pilot Runtime and Worker Scheduling`
 
 Status:
 
-**VS003 implementation and runtime verification are complete candidates; VS003
-closure documentation is the current checkpoint.**
-
-VS-001 and VS-002 are closed. They must not be reopened without concrete
-evidence that a frozen contract is violated.
+**NOT STARTED — VS005 is the next planned M1 delivery slice. Contract and
+governance reconciliation must be completed before implementation begins.**
 
 Current checkpoint:
 
-**M1 Controlled Pilot is active. VS003 closure evidence is being reconciled;
-VS004–VS006 remain planned, and no VS004 work has started.**
+**VS003 and VS004 are closed and merged. DH-001 is recorded as deferred and
+not baselined. The repository is at the post-VS004 M1 handoff checkpoint,
+before VS005 design/contract work begins.**
 
-## VS003 Current Implementation State
+- M1 Controlled Pilot remains active.
+- Pilot Activation has not occurred.
+- VS006 remains planned after VS005.
+- No baseline requirement is changed by this handoff update.
 
-VS003 — Durable Discussion Read and Return Path is implemented at the following
-checkpoints:
+## VS004 Closure Record
+
+VS004 — Controlled Pilot Bootstrap and Access is closed and merged via PR #7.
+
+Implementation head: `b57f47c`
+
+Final operator-runtime closure evidence:
+
+- VS004-04C suite: 201/201 passed
+- full API suite: 478/478 passed
+- script typecheck: passed
+- API typecheck: passed
+- git diff/check gate: passed
+- P0 = 0
+- P1 = 0
+
+No database reset was required for 04C closure, and no database migration was
+added for 04C. `ProjectAuthorisationService` remains the normal application
+project authority. VS002/R03 membership and protected-role invariants remain
+preserved, and browser business data remains API-bound. No real-user Pilot
+Activation is implied by VS004 closure.
+
+## VS003 Closure Record
+
+VS003 — Durable Discussion Read and Return Path is closed and merged. The
+following retained content is closure and historical evidence, not current
+implementation work.
+
+VS003 was implemented at the following checkpoints:
 
 ```text
 89babaf  persisted Discussion read repository
