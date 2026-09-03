@@ -6,6 +6,8 @@
   "scripts": {
     "api:test": "npm --prefix apps/api test",
     "api:typecheck": "npm --prefix apps/api run typecheck",
+    "pilot:preflight": "npm --prefix apps/api run pilot:preflight --",
+    "pilot:execute": "npm --prefix apps/api run pilot:execute --",
     "web:lint": "npm --prefix apps/web run lint",
     "web:build": "npm --prefix apps/web run build",
     "db:local:start": "npx supabase start",
