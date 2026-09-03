@@ -17,6 +17,32 @@ INIT-AC-20, preserve independently testable obligations without inflating the
 parent count. No governed requirement may move beyond M3. This HANDOFF records
 current execution state and does not redefine or reduce committed scope.
 
+## Deferred Architectural Design Horizons
+
+`docs/governance/CADENCE_ARCHITECTURAL_DESIGN_HORIZONS.md` records deferred
+architectural directions that must be considered during future design but do
+not by themselves change governed scope.
+
+DH-001 records Progressive Project Formalisation and Complex Governance:
+Cadence must remain capable of evolving a Project from a minimal single-person
+discovery initiative into a multi-party, multi-organisation and
+multi-geography Project while retaining one canonical Project identity and
+historical lineage.
+
+The horizon also records that:
+
+- Project complexity is optional and progressive;
+- one Person may hold multiple protected roles unless an explicit policy
+  requires separation of duties;
+- future Executive Sponsor, Co-Sponsor and Steering Committee structures
+  should remain distinct from canonical authorization unless explicitly
+  governed;
+- future design must not assume a flat, single-organisation Project structure.
+
+DH-001 is DEFERRED / NOT BASELINED. It creates no new C/F requirement, changes
+no requirement counts, does not reopen VS002/R03, and does not change VS005
+scope.
+
 The Governance Baseline v1.0 is merged. M1 — Controlled Pilot is active. VS-001
 and VS-002 remain closed. VS003 implementation and runtime verification are
 complete candidates; this checkpoint reconciles the closure evidence only.
