@@ -31,6 +31,7 @@ jobs:
             package-lock.json
             apps/api/package-lock.json
             apps/web/package-lock.json
+            apps/runtime-cloudflare/package-lock.json
 
       - name: Install root dependencies
         run: npm ci
@@ -42,6 +43,10 @@ jobs:
       - name: Install Web dependencies
         run: npm ci
         working-directory: apps/web
+
+      - name: Install Cloudflare runtime dependencies
+        run: npm ci
+        working-directory: apps/runtime-cloudflare
 
       - name: Run authoritative quality gate
         run: npm run quality

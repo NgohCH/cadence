@@ -45,6 +45,24 @@ Cadence_v0.1_Supabase_Migrations/
   effective frozen-role permission evaluation, read-only Observer/Auditor
   enforcement, and an explicit VS-001 RBAC compatibility fallback.
 
+## VS005 portable runtime
+
+VS005 provides a provider-neutral Cadence runtime configuration with Node API,
+Node worker, browser, and Cloudflare adapter support. The authoritative local
+and CI quality path is:
+
+```text
+npm run quality
+```
+
+The governed setup, plan, apply, verify, and application-only rollback
+procedure is documented in
+[docs/runbooks/VS005_DEPLOYMENT.md](docs/runbooks/VS005_DEPLOYMENT.md).
+The deployment tooling is implemented and testable, but these quality gates
+do not authorize or perform a hosted deployment. Deployment verification and
+M1 Pilot Activation remain separate; VS005 deployment does not authorize Pilot
+Activation.
+
 ## Supabase Auth and local pilot accounts
 
 `public.users.auth_user_id` maps Cadence identity to `auth.users.id`. For the v0.1 pilot, credentials should be held by Supabase Auth rather than by a custom password table. `username` remains a Cadence identity field for the user-facing experience.

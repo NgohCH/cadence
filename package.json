@@ -24,7 +24,8 @@
     "cadence:deploy:apply": "npm --prefix apps/api run vs005:deploy:apply",
     "cadence:deploy:verify": "npm --prefix apps/api run vs005:deploy:verify",
     "cadence:rollback": "npm --prefix apps/api run vs005:rollback --",
-    "quality": "npm run api:typecheck && npm run api:test && npm run web:lint && npm run web:build:ci",
+    "api:scripts:typecheck": "npm --prefix apps/api exec -- tsc --noEmit -p apps/api/tsconfig.scripts.json",
+    "quality": "npm --prefix apps/api run typecheck && npm --prefix apps/api test && npm run api:scripts:typecheck && npm --prefix apps/web test && npm --prefix apps/web run lint && npm --prefix apps/web run build:ci && npm --prefix apps/api run vs005:generate:ci && npm --prefix apps/runtime-cloudflare test && npm --prefix apps/runtime-cloudflare run typecheck && npm --prefix apps/runtime-cloudflare run deploy:dry-run",
     "test": "npm run quality",
     "db:beta:check": "npm --prefix apps/api run supabase:target:check -- --env beta",
     "db:beta:preflight": "npm --prefix apps/api run supabase:db:push -- --env beta --dry-run",
@@ -37,6 +38,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/NgohCH/cadence/issues"
