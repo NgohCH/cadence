@@ -22,6 +22,7 @@
     "vs005:deploy:plan": "node --import tsx scripts/vs005-deploy-plan.ts",
     "vs005:deploy:apply": "node --import tsx scripts/vs005-deploy-apply.ts",
     "vs005:deploy:verify": "node --import tsx scripts/vs005-deploy-verify.ts",
+    "vs005:rollback": "node --import tsx scripts/vs005-rollback.ts",
     "test": "node --import tsx --test src/**/*.test.ts",
     "pilot:preflight": "node --import tsx scripts/vs004-controlled-pilot-preflight-cli.ts",
     "pilot:execute": "node --import tsx scripts/vs004-controlled-pilot-execute-cli.ts",

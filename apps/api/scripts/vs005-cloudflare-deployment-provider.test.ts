@@ -12,6 +12,21 @@ import {
   type CloudflareDeploymentProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
 
+interface RollbackProvider {
+  inspectTarget(): Promise<{ accountId: string; workerName: string }>;
+  rollback(providerVersionId: string): Promise<{
+    deploymentId: string;
+    activeProviderVersionId: string;
+  }>;
+}
+
+function isRollbackProvider(value: object): value is RollbackProvider {
+  return "inspectTarget" in value
+    && typeof value.inspectTarget === "function"
+    && "rollback" in value
+    && typeof value.rollback === "function";
+}
+
 const config = validateCadenceRuntimeConfig(JSON.parse(
   readFileSync(resolve(process.cwd(), "../../config/cadence.runtime.ci.json"), "utf8"),
 ));
@@ -119,4 +134,60 @@ test("provider returns bounded deployment identifiers", async () => {
     deploymentId: "deployment-2",
     providerVersionId: "version-2",
   });
+});
+
+test("inspectTarget uses only the read-only provider inspection command", async () => {
+  const fake = fakeProviderIo({
+    runWrangler: async (args) => {
+      assert.deepEqual(args, ["wrangler", "whoami", "--json"]);
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({ account_id: "account-123", worker_name: "cadence-beta" }),
+      };
+    },
+  });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+  assert.equal(isRollbackProvider(provider), true);
+  if (!isRollbackProvider(provider)) return;
+
+  assert.deepEqual(await provider.inspectTarget(), {
+    accountId: "account-123",
+    workerName: "cadence-beta",
+  });
+  assert.equal(fake.calls.some((call) => call.args.includes("deploy")), false);
+});
+
+test("rollback targets one explicit provider version through argv and returns bounded identifiers", async () => {
+  const fake = fakeProviderIo({
+    runWrangler: async (args) => {
+      assert.deepEqual(args, ["wrangler", "rollback", "version-previous", "--yes"]);
+      return {
+        exitCode: 0,
+        stdout: "deployment_id=deployment-after-rollback version_id=version-previous raw=ignored",
+      };
+    },
+  });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+  assert.equal(isRollbackProvider(provider), true);
+  if (!isRollbackProvider(provider)) return;
+
+  const result = await provider.rollback("version-previous");
+  assert.deepEqual(result, {
+    deploymentId: "deployment-after-rollback",
+    activeProviderVersionId: "version-previous",
+  });
+  assert.equal(fake.calls.some((call) => call.args.includes("server-secret")), false);
+});
+
+test("rollback failure returns no raw provider error text", async () => {
+  const fake = fakeProviderIo({
+    runWrangler: async () => {
+      throw new Error("provider failed token=do-not-copy");
+    },
+  });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+  assert.equal(isRollbackProvider(provider), true);
+  if (!isRollbackProvider(provider)) return;
+
+  await assert.rejects(() => provider.rollback("version-previous"), /CLOUDFLARE_ROLLBACK_FAILED/);
 });

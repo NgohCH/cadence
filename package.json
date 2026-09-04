@@ -23,6 +23,7 @@
     "cadence:deploy:plan": "npm --prefix apps/api run vs005:deploy:plan",
     "cadence:deploy:apply": "npm --prefix apps/api run vs005:deploy:apply",
     "cadence:deploy:verify": "npm --prefix apps/api run vs005:deploy:verify",
+    "cadence:rollback": "npm --prefix apps/api run vs005:rollback --",
     "quality": "npm run api:typecheck && npm run api:test && npm run web:lint && npm run web:build:ci",
     "test": "npm run quality",
     "db:beta:check": "npm --prefix apps/api run supabase:target:check -- --env beta",
