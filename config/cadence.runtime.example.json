@@ -1,0 +1,29 @@
+{
+  "configVersion": 1,
+  "application": {
+    "name": "cadence",
+    "environment": "beta",
+    "publicUrl": "https://cadence.example.invalid",
+    "apiBaseUrl": "",
+    "requestBodyLimitBytes": 1048576
+  },
+  "runtime": { "provider": "cloudflare" },
+  "supabase": {
+    "url": "https://example.supabase.co",
+    "projectRef": "example",
+    "publishableKey": "sb_publishable_example",
+    "secretKeySecretRef": "SUPABASE_SECRET_KEY"
+  },
+  "pilot": {
+    "projectId": "22222222-2222-4222-8222-222222222222",
+    "safeTargetMarker": "cadence-example"
+  },
+  "worker": {
+    "schedule": "* * * * *",
+    "maxRounds": 10,
+    "maxDeliveryAttempts": 20,
+    "maxMembershipExpiryAttempts": 20,
+    "softDeadlineSeconds": 20
+  },
+  "retry": { "delaysSeconds": [60, 300, 900, 3600] }
+}

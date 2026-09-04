@@ -35,6 +35,7 @@
   "type": "commonjs",
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
+    "ajv": "8.17.1",
     "cors": "^2.8.6",
     "express": "^5.2.1"
   },
