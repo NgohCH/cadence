@@ -243,7 +243,7 @@ The pilot operator/support owner must demonstrate:
 ## M1 closure gate
 
 M1 closes only after the activated pilot produces evidence. The milestone gate
-is separate from individual VS003–VS006 closure gates.
+is separate from individual VS003–VS007 closure gates.
 
 | Evidence category | Required evidence |
 |---|---|

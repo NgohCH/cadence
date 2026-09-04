@@ -80,15 +80,21 @@ v0.1 - Development
 
 ## Current Integration Baseline
 
+`main` at `80223c0`
+
+The integration baseline remains the merged `main` branch. The active VS005
+execution branch is recorded separately below.
+
+## Current Execution Branch
+
 `feature/vs-005-portable-deployment-runtime`
 
-The implementation baseline for this checkpoint is branch
-`feature/vs-005-portable-deployment-runtime` at the pre-task-commit baseline
-`80223c0`. The Task 1 checkpoint is documentation/governance-only.
+Current Task 1 checkpoint: `305d123`. This checkpoint is
+documentation/governance-only.
 
 ## Current Delivery State
 
-Next Vertical Slice:
+Active Vertical Slice:
 
 `VS005 - Portable Deployment and Supervised Runtime`
 
