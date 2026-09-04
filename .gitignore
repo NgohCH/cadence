@@ -2,6 +2,7 @@ node_modules/
 
 # Build output
 apps/api/dist/
+apps/web/.generated/
 
 # Local environment files
 .env
@@ -9,6 +10,3 @@ apps/api/dist/
 !.env.example.env.local
 .env.qa
 .env.beta
-
-# Safe, non-secret Web build environment used by CI
-!apps/web/.env.ci
