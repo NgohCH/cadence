@@ -410,12 +410,17 @@ test("rejects unknown, duplicate, and operation-manifest mismatches before calls
   unknown[0] = { ...unknown[0], kind: "DELETE" as never };
   const duplicate = completeOperations(pilotManifest);
   duplicate.push({ ...duplicate[0] });
-  const wrongRole = completeOperations(pilotManifest);
   const observer = pilotManifest.users.find((user) => user.role === "PROJECT_OBSERVER")!;
-  const observerOp = wrongRole.find((operation) => operation.manifestKey === observer.key && operation.kind === "CHANGE_ORDINARY_ROLE")!;
-  observerOp.role = "PROJECT_AUDITOR";
-  const wrongId = completeOperations(pilotManifest);
-  wrongId[2].id = "00445000-0000-4000-8000-000000000099";
+  const wrongRole = completeOperations(pilotManifest).map((operation): PilotPlanOperation =>
+    operation.manifestKey === observer.key && operation.kind === "CHANGE_ORDINARY_ROLE"
+      ? { ...operation, role: "PROJECT_AUDITOR" }
+      : operation,
+  );
+  const wrongId = completeOperations(pilotManifest).map((operation, index) =>
+    index === 2
+      ? { ...operation, id: "00445000-0000-4000-8000-000000000099" }
+      : operation,
+  );
   const forgedAuthAccount = completeOperations(pilotManifest);
   forgedAuthAccount.push({
     kind: "REUSE",
@@ -438,8 +443,17 @@ test("rejects unknown, duplicate, and operation-manifest mismatches before calls
 
 
 test("orders dispatch by dependency phase and never invokes a planner", async () => {
-  const { input, events } = executionInput();
-  input.prepared.preflightPlan.operations = [...input.prepared.preflightPlan.operations].reverse();
+  const { input: originalInput, events } = executionInput();
+  const input = {
+    ...originalInput,
+    prepared: {
+      ...originalInput.prepared,
+      preflightPlan: {
+        ...originalInput.prepared.preflightPlan,
+        operations: [...originalInput.prepared.preflightPlan.operations].reverse(),
+      },
+    },
+  };
   await executeControlledPilot(input);
 
   const lastIdentity = Math.max(...events.map((event, index) => event.startsWith("identity:") ? index : -1));

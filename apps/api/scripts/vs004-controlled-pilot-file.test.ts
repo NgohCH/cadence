@@ -566,8 +566,7 @@ describe("VS004 pilot artifact file transport", () => {
     fileSystem.removeIfPresent = async (path) => {
       if (failFirstTempCleanup && path.endsWith(".tmp")) {
         failFirstTempCleanup = false;
-        const error = new Error("EACCES") as Error & { readonly code: string };
-        error.code = "EACCES";
+        const error = Object.assign(new Error("EACCES"), { code: "EACCES" });
         throw error;
       }
       return originalRemove(path);

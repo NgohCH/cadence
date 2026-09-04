@@ -20,6 +20,9 @@ import type {
   ProjectMembership,
 } from "../src/modules/project-membership/project-membership.types";
 import type {
+  PilotPreparationOutcome,
+} from "../src/modules/project-membership/pilot-preparation.types";
+import type {
   ProjectRoleAssignment,
 } from "../src/modules/project-membership/project-role.types";
 import type {
@@ -95,6 +98,26 @@ function configuration(
   };
 }
 
+function reusedPreparationOutcome(
+  request: {
+    action: "CREATE" | "REUSE" | "APPOINT";
+    intent: { projectId: string };
+    context: { operatorPersonId: string; runCorrelationId: string };
+  },
+  resourceKey: string,
+  resourceId: string,
+): PilotPreparationOutcome {
+  return {
+    resourceKey,
+    plannedAction: request.action,
+    actualResult: "REUSED",
+    resourceId,
+    projectId: request.intent.projectId,
+    operatorPersonId: request.context.operatorPersonId,
+    runCorrelationId: request.context.runCorrelationId,
+  };
+}
+
 function executionServices(
   receivedPasswords: Array<string | undefined> = [],
 ): ControlledPilotExecutionServices {
@@ -126,24 +149,21 @@ function executionServices(
       preparePilotHealth: async () => ({ resources: [], evidence: {} as never }),
     },
     membership: {
-      prepareMembership: async () => ({
-        resourceKey: "membership:test",
-        actualResult: "REUSED",
-        resourceId: "00742000-0000-4000-8000-000000000001",
-        evidence: {} as never,
-      }),
-      prepareOrdinaryRoleAssignment: async () => ({
-        resourceKey: "role:test",
-        actualResult: "REUSED",
-        resourceId: "00744000-0000-4000-8000-000000000001",
-        evidence: {} as never,
-      }),
-      prepareProtectedRoleAppointment: async () => ({
-        resourceKey: "protected:test",
-        actualResult: "REUSED",
-        resourceId: "00744000-0000-4000-8000-000000000001",
-        evidence: {} as never,
-      }),
+      prepareMembership: async (request) => reusedPreparationOutcome(
+        request,
+        "membership:test",
+        "00742000-0000-4000-8000-000000000001",
+      ),
+      prepareOrdinaryRoleAssignment: async (request) => reusedPreparationOutcome(
+        request,
+        "role:test",
+        "00744000-0000-4000-8000-000000000001",
+      ),
+      prepareProtectedRoleAppointment: async (request) => reusedPreparationOutcome(
+        request,
+        "protected:test",
+        "00744000-0000-4000-8000-000000000001",
+      ),
     },
   };
 }

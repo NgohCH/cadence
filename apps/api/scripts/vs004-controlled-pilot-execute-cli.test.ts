@@ -29,7 +29,7 @@ function configuration(): ControlledPilotRuntimeConfiguration {
     runtimeTarget: {
       cadenceEnv: "local",
       supabaseUrl: "http://127.0.0.1:54321",
-      supabaseProjectRef: undefined,
+      supabaseProjectRef: null,
       projectId: "pilot-project",
       safeTargetMarker: "safe-marker",
     },

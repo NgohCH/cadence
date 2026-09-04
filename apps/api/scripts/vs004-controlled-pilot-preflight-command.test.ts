@@ -13,7 +13,10 @@ import type {
   PreparedPilotExecution,
 } from "./vs004-controlled-pilot-preflight";
 import type { PilotPreflightPlan, PilotRuntimeTarget } from "./vs004-preflight";
-import type { ControlledPilotRuntimeConfiguration } from "./vs004-controlled-pilot-runtime-config";
+import type {
+  ControlledPilotRuntimeConfiguration,
+  ResolvedPilotRuntimeTarget,
+} from "./vs004-controlled-pilot-runtime-config";
 import {
   parsePreparedPilotExecutionArtifact,
   serializePreparedPilotExecutionArtifact,
@@ -93,7 +96,7 @@ function prepared(): PreparedPilotExecution {
 
 function configuration(): ControlledPilotRuntimeConfiguration {
   const pilotManifest = manifest();
-  const runtimeTarget: PilotRuntimeTarget = {
+  const runtimeTarget: ResolvedPilotRuntimeTarget = {
     cadenceEnv: "local",
     supabaseUrl: "http://127.0.0.1:54321",
     supabaseProjectRef: null,

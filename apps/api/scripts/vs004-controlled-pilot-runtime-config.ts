@@ -1,12 +1,22 @@
 import {
   validateCadenceEnvironmentSafety,
+  type CadenceEnvironment,
   type CadenceEnvironmentSafetyInput,
 } from "../src/bootstrap/environment-safety";
 import type { PilotRuntimeTarget } from "./vs004-preflight";
 
 
+export interface ResolvedPilotRuntimeTarget {
+  readonly cadenceEnv: CadenceEnvironment;
+  readonly supabaseUrl: string;
+  readonly supabaseProjectRef: string | null;
+  readonly projectId: string;
+  readonly safeTargetMarker: string;
+}
+
+
 export interface ControlledPilotRuntimeConfiguration {
-  readonly runtimeTarget: PilotRuntimeTarget;
+  readonly runtimeTarget: ResolvedPilotRuntimeTarget;
   readonly supabaseSecretKey: string;
   readonly firstAccountPassword: string | undefined;
 }
@@ -33,7 +43,7 @@ export function loadControlledPilotRuntimeConfiguration(
     supabaseProjectRef: environment.CADENCE_SUPABASE_PROJECT_REF,
   };
   const safety = validateCadenceEnvironmentSafety(safetyInput);
-  const runtimeTarget: PilotRuntimeTarget = Object.freeze({
+  const runtimeTarget: ResolvedPilotRuntimeTarget = Object.freeze({
     cadenceEnv: safety.cadenceEnv,
     supabaseUrl: safety.supabaseUrl,
     supabaseProjectRef: safety.supabaseProjectRef,

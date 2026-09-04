@@ -140,7 +140,7 @@ export interface ObservedPilotState {
 export interface PilotRuntimeTarget {
   cadenceEnv: string | undefined;
   supabaseUrl: string | undefined;
-  supabaseProjectRef: string | undefined;
+  supabaseProjectRef: string | null | undefined;
   projectId: string;
   safeTargetMarker: string;
 }
@@ -297,7 +297,7 @@ export function validatePilotRuntimeTarget(
     safety = validateCadenceEnvironmentSafety({
       cadenceEnv: runtimeTarget.cadenceEnv,
       supabaseUrl: runtimeTarget.supabaseUrl,
-      supabaseProjectRef: runtimeTarget.supabaseProjectRef,
+      supabaseProjectRef: runtimeTarget.supabaseProjectRef ?? undefined,
     });
   } catch (error) {
     throw preflightError(
