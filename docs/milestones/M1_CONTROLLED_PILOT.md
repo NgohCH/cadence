@@ -32,6 +32,8 @@ M1 engineering may begin when all of the following are true:
   VS005 design decision; backup technology remains a VS006 design decision.
 - No new work is being used to weaken, remove, or move a governed commitment
   beyond M3.
+- The VS007 M1 Team Agent/AI assistance boundary is approved as the next
+  bounded M1 slice after VS006; it does not close C17-C19.
 
 The following are M1 deliverables and Pilot Activation prerequisites. They are
 not prerequisites for beginning M1 engineering:
@@ -43,7 +45,8 @@ not prerequisites for beginning M1 engineering:
 - backup and successful isolated restore;
 - support ownership and escalation procedure;
 - pilot runbook; and
-- completed multi-user rehearsal.
+- completed controlled multi-user rehearsal before the Pilot Activation
+  decision.
 
 ## Pilot Activation / Go-Live Gate
 
@@ -52,6 +55,22 @@ Activation Gate passes. Empty pilot account, Person, project, and membership
 preparation may occur earlier under controlled procedures.
 
 The activation gate is defined in [Pilot Activation Gate](#pilot-activation-gate).
+
+The approved M1 sequence is:
+
+```text
+VS005 portable deployment/runtime
+  -> VS006 backup/restore/support and recovery proof
+      -> VS007 M1 Team Agent/AI assistance
+          -> complete M1 rehearsal
+              -> Pilot Activation decision
+```
+
+The M1 rehearsal is a controlled pre-activation rehearsal using prepared
+identities and controlled/non-live content. It is evidence for the gate and
+does not begin real project content or live pilot user operation. The existing
+rule remains unchanged: real project content and live pilot user operation
+begin only after the Pilot Activation Gate passes.
 
 ## In-scope pilot
 
@@ -64,6 +83,8 @@ The activation gate is defined in [Pilot Activation Gate](#pilot-activation-gate
   journey.
 - Durable Discussion reload and deterministic manual refresh.
 - Controlled worker scheduling and operational support.
+- A useful bounded M1 Team Agent/AI assistance subset, owned by VS007 and not
+  equivalent to closing C17-C19.
 
 External participation is optional and outside the default M1 pilot scope.
 C25 remains governed and mandatory by M3; C25.1–C25.3 are not mandatory VS004
@@ -149,20 +170,33 @@ VS003 Discussion   VS004 Bootstrap/Access
        VS006 Operations, Recovery
        and Support
                 ↓
+       VS007 M1 Team Agent/AI
+       Complete M1 rehearsal
        Pilot Activation Gate
                 ↓
        Real pilot operation
                 ↓
-       M1 rehearsal and closure gate
+       M1 closure gate
 ```
 
 VS003 and VS004 may proceed in parallel after the M1 Work Entry Gate. VS005
 owns the hosting target and worker scheduling design. VS006 owns the backup
 technology choice, restore proof, support ownership, and recovery procedure.
-No real project content or live pilot user operation begins until the Pilot
-Activation Gate passes. No separate M1 closure vertical slice is created.
+VS007 owns the useful bounded M1 Team Agent/AI assistance subset. The complete
+controlled M1 rehearsal follows VS007 and precedes the Pilot Activation
+decision. No real project content or live pilot user operation begins until
+the Pilot Activation Gate passes. No separate M1 closure vertical slice is
+created.
 
-## Pilot user rehearsal
+## Controlled M1 rehearsal
+
+After VS007 and before the Pilot Activation decision, the named pilot users
+complete a controlled rehearsal against prepared identities and
+controlled/non-live content. The rehearsal demonstrates the M1 journey and
+operational readiness without starting live project content or live pilot user
+operation. Its evidence is part of the Pilot Activation Gate.
+
+## Post-activation pilot user operation
 
 After activation, 5–10 named internal users use one real project. The default
 scenario includes Owner, Manager, Sponsor, and ordinary Member roles, with

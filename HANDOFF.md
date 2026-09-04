@@ -57,11 +57,13 @@ main integration baseline.
 DH-001 — Progressive Project Formalisation and Complex Governance is recorded
 as DEFERRED / NOT BASELINED and creates no VS005 scope change.
 
-VS005 — Pilot Runtime and Worker Scheduling is the next planned M1 vertical
-slice and has not started.
+VS005 — Portable Deployment and Supervised Runtime is the active M1 vertical
+slice. Task 1 contract/governance freeze is complete; runtime implementation
+tasks have not started.
 
-VS006 — Pilot Operations, Recovery and Support remains planned after VS005
-under the single-stream rule.
+VS006 — Pilot Operations, Recovery and Support remains planned after VS005,
+and VS007 — M1 Team Agent/AI Assistance follows VS006 under the single-stream
+rule.
 
 The Pilot Activation Gate has not yet been satisfied and no real-user M1 pilot
 activation is claimed at this checkpoint.
@@ -78,31 +80,33 @@ v0.1 - Development
 
 ## Current Integration Baseline
 
-`main`
+`feature/vs-005-portable-deployment-runtime`
 
-The implementation baseline is the merged `main` branch. No VS005
-implementation branch exists at this checkpoint.
+The implementation baseline for this checkpoint is branch
+`feature/vs-005-portable-deployment-runtime` at the pre-task-commit baseline
+`80223c0`. The Task 1 checkpoint is documentation/governance-only.
 
 ## Current Delivery State
 
 Next Vertical Slice:
 
-`VS005 - Pilot Runtime and Worker Scheduling`
+`VS005 - Portable Deployment and Supervised Runtime`
 
 Status:
 
-**NOT STARTED — VS005 is the next planned M1 delivery slice. Contract and
-governance reconciliation must be completed before implementation begins.**
+**TASK 1 COMPLETE — VS005 contract and governance reconciliation are frozen;
+runtime implementation begins only in the subsequent approved tasks.**
 
 Current checkpoint:
 
 **VS003 and VS004 are closed and merged. DH-001 is recorded as deferred and
-not baselined. The repository is at the post-VS004 M1 handoff checkpoint,
-before VS005 design/contract work begins.**
+not baselined. The repository has completed the VS005 Task 1 contract freeze
+from the post-VS004 M1 handoff checkpoint.**
 
 - M1 Controlled Pilot remains active.
 - Pilot Activation has not occurred.
-- VS006 remains planned after VS005.
+- VS006 remains planned after VS005, followed by VS007 and the controlled M1
+  rehearsal before the separate Pilot Activation decision.
 - No baseline requirement is changed by this handoff update.
 
 ## VS004 Closure Record

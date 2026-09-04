@@ -81,6 +81,40 @@ closure evidence includes the actual API, browser, authorization, isolation,
 and two-user runtime evidence recorded below and in the VS003 contract. Original
 commitments moved beyond M3: **0**.
 
+## VS005 sequencing reconciliation
+
+The VS005 contract freeze records an approved M1 sequence within M0-M3. This
+sequence changes delivery order only; it does not redefine, remove, or close a
+baseline commitment.
+
+```text
+VS005 portable deployment/runtime
+  -> VS006 backup/restore/support and recovery proof
+      -> VS007 M1 Team Agent/AI assistance
+          -> complete M1 rehearsal
+              -> Pilot Activation decision
+```
+
+VS005 advances the planned evidence path for F13.3, F17.1, F17.3, F17.4,
+F18.3, and F19.1, with F01-F10, F12-F19 protected as affected foundational
+boundaries. VS005 does not close any of these requirements at contract freeze.
+VS006 remains responsible for backup/restore/support and recovery evidence;
+VS007 owns the useful bounded M1 Team Agent/AI subset. C17 remains `PARTIAL`
+and due by M3; C17-C19 are not marked complete by this reconciliation.
+
+The controlled M1 rehearsal occurs before the Pilot Activation decision using
+prepared identities and controlled/non-live content. It does not authorize
+real project content or live pilot user operation. The existing no-live-pilot-
+before-activation rule remains unchanged.
+
+Approved source-record provenance for this checkpoint:
+
+- Design Markdown SHA-256: `5b39d77044f3264a4181642b7e3081ee7eedcdc63ffd7f3c0e65d26dc91ff2a8`
+- Implementation plan SHA-256: `f1fb71197756ddc45606b062068c53703cffdf6f2dad69c00120178aa27949e1`
+
+Original commitments removed: **0**. Original commitments moved beyond M3:
+**0**. Unmapped VS005 implementation changes: **0**.
+
 ## Product parent register
 
 | Requirement ID | Parent ID | Original commitment | Source | Intended outcome | Type | Current status | Milestone due | Vertical slice(s) | Implementation evidence | Test/evidence | Remaining gap | Closure evidence |

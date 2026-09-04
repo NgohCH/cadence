@@ -6,6 +6,21 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### M1 Controlled Pilot / VS005 Task 1 contract and governance freeze
+
+- Added the frozen VS005 Portable Deployment and Supervised Runtime contract,
+  including explicit scope, non-scope, authority invariants, closure evidence,
+  baseline reconciliation, and reviewed source-record provenance.
+- Reconciled the M1 sequence as VS005 portable deployment/runtime -> VS006
+  backup/restore/support -> VS007 M1 Team Agent/AI assistance -> controlled M1
+  rehearsal -> Pilot Activation decision.
+- Preserved the no-live-pilot-before-activation rule, the 44 governed-parent
+  and 178 child-record counts, C17 as `PARTIAL` due by M3, and the rule that
+  VS005 PASS does not authorise M1 Pilot Activation.
+- This checkpoint changes documentation/governance only: no application code,
+  tests, package files, runtime configuration, schema, dependency, migration,
+  deployment, or database state changed.
+
 ### M1 Controlled Pilot / VS003 implementation and closure reconciliation
 
 - Implemented the durable Discussion read and return path through the owning

@@ -18,7 +18,8 @@ Read in this order before planning or changing a vertical slice:
 6. [Architectural Design Horizons](CADENCE_ARCHITECTURAL_DESIGN_HORIZONS.md)
    — deferred architectural directions that future designs must consider but
    that do not alter governed scope until promoted through Change Control.
-7. The current applicable vertical-slice contract.
+7. The current applicable vertical-slice contract, including the frozen
+   `docs/vertical-slices/VS-005.md` contract during the VS005 checkpoint.
 8. `HANDOFF.md` — current execution state and engineering handoff.
 
 Authority rule: the Scope Baseline defines what Cadence must deliver. The
@@ -31,4 +32,6 @@ scope.
 
 No governed baseline requirement may be moved beyond M3. Every future vertical
 slice must identify the baseline IDs it advances and update traceability at
-closure.
+closure. The approved VS005 design and implementation plan are source records
+for the VS005 contract; they do not supersede the Scope Baseline, Milestone
+Contract, Traceability Register, or Change Control rules.

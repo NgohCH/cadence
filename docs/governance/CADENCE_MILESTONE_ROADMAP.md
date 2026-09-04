@@ -77,9 +77,23 @@ intervention in normal workflow is not.
 The detailed M1 contract, including the separate Pilot Activation Gate, is
 [`docs/milestones/M1_CONTROLLED_PILOT.md`](../milestones/M1_CONTROLLED_PILOT.md).
 Stable URLs, prepared users/project/roles, supervised worker execution,
-backup/restore, support ownership, and completed rehearsal are M1 deliverables
-and Pilot Activation prerequisites; they are not prerequisites for beginning
-M1 engineering.
+backup/restore, support ownership, the bounded M1 Team Agent/AI subset, and a
+completed controlled rehearsal are M1 deliverables and Pilot Activation
+prerequisites; they are not prerequisites for beginning M1 engineering.
+
+The approved M1 sequence is:
+
+```text
+VS005 portable deployment/runtime
+  -> VS006 backup/restore/support and recovery proof
+      -> VS007 M1 Team Agent/AI assistance
+          -> complete M1 rehearsal
+              -> Pilot Activation decision
+```
+
+The rehearsal in this sequence is completed before the activation decision and
+does not authorize live project content or live pilot user operation. The
+separate Pilot Activation Gate must pass before real pilot operation begins.
 
 ### Required baseline capabilities
 
@@ -91,6 +105,8 @@ M1 engineering.
   an M1/core-journey requirement, not an MVP-only requirement.
 - Working proposal review, Task materialisation, My Tasks, Members, and Task
   Audit journey.
+- A useful bounded M1 Team Agent/AI assistance subset, without closing C17-C19
+  baseline obligations beyond the evidence actually accepted.
 - Pilot logging, failure inspection, support, backup, and recovery runbook.
 
 ### Allowed temporary workarounds
