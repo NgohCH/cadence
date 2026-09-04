@@ -170,3 +170,61 @@ test(
     }
   }
 );
+
+
+test(
+  "expiry finalisation serializes overlap before its idempotent already-ended branch",
+  () => {
+    const body =
+      functionBody(
+        "finalize_project_membership_expiry"
+      );
+
+    const projectLock =
+      body.indexOf(
+        "from public.projects as project"
+      );
+
+    const membershipLock =
+      body.indexOf(
+        "from public.project_memberships as membership"
+      );
+
+    const alreadyEnded =
+      body.indexOf(
+        "'ALREADY_ENDED'::text"
+      );
+
+    assert.ok(
+      projectLock >= 0
+    );
+
+    assert.ok(
+      membershipLock > projectLock
+    );
+
+    assert.ok(
+      alreadyEnded > membershipLock
+    );
+
+    assert.match(
+      body,
+      /from public\.projects as project[\s\S]*for update/
+    );
+
+    assert.match(
+      body,
+      /from public\.project_memberships as membership[\s\S]*for update/
+    );
+
+    assert.match(
+      body,
+      /membership_status = 'ENDED'[\s\S]*termination_kind is not null[\s\S]*'ALREADY_ENDED'/
+    );
+
+    assert.match(
+      body,
+      /project_membership_role_history_at\([\s\S]*v_membership\.effective_to/
+    );
+  }
+);
