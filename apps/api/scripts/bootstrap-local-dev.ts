@@ -3,8 +3,10 @@ import {
 } from "@supabase/supabase-js";
 
 import {
-  validateCadenceEnvironmentSafety,
-} from "../src/bootstrap/environment-safety";
+  loadCadenceRuntimeConfig,
+  resolveCadenceConfigPath,
+  resolveCadenceSecrets,
+} from "../src/bootstrap/cadence-config";
 
 
 const PERSON_ID =
@@ -87,21 +89,21 @@ function throwSupabaseError(
 
 
 async function main(): Promise<void> {
+  const configPath = resolveCadenceConfigPath({
+    argv: process.argv.slice(2),
+    environment: process.env,
+  });
+  const config = loadCadenceRuntimeConfig(configPath);
+  const { supabaseSecretKey: secretKey } = resolveCadenceSecrets(config, process.env);
 
-  const supabaseUrl =
-    requiredEnvironment(
-      "SUPABASE_URL"
+  if (config.application.environment !== "local") {
+    throw new Error(
+      "Local development bootstrap may run only against a local canonical configuration.",
     );
+  }
 
-  const publishableKey =
-    requiredEnvironment(
-      "SUPABASE_PUBLISHABLE_KEY"
-    );
-
-  const secretKey =
-    requiredEnvironment(
-      "SUPABASE_SECRET_KEY"
-    );
+  const supabaseUrl = config.supabase.url;
+  const publishableKey = config.supabase.publishableKey;
 
   const email =
     requiredEnvironment(
@@ -112,28 +114,6 @@ async function main(): Promise<void> {
     requiredEnvironment(
       "CADENCE_LOCAL_DEV_PASSWORD"
     );
-
-
-  const safety =
-    validateCadenceEnvironmentSafety({
-      cadenceEnv:
-        process.env.CADENCE_ENV,
-
-      supabaseUrl,
-
-      supabaseProjectRef:
-        process.env.CADENCE_SUPABASE_PROJECT_REF,
-    });
-
-
-  if (
-    safety.cadenceEnv !==
-    "local"
-  ) {
-    throw new Error(
-      "Local development bootstrap may run only in CADENCE_ENV=local."
-    );
-  }
 
 
   /*

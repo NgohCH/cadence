@@ -1,10 +1,9 @@
 import {
-  validateCadenceEnvironmentSafety,
+  loadCadenceRuntimeConfig,
+  resolveCadenceConfigPath,
+  resolveCadenceSecrets,
   type CadenceEnvironment,
-  type CadenceEnvironmentSafetyInput,
-} from "../src/bootstrap/environment-safety";
-import type { PilotRuntimeTarget } from "./vs004-preflight";
-
+} from "../src/bootstrap/cadence-config";
 
 export interface ResolvedPilotRuntimeTarget {
   readonly cadenceEnv: CadenceEnvironment;
@@ -14,66 +13,38 @@ export interface ResolvedPilotRuntimeTarget {
   readonly safeTargetMarker: string;
 }
 
-
 export interface ControlledPilotRuntimeConfiguration {
   readonly runtimeTarget: ResolvedPilotRuntimeTarget;
   readonly supabaseSecretKey: string;
   readonly firstAccountPassword: string | undefined;
 }
 
-
 export function loadControlledPilotRuntimeConfiguration(
   environment: NodeJS.ProcessEnv,
 ): ControlledPilotRuntimeConfiguration {
-  const cadenceEnv = requiredEnvironmentValue(environment, "CADENCE_ENV");
-  const supabaseUrl = requiredEnvironmentValue(environment, "SUPABASE_URL");
-  const safeTargetMarker = requiredEnvironmentValue(
+  const configPath = resolveCadenceConfigPath({
+    argv: [],
     environment,
-    "CADENCE_SAFE_TARGET_MARKER",
-  );
-  const projectId = requiredEnvironmentValue(environment, "CADENCE_PILOT_PROJECT_ID");
-  const supabaseSecretKey = requiredEnvironmentValue(
-    environment,
-    "SUPABASE_SECRET_KEY",
-  );
-
-  const safetyInput: CadenceEnvironmentSafetyInput = {
-    cadenceEnv,
-    supabaseUrl,
-    supabaseProjectRef: environment.CADENCE_SUPABASE_PROJECT_REF,
-  };
-  const safety = validateCadenceEnvironmentSafety(safetyInput);
-  const runtimeTarget: ResolvedPilotRuntimeTarget = Object.freeze({
-    cadenceEnv: safety.cadenceEnv,
-    supabaseUrl: safety.supabaseUrl,
-    supabaseProjectRef: safety.supabaseProjectRef,
-    projectId,
-    safeTargetMarker,
   });
+  const config = loadCadenceRuntimeConfig(configPath);
+  const { supabaseSecretKey } = resolveCadenceSecrets(config, environment);
 
-  const firstAccountPassword = optionalEnvironmentValue(
-    environment.CADENCE_LOCAL_DEV_PASSWORD,
-  );
+  const runtimeTarget: ResolvedPilotRuntimeTarget = Object.freeze({
+    cadenceEnv: config.application.environment,
+    supabaseUrl: config.supabase.url,
+    supabaseProjectRef: config.supabase.projectRef,
+    projectId: config.pilot.projectId,
+    safeTargetMarker: config.pilot.safeTargetMarker,
+  });
 
   return Object.freeze({
     runtimeTarget,
     supabaseSecretKey,
-    firstAccountPassword,
+    firstAccountPassword: optionalEnvironmentValue(
+      environment.CADENCE_LOCAL_DEV_PASSWORD,
+    ),
   });
 }
-
-
-function requiredEnvironmentValue(
-  environment: NodeJS.ProcessEnv,
-  name: string,
-): string {
-  const value = environment[name]?.trim();
-  if (!value) {
-    throw new Error(`${name} is required for controlled pilot runtime configuration.`);
-  }
-  return value;
-}
-
 
 function optionalEnvironmentValue(value: string | undefined): string | undefined {
   const normalized = value?.trim();

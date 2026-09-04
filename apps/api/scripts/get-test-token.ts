@@ -1,9 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  loadCadenceRuntimeConfig,
+  resolveCadenceConfigPath,
+} from "../src/bootstrap/cadence-config";
 
 async function main(): Promise<void> {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const publishableKey =
-    process.env.SUPABASE_PUBLISHABLE_KEY;
+  const configPath = resolveCadenceConfigPath({
+    argv: process.argv.slice(2),
+    environment: process.env,
+  });
+  const config = loadCadenceRuntimeConfig(configPath);
+  const supabaseUrl = config.supabase.url;
+  const publishableKey = config.supabase.publishableKey;
 
   const email = process.env.TEST_USER_EMAIL;
   const password = process.env.TEST_USER_PASSWORD;

@@ -4,6 +4,12 @@ import {
 } from "@supabase/supabase-js";
 
 import {
+  loadCadenceRuntimeConfig,
+  resolveCadenceConfigPath,
+  resolveCadenceSecrets,
+  type CadenceRuntimeConfig,
+} from "../src/bootstrap/cadence-config";
+import {
   validateCadenceEnvironmentSafety,
 } from "../src/bootstrap/environment-safety";
 
@@ -502,21 +508,16 @@ function throwSupabaseError(
 }
 
 
-function getAdminClient(): SupabaseClient {
-  assertVs003LocalEnvironment({
-    cadenceEnv: process.env.CADENCE_ENV,
-    supabaseUrl: process.env.SUPABASE_URL,
-    supabaseProjectRef:
-      process.env.CADENCE_SUPABASE_PROJECT_REF,
-  });
-
-  const secretKey =
-    requireEnvironmentValue(
-      "SUPABASE_SECRET_KEY",
-    );
+function getAdminClient(
+  config: CadenceRuntimeConfig,
+): SupabaseClient {
+  const { supabaseSecretKey: secretKey } = resolveCadenceSecrets(
+    config,
+    process.env,
+  );
 
   return createClient(
-    requireEnvironmentValue("SUPABASE_URL"),
+    config.supabase.url,
     secretKey,
     {
       auth: {
@@ -2140,17 +2141,21 @@ function getActorPasswordName(
 
 
 async function main(): Promise<void> {
-  const admin = getAdminClient();
+  const configPath = resolveCadenceConfigPath({
+    argv: process.argv.slice(2),
+    environment: process.env,
+  });
+  const config = loadCadenceRuntimeConfig(configPath);
+  if (config.application.environment !== "local") {
+    throw new Error("VS003 runtime fixture requires a local canonical configuration.");
+  }
+  const admin = getAdminClient(config);
   const fixturePasswords = Object.fromEntries(
     REQUIRED_VS003_PASSWORDS.map((name) => [name, process.env[name]]),
   );
   assertVs003LocalPasswords(fixturePasswords);
-  const supabaseUrl =
-    requireEnvironmentValue("SUPABASE_URL");
-  const publishableKey =
-    requireEnvironmentValue(
-      "SUPABASE_PUBLISHABLE_KEY",
-    );
+  const supabaseUrl = config.supabase.url;
+  const publishableKey = config.supabase.publishableKey;
 
   const authUserIds = new Map<string, string>();
 
