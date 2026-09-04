@@ -20,6 +20,8 @@
     "vs005:web-config": "node --import tsx scripts/vs005-generate-web-config.ts",
     "vs005:generate:ci": "node --import tsx scripts/vs005-generate-deployment.ts --config ../../config/cadence.runtime.ci.json --out ../runtime-cloudflare/wrangler.generated.jsonc --release-version 0.0.0-ci --commit-sha 0000000000000000000000000000000000000000 --build-id 2026-09-04T00:00:00Z",
     "vs005:deploy:plan": "node --import tsx scripts/vs005-deploy-plan.ts",
+    "vs005:deploy:apply": "node --import tsx scripts/vs005-deploy-apply.ts",
+    "vs005:deploy:verify": "node --import tsx scripts/vs005-deploy-verify.ts",
     "test": "node --import tsx --test src/**/*.test.ts",
     "pilot:preflight": "node --import tsx scripts/vs004-controlled-pilot-preflight-cli.ts",
     "pilot:execute": "node --import tsx scripts/vs004-controlled-pilot-execute-cli.ts",
