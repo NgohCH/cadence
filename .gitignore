@@ -4,6 +4,9 @@ node_modules/
 apps/api/dist/
 apps/web/.generated/
 
+# Local/generated VS005 deployment evidence; safe summaries are copied to governed docs only when approved
+.cadence/
+
 # Local environment files
 .env
 .env.*

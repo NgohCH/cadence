@@ -19,6 +19,8 @@
     "db:local:bootstrap": "npm --prefix apps/api run local:bootstrap",
     "db:local:rebuild": "npm run db:local:reset && npm run db:local:bootstrap",
     "web:build:ci": "npm --prefix apps/web run build:ci",
+    "cadence:setup:check": "npm --prefix apps/api run vs005:deploy:plan",
+    "cadence:deploy:plan": "npm --prefix apps/api run vs005:deploy:plan",
     "quality": "npm run api:typecheck && npm run api:test && npm run web:lint && npm run web:build:ci",
     "test": "npm run quality",
     "db:beta:check": "npm --prefix apps/api run supabase:target:check -- --env beta",
