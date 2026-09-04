@@ -19,6 +19,9 @@ import { ProjectMembershipExpiryProcessor } from "../modules/project-membership/
 import { MessageCreatedV1Handler } from "../modules/team-agent/message-created.handler";
 import { TeamAgentService } from "../modules/team-agent/team-agent.service";
 import type { CadenceWorkerCycleServices } from "./cadence-worker-cycle";
+import {
+  createDeliveryRetryPolicy,
+} from "./worker-retry-policy";
 
 export function createCadenceWorkerServices(input: {
   config: CadenceRuntimeConfig;
@@ -62,12 +65,22 @@ export function createCadenceWorkerServices(input: {
     discussionService,
     teamAgentService,
   );
-  const processor = new DomainEventProcessor(domainEventRepository);
+  const retryPolicy = createDeliveryRetryPolicy(
+    input.config.retry.delaysSeconds,
+  );
+  const auditProcessor = new DomainEventProcessor(
+    domainEventRepository,
+    { retryPolicy },
+  );
+  const teamAgentProcessor = new DomainEventProcessor(
+    domainEventRepository,
+    { retryPolicy },
+  );
 
   return {
     processMembershipExpiry: (maxMemberships) =>
       membershipExpiryProcessor.processDueMemberships(maxMemberships),
-    processAuditNext: () => processor.processNext(auditDomainEventHandler),
-    processTeamAgentNext: () => processor.processNext(messageCreatedHandler),
+    processAuditNext: () => auditProcessor.processNext(auditDomainEventHandler),
+    processTeamAgentNext: () => teamAgentProcessor.processNext(messageCreatedHandler),
   };
 }

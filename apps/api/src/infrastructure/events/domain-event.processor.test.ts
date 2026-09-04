@@ -13,6 +13,10 @@ import {
   DomainEventProcessor,
 } from "./domain-event.processor";
 
+import {
+  createDeliveryRetryPolicy,
+} from "../../runtime/worker-retry-policy";
+
 import type {
   ClaimedDomainEvent,
   DomainEventRepository,
@@ -305,7 +309,18 @@ test(
 
     const processor =
       new DomainEventProcessor(
-        repository
+        repository,
+        {
+          retryPolicy:
+            createDeliveryRetryPolicy(
+              [60, 300, 900, 3600]
+            ),
+          currentTime:
+            () =>
+              new Date(
+                "2026-09-04T00:00:00.000Z"
+              ),
+        }
       );
 
     await assert.rejects(
@@ -335,12 +350,69 @@ test(
             claimedEvent.claimToken,
 
           error:
-            "Team Agent processing failed.",
+            "HANDLER_FAILED:Error",
 
           retryAt:
-            undefined,
+            "2026-09-04T00:01:00.000Z",
         },
       ]
+    );
+  }
+);
+
+
+test(
+  "failure persistence stores a bounded safe category, not the raw handler message",
+  async () => {
+    const repository =
+      new FakeDomainEventRepository();
+
+    const handler =
+      new FakeDomainEventHandler();
+
+    handler.error =
+      new Error(
+        "SUPABASE_SECRET_KEY=do-not-store"
+      );
+
+    const processor =
+      new DomainEventProcessor(
+        repository,
+        {
+          retryPolicy:
+            createDeliveryRetryPolicy(
+              [60, 300, 900, 3600]
+            ),
+          currentTime:
+            () =>
+              new Date(
+                "2026-09-04T00:00:00.000Z"
+              ),
+        }
+      );
+
+    await assert.rejects(
+      () =>
+        processor.processNext(
+          handler
+        )
+    );
+
+    assert.equal(
+      repository.failCalls[0]?.error,
+      "HANDLER_FAILED:Error"
+    );
+
+    assert.equal(
+      repository.failCalls[0]?.retryAt,
+      "2026-09-04T00:01:00.000Z"
+    );
+
+    assert.doesNotMatch(
+      JSON.stringify(
+        repository.failCalls
+      ),
+      /do-not-store/
     );
   }
 );

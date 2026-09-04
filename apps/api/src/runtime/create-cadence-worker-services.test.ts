@@ -78,3 +78,22 @@ test("worker service boundary exposes only bounded callable jobs", () => {
   ]);
   assert.equal("databaseClient" in services, false);
 });
+
+test("both event consumers share the canonical delivery retry policy", () => {
+  assert.match(
+    source,
+    /createDeliveryRetryPolicy\(\s*input\.config\.retry\.delaysSeconds\s*,?\s*\)/,
+  );
+  assert.equal(
+    [...source.matchAll(/new DomainEventProcessor\b/g)].length,
+    2,
+  );
+  assert.equal(
+    [...source.matchAll(/\{\s*retryPolicy\s*\}/g)].length,
+    2,
+  );
+  assert.doesNotMatch(
+    source,
+    /\[60,\s*300,\s*900,\s*3600\]/,
+  );
+});
