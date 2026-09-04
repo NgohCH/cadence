@@ -70,9 +70,11 @@ class Repository implements ProjectMembershipLifecycleRepository {
   public response = result();
   public error: unknown = null;
   public evaluatedAt: string | null = null;
+  public requestedLimit: number | null = null;
 
-  async listDueMemberships(evaluatedAt: string): Promise<ProjectMembership[]> {
+  async listDueMemberships(evaluatedAt: string, limit: number): Promise<ProjectMembership[]> {
     this.evaluatedAt = evaluatedAt;
+    this.requestedLimit = limit;
     return this.due;
   }
 
@@ -99,7 +101,7 @@ function processor(repository: Repository) {
 test("due membership is finalised with system provenance inputs and original boundary preserved", async () => {
   const repository = new Repository();
   repository.due = [membership()];
-  const processed = await processor(repository).processDueMemberships();
+  const processed = await processor(repository).processDueMemberships(10);
 
   assert.equal(repository.evaluatedAt, now);
   assert.deepEqual(repository.calls, [{
@@ -117,8 +119,8 @@ test("due membership is finalised with system provenance inputs and original bou
 test("not-due candidates are not mutated", async () => {
   const repository = new Repository();
   repository.due = [membership({ effectiveTo: "2030-01-01T00:00:00.000Z" })];
-  const processed = await processor(repository).processDueMemberships();
-  assert.deepEqual(processed, { finalised: [], conflicts: [] });
+  const processed = await processor(repository).processDueMemberships(10);
+  assert.deepEqual(processed, { finalised: [], conflicts: [], remainingDue: false });
   assert.equal(repository.calls.length, 0);
 });
 
@@ -127,7 +129,7 @@ test("idempotent repository retry retains ALREADY_ENDED result", async () => {
   const repository = new Repository();
   repository.due = [membership()];
   repository.response = result("ALREADY_ENDED");
-  const processed = await processor(repository).processDueMemberships();
+  const processed = await processor(repository).processDueMemberships(10);
   assert.equal(processed.finalised[0]?.outcome, "ALREADY_ENDED");
   assert.equal(processed.finalised[0]?.termination.correlationId, "55555555-5555-4555-8555-555555555555");
 });
@@ -137,7 +139,7 @@ test("protected continuity conflict is surfaced for administrative resolution", 
   const repository = new Repository();
   repository.due = [membership()];
   repository.error = new LastRequiredRoleHolderError();
-  const processed = await processor(repository).processDueMemberships();
+  const processed = await processor(repository).processDueMemberships(10);
   assert.deepEqual(processed.finalised, []);
   assert.deepEqual(processed.conflicts, [{
     projectId: membership().projectId,
@@ -152,7 +154,23 @@ test("unexpected expiry persistence failures are not swallowed", async () => {
   repository.due = [membership()];
   repository.error = new Error("persistence unavailable");
   await assert.rejects(
-    processor(repository).processDueMemberships(),
+    processor(repository).processDueMemberships(10),
     /persistence unavailable/
   );
+});
+
+test("look-ahead is bounded and reports remaining due memberships", async () => {
+  const repository = new Repository();
+  repository.due = [
+    membership({ id: "11111111-1111-4111-8111-111111111111" }),
+    membership({ id: "22222222-2222-4222-8222-222222222222" }),
+    membership({ id: "33333333-3333-4333-8333-333333333333" }),
+    membership({ id: "44444444-4444-4444-8444-444444444444" }),
+  ];
+
+  const processed = await processor(repository).processDueMemberships(3);
+
+  assert.equal(repository.requestedLimit, 4);
+  assert.equal(repository.calls.length, 3);
+  assert.equal(processed.remainingDue, true);
 });

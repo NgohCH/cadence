@@ -36,6 +36,8 @@ export interface MembershipExpiryProcessingResult {
     ProjectMembershipTerminationResult[];
   conflicts:
     MembershipExpiryConflict[];
+  remainingDue:
+    boolean;
 }
 
 
@@ -58,8 +60,19 @@ export class ProjectMembershipExpiryProcessor {
   ) {}
 
 
-  async processDueMemberships():
+  async processDueMemberships(
+    maxMemberships: number
+  ):
     Promise<MembershipExpiryProcessingResult> {
+    if (
+      !Number.isInteger(maxMemberships) ||
+      maxMemberships <= 0
+    ) {
+      throw new Error(
+        "Membership expiry maximum must be a positive integer."
+      );
+    }
+
     const finalisedAt =
       normalizeTimestamp(
         this.currentTime()
@@ -68,16 +81,25 @@ export class ProjectMembershipExpiryProcessor {
     const memberships =
       await this.repository
         .listDueMemberships(
-          finalisedAt
+          finalisedAt,
+          maxMemberships + 1
         );
+
+    const candidates =
+      memberships.slice(
+        0,
+        maxMemberships
+      );
 
     const result:
       MembershipExpiryProcessingResult = {
         finalised: [],
         conflicts: [],
+        remainingDue:
+          memberships.length > maxMemberships,
       };
 
-    for (const membership of memberships) {
+    for (const membership of candidates) {
       if (
         !isDueMembership(
           membership,

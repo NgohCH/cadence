@@ -15,19 +15,11 @@ const serverSource = readFileSync(
 );
 
 
-test("worker constructs and invokes the membership expiry processor", () => {
-  assert.match(
-    workerSource,
-    /new SupabaseProjectMembershipLifecycleRepository\(\s*databaseClient\s*\)/
-  );
-  assert.match(
-    workerSource,
-    /new ProjectMembershipExpiryProcessor\(\s*projectMembershipLifecycleRepository\s*\)/
-  );
-  assert.match(
-    workerSource,
-    /membershipExpiryProcessor[\s\S]*\.processDueMemberships\(\)/
-  );
+test("worker is a one-shot adapter for the bounded runtime-neutral cycle", () => {
+  assert.match(workerSource, /runCadenceWorkerCycle/);
+  assert.match(workerSource, /createCadenceWorkerServices/);
+  assert.doesNotMatch(workerSource, /processNext/);
+  assert.doesNotMatch(workerSource, /processDueMemberships/);
 });
 
 

@@ -118,7 +118,8 @@ export class SupabaseProjectMembershipLifecycleRepository
 
 
   async listDueMemberships(
-    evaluatedAt: string
+    evaluatedAt: string,
+    limit: number
   ): Promise<ProjectMembership[]> {
     const { data, error } =
       await this.db
@@ -132,7 +133,8 @@ export class SupabaseProjectMembershipLifecycleRepository
         })
         .order("id", {
           ascending: true,
-        });
+        })
+        .limit(limit);
 
     if (error) {
       throw new Error(

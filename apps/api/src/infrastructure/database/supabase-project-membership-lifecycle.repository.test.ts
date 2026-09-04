@@ -62,6 +62,7 @@ class DueMembershipQuery {
   not(column: string, operator: string, value: unknown): this { this.calls.push(["not", column, operator, value]); return this; }
   lte(column: string, value: unknown): this { this.calls.push(["lte", column, value]); return this; }
   order(column: string, options: unknown): this { this.calls.push(["order", column, options]); return this; }
+  limit(value: number): this { this.calls.push(["limit", value]); return this; }
 
   then<TResult1 = RpcResponse>(
     onfulfilled?: ((value: RpcResponse) => TResult1 | PromiseLike<TResult1>) | null
@@ -150,7 +151,8 @@ test("due-membership discovery is lifecycle-owned, bounded, and read-only", asyn
     fake as unknown as SupabaseClient
   );
 
-  const due = await repository.listDueMemberships(endedAt);
+  const requestedLimit = 4;
+  const due = await repository.listDueMemberships(endedAt, requestedLimit);
 
   assert.equal(fake.table, "project_memberships");
   assert.deepEqual(fake.query.calls.slice(1), [
@@ -159,6 +161,7 @@ test("due-membership discovery is lifecycle-owned, bounded, and read-only", asyn
     ["lte", "effective_to", endedAt],
     ["order", "effective_to", { ascending: true }],
     ["order", "id", { ascending: true }],
+    ["limit", requestedLimit],
   ]);
   assert.equal(due[0]?.id, membershipId);
   assert.equal(due[0]?.effectiveTo, endedAt);

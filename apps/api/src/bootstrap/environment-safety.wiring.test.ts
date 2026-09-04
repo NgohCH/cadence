@@ -41,12 +41,22 @@ test("runtime-neutral composition has no process environment access", () => {
   assert.doesNotMatch(source, /process\.env/);
 });
 
-test("worker keeps the current pre-Task-7 safety guard", () => {
+test("worker consumes canonical configuration before the bounded cycle", () => {
   const source = readSource("src/worker.ts");
-  const guardIndex = requireIndex(source, "validateCadenceEnvironmentSafety({", "worker safety guard");
-  const databaseClientIndex = requireIndex(source, "createClient(", "worker database client");
-  assert.ok(guardIndex < databaseClientIndex);
-  assert.match(source, /process\.env\.CADENCE_ENV/);
-  assert.match(source, /process\.env\.CADENCE_SUPABASE_PROJECT_REF/);
-  assert.doesNotMatch(source, /runCadenceWorkerCycle|createCadenceWorkerServices/);
+  const configPathIndex = requireIndex(source, "resolveCadenceConfigPath(", "config locator");
+  const configIndex = requireIndex(source, "loadCadenceRuntimeConfig(", "canonical config load");
+  const secretsIndex = requireIndex(source, "resolveCadenceSecrets(", "configured secret resolution");
+  const releaseIndex = requireIndex(source, "loadCadenceReleaseIdentity(", "release identity load");
+  const cycleIndex = requireIndex(source, "runCadenceWorkerCycle(", "bounded worker cycle");
+  const servicesIndex = requireIndex(source, "createCadenceWorkerServices(", "worker service composition");
+
+  assert.ok(configPathIndex < configIndex);
+  assert.ok(configIndex < secretsIndex);
+  assert.ok(secretsIndex < releaseIndex);
+  assert.ok(releaseIndex < cycleIndex);
+  assert.ok(cycleIndex < servicesIndex);
+  assert.doesNotMatch(source, /process\.env\.CADENCE_ENV/);
+  assert.doesNotMatch(source, /process\.env\.CADENCE_SUPABASE_PROJECT_REF/);
+  assert.doesNotMatch(source, /validateCadenceEnvironmentSafety\(/);
+  assert.doesNotMatch(source, /createClient\(/);
 });

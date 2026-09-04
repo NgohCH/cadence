@@ -49,7 +49,8 @@ export interface BoundedProtectedRoleViolation {
  */
 export interface ProjectMembershipLifecycleRepository {
   listDueMemberships(
-    evaluatedAt: string
+    evaluatedAt: string,
+    limit: number
   ): Promise<ProjectMembership[]>;
 
   terminateAdministratively(
