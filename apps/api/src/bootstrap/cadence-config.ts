@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import Ajv from "ajv";
 
 import { CADENCE_RUNTIME_CONFIG_SCHEMA } from "./cadence-config-schema";
+import { validateCadenceEnvironmentSafety } from "./environment-safety";
 
 export type CadenceEnvironment = "local" | "qa" | "beta";
 export type CadenceRuntimeProvider = "node" | "cloudflare";
@@ -73,7 +74,24 @@ export function validateCadenceRuntimeConfig(value: unknown): CadenceRuntimeConf
 
   const config = value as CadenceRuntimeConfig;
   validateSemanticConfiguration(config);
-  return config;
+  const safety = validateCadenceEnvironmentSafety({
+    cadenceEnv: config.application.environment,
+    supabaseUrl: config.supabase.url,
+    supabaseProjectRef: config.supabase.projectRef ?? undefined,
+  });
+
+  return Object.freeze({
+    ...config,
+    application: Object.freeze({
+      ...config.application,
+      environment: safety.cadenceEnv,
+    }),
+    supabase: Object.freeze({
+      ...config.supabase,
+      url: safety.supabaseUrl,
+      projectRef: safety.supabaseProjectRef,
+    }),
+  });
 }
 
 export function fingerprintCadenceRuntimeConfig(config: CadenceRuntimeConfig): string {
