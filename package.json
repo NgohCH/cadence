@@ -19,6 +19,7 @@
     "db:local:bootstrap": "npm --prefix apps/api run local:bootstrap",
     "db:local:rebuild": "npm run db:local:reset && npm run db:local:bootstrap",
     "web:build:ci": "npm --prefix apps/web run build:ci",
+    "vs005:cloudflare:probe": "npm --prefix apps/web run build:ci && npm --prefix apps/runtime-cloudflare run probe:bundle",
     "quality": "npm run api:typecheck && npm run api:test && npm run web:lint && npm run web:build:ci",
     "test": "npm run quality",
     "db:beta:check": "node --env-file=apps/api/.env.beta scripts/assert-supabase-explicit-target.cjs beta",
