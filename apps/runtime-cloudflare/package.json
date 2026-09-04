@@ -5,7 +5,7 @@
   "scripts": {
     "test": "node --import tsx --test src/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "probe:bundle": "wrangler deploy --config wrangler.probe.jsonc --dry-run"
+    "deploy:dry-run": "wrangler deploy --config wrangler.generated.jsonc --dry-run"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260903.1",
