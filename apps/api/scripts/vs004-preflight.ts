@@ -11,6 +11,10 @@ import {
   isOrdinaryProjectRole,
   type ProjectRole,
 } from "../src/modules/project-membership/project-role.types";
+import {
+  sameNullableTimestampInstant,
+  sameTimestampInstant,
+} from "../src/modules/identity/timestamp-equivalence";
 
 
 export interface ObservedAuthAccount {
@@ -601,6 +605,12 @@ function planAuthentication(
       identity.status !== "active"
     ) {
       throw preflightError("IDENTITY", `Authentication identity maps to the wrong Person or subject for ${intended.key}.`);
+    }
+    if (
+      !sameTimestampInstant(identity.validFrom, intended.membership.effectiveFrom) ||
+      !sameNullableTimestampInstant(identity.validTo, intended.membership.effectiveTo)
+    ) {
+      throw preflightError("IDENTITY", `Authentication identity validity period conflicts for ${intended.key}.`);
     }
     if (account && identity.authUserId !== account.id) {
       throw preflightError("IDENTITY", `Authentication identity maps to the wrong Auth user for ${intended.key}.`);

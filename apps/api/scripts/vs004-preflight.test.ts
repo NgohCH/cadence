@@ -49,6 +49,22 @@ function manifest(): ValidatedPilotManifest {
 }
 
 
+function manifestWithEffectiveFrom(
+  effectiveFrom: string,
+): ValidatedPilotManifest {
+  const raw = JSON.parse(
+    readFileSync(
+      resolve(__dirname, "vs004-pilot.example.json"),
+      "utf8",
+    ),
+  ) as { users: Array<{ membership: Record<string, unknown> }> };
+  for (const pilotUser of raw.users) {
+    pilotUser.membership.effectiveFrom = effectiveFrom;
+  }
+  return validatePilotManifest(raw);
+}
+
+
 function manifestForCreation(): ValidatedPilotManifest {
   const raw = JSON.parse(
     readFileSync(
@@ -163,7 +179,7 @@ function existingState(
         pilotUser.authentication.loginIdentifier,
       status: "active",
       validFrom: pilotUser.membership.effectiveFrom,
-      validTo: null,
+      validTo: pilotUser.membership.effectiveTo,
     });
     state.cadenceUsers.push({
       id: pilotUser.cadenceUser.id,
@@ -826,6 +842,67 @@ test("fails contradictory identity mappings", () => {
   assert.throws(
     () => buildPilotPreflightPlan(input(manifest(), missingAuthAccount)),
     /missing.*Auth account|identity.*account/i,
+  );
+});
+
+
+test("reuses an authentication identity with equivalent validity timestamp serialization", () => {
+  const pilotManifest = manifestWithEffectiveFrom(
+    "2026-09-05T00:00:00.000Z",
+  );
+  const observed = existingState(pilotManifest);
+  observed.authenticationIdentities[0].validFrom =
+    "2026-09-05T00:00:00+00:00";
+
+  const plan = buildPilotPreflightPlan(input(pilotManifest, observed));
+  const identityOperation = plan.operations.find(
+    (operation) => operation.resourceKey.startsWith("authentication-identity:"),
+  );
+
+  assert.equal(identityOperation?.kind, "REUSE");
+});
+
+
+test("rejects an authentication identity with a different validity instant", () => {
+  const pilotManifest = manifestWithEffectiveFrom(
+    "2026-09-05T00:00:00.000Z",
+  );
+  const observed = existingState(pilotManifest);
+  observed.authenticationIdentities[0].validFrom =
+    "2026-09-05T00:00:01.000Z";
+
+  assert.throws(
+    () => buildPilotPreflightPlan(input(pilotManifest, observed)),
+    /authentication identity.*validity|identity/i,
+  );
+});
+
+
+test("rejects null and non-null authentication identity validity periods", () => {
+  const pilotManifest = manifestWithEffectiveFrom(
+    "2026-09-05T00:00:00.000Z",
+  );
+  const observed = existingState(pilotManifest);
+  observed.authenticationIdentities[0].validTo =
+    "2026-09-06T00:00:00.000Z";
+
+  assert.throws(
+    () => buildPilotPreflightPlan(input(pilotManifest, observed)),
+    /authentication identity.*validity|identity/i,
+  );
+});
+
+
+test("rejects an invalid authentication identity validity timestamp", () => {
+  const pilotManifest = manifestWithEffectiveFrom(
+    "2026-09-05T00:00:00.000Z",
+  );
+  const observed = existingState(pilotManifest);
+  observed.authenticationIdentities[0].validFrom = "not-a-timestamp";
+
+  assert.throws(
+    () => buildPilotPreflightPlan(input(pilotManifest, observed)),
+    /authentication identity.*validity|identity/i,
   );
 });
 
