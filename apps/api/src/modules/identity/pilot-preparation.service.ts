@@ -14,7 +14,7 @@ import type {
 import {
   sameNullableTimestampInstant,
   sameTimestampInstant,
-} from "./timestamp-equivalence";
+} from "../../shared/timestamp-equivalence";
 import type {
   PilotCadenceUserRecord,
   PilotIdentityPreparationContext,

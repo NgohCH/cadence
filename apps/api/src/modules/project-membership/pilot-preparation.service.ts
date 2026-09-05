@@ -33,6 +33,10 @@ import {
   isOrdinaryProjectRole,
   isProtectedProjectRole,
 } from "./project-role.types";
+import {
+  sameNullableTimestampInstant,
+  sameTimestampInstant,
+} from "../../shared/timestamp-equivalence";
 
 
 export type PilotPreparationErrorCategory =
@@ -180,8 +184,8 @@ export class ProjectMembershipPilotPreparationService {
       admission.roleAssignment.projectId !== request.intent.projectId ||
       admission.roleAssignment.membershipId !== request.intent.membershipId ||
       admission.roleAssignment.role !== "PROJECT_MEMBER" ||
-      admission.roleAssignment.effectiveFrom !== request.intent.effectiveFrom ||
-      admission.roleAssignment.effectiveTo !== request.intent.effectiveTo ||
+      !sameTimestampInstant(admission.roleAssignment.effectiveFrom, request.intent.effectiveFrom) ||
+      !sameNullableTimestampInstant(admission.roleAssignment.effectiveTo, request.intent.effectiveTo) ||
       admission.roleAssignment.assignedBy !== request.intent.grantedByPersonId
     ) {
       throw preparationError(
@@ -596,8 +600,8 @@ function membershipMatches(
   return existing.id === intent.membershipId &&
     existing.projectId === intent.projectId &&
     existing.personId === intent.personId &&
-    existing.effectiveFrom === intent.effectiveFrom &&
-    existing.effectiveTo === intent.effectiveTo &&
+    sameTimestampInstant(existing.effectiveFrom, intent.effectiveFrom) &&
+    sameNullableTimestampInstant(existing.effectiveTo, intent.effectiveTo) &&
     existing.status === "ACTIVE" &&
     existing.grantedBy === intent.grantedByPersonId;
 }
@@ -612,8 +616,8 @@ function ordinaryAssignmentMatches(
     assignment.projectId === intent.projectId &&
     assignment.membershipId === intent.membershipId &&
     assignment.role === intent.role &&
-    assignment.effectiveFrom === intent.effectiveFrom &&
-    assignment.effectiveTo === intent.effectiveTo &&
+    sameTimestampInstant(assignment.effectiveFrom, intent.effectiveFrom) &&
+    sameNullableTimestampInstant(assignment.effectiveTo, intent.effectiveTo) &&
     assignment.assignedBy === intent.assignedByPersonId &&
     assignment.changeReason === intent.changeReason;
 }
@@ -628,8 +632,8 @@ function predecessorMatches(
     assignment.projectId === expected.projectId &&
     assignment.membershipId === expected.membershipId &&
     assignment.role === expected.role &&
-    assignment.effectiveFrom === expected.effectiveFrom &&
-    assignment.effectiveTo === expected.effectiveTo &&
+    sameTimestampInstant(assignment.effectiveFrom, expected.effectiveFrom) &&
+    sameNullableTimestampInstant(assignment.effectiveTo, expected.effectiveTo) &&
     assignment.assignedBy === expected.assignedByPersonId &&
     assignment.changeReason === expected.changeReason;
 }

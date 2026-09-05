@@ -14,7 +14,7 @@ import {
 import {
   sameNullableTimestampInstant,
   sameTimestampInstant,
-} from "../src/modules/identity/timestamp-equivalence";
+} from "../src/shared/timestamp-equivalence";
 
 
 export interface ObservedAuthAccount {
@@ -736,8 +736,8 @@ function planMembership(
   }
   if (
     existing.status !== "ACTIVE" ||
-    existing.effectiveFrom !== membershipIntent.effectiveFrom ||
-    existing.effectiveTo !== membershipIntent.effectiveTo ||
+    !sameTimestampInstant(existing.effectiveFrom, membershipIntent.effectiveFrom) ||
+    !sameNullableTimestampInstant(existing.effectiveTo, membershipIntent.effectiveTo) ||
     existing.grantedByPersonId !== membershipIntent.grantedByPersonId
   ) {
     throw preflightError("MEMBERSHIP", `Membership has an incompatible period, lifecycle, or grantor/provenance for ${intended.key}.`);
@@ -761,6 +761,14 @@ function planRole(
       assignment.projectId === projectId &&
       assignment.membershipId === membershipId,
   );
+  if (!isOrdinaryProjectRole(intended.role)) {
+    const initial = assignments.find(
+      (assignment) => assignment.id === intended.membership.initialRoleAssignmentId,
+    );
+    if (initial && !initialOrdinaryAssignmentMatches(initial, intended, projectId, membershipId)) {
+      throw preflightError("ROLE", `The observed initial PROJECT_MEMBER assignment conflicts with the manifest for ${intended.key}.`);
+    }
+  }
   const active = assignments.filter(
     (assignment) =>
       isEffectiveAt(
@@ -778,8 +786,8 @@ function planRole(
       (assignment) =>
         assignment.id === intended.roleAssignmentId &&
         assignment.role === intended.role &&
-        assignment.effectiveFrom === intended.membership.effectiveFrom &&
-        assignment.effectiveTo === intended.membership.effectiveTo,
+        sameTimestampInstant(assignment.effectiveFrom, intended.membership.effectiveFrom) &&
+        sameNullableTimestampInstant(assignment.effectiveTo, intended.membership.effectiveTo),
     );
     if (exact) {
       addReuse(operations, `role-assignment:${exact.id}`, intended.key, exact.id, intended.role);
@@ -815,8 +823,8 @@ function planRole(
       predecessor.projectId !== expectedPredecessor.projectId ||
       predecessor.membershipId !== expectedPredecessor.membershipId ||
       predecessor.role !== expectedPredecessor.role ||
-      predecessor.effectiveFrom !== expectedPredecessor.effectiveFrom ||
-      predecessor.effectiveTo !== expectedPredecessor.effectiveTo ||
+      !sameTimestampInstant(predecessor.effectiveFrom, expectedPredecessor.effectiveFrom) ||
+      !sameNullableTimestampInstant(predecessor.effectiveTo, expectedPredecessor.effectiveTo) ||
       predecessor.assignedBy !== expectedPredecessor.assignedByPersonId ||
       predecessor.changeReason !== expectedPredecessor.changeReason ||
       ordinaryActive.length !== 1 ||
@@ -843,6 +851,22 @@ function planRole(
     active,
     operations,
   );
+}
+
+
+function initialOrdinaryAssignmentMatches(
+  assignment: ObservedRoleAssignment,
+  intended: PilotUserIntent,
+  projectId: string,
+  membershipId: string,
+): boolean {
+  return assignment.projectId === projectId &&
+    assignment.membershipId === membershipId &&
+    assignment.role === "PROJECT_MEMBER" &&
+    sameTimestampInstant(assignment.effectiveFrom, intended.membership.effectiveFrom) &&
+    sameNullableTimestampInstant(assignment.effectiveTo, intended.membership.effectiveTo) &&
+    assignment.assignedBy === intended.membership.grantedByPersonId &&
+    assignment.changeReason === null;
 }
 
 

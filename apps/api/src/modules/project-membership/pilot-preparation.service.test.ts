@@ -306,6 +306,75 @@ test("planned Membership CREATE creates absent canonical membership with exact p
 });
 
 
+test("planned Membership CREATE accepts equivalent persisted membership and initial-role timestamps", async () => {
+  const setup = service();
+  const persistedTimestamp = "2026-09-01T00:00:00+00:00";
+  setup.admission.result = {
+    membership: { ...membership(), effectiveFrom: persistedTimestamp },
+    roleAssignment: { ...roleAssignment(), effectiveFrom: persistedTimestamp },
+  };
+
+  const result = await setup.service.prepareMembership(membershipRequest());
+
+  assert.equal(result.actualResult, "CREATED");
+});
+
+
+test("planned Membership CREATE rejects incompatible persisted membership periods", async (t) => {
+  await t.test("different membership instant", async () => {
+    const setup = service();
+    setup.admission.result = {
+      membership: { ...membership(), effectiveFrom: "2026-09-01T00:00:01.000Z" },
+      roleAssignment: roleAssignment(),
+    };
+
+    await assert.rejects(
+      setup.service.prepareMembership(membershipRequest()),
+      /MEMBERSHIP_CONFLICT/,
+    );
+  });
+
+  await t.test("different initial role instant", async () => {
+    const setup = service();
+    setup.admission.result = {
+      membership: membership(),
+      roleAssignment: { ...roleAssignment(), effectiveFrom: "2026-09-01T00:00:01.000Z" },
+    };
+
+    await assert.rejects(
+      setup.service.prepareMembership(membershipRequest()),
+      /MEMBERSHIP_CONFLICT/,
+    );
+  });
+
+  await t.test("null versus non-null effectiveTo", async () => {
+    const setup = service();
+    setup.admission.result = {
+      membership: { ...membership(), effectiveTo: "2026-12-01T00:00:00.000Z" },
+      roleAssignment: roleAssignment(),
+    };
+
+    await assert.rejects(
+      setup.service.prepareMembership(membershipRequest()),
+      /MEMBERSHIP_CONFLICT/,
+    );
+  });
+
+  await t.test("invalid persisted membership timestamp", async () => {
+    const setup = service();
+    setup.admission.result = {
+      membership: { ...membership(), effectiveFrom: "not-a-timestamp" },
+      roleAssignment: roleAssignment(),
+    };
+
+    await assert.rejects(
+      setup.service.prepareMembership(membershipRequest()),
+      /MEMBERSHIP_CONFLICT/,
+    );
+  });
+});
+
+
 test("planned Membership CREATE reuses exact race state and rejects conflicting or overlapping state", async () => {
   const setup = service();
   setup.memberships.current = membership();
