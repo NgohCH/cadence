@@ -49,6 +49,7 @@ class FakeIdentityRepository
   readonly authenticationIdentities: AuthenticationIdentity[] = [];
   readonly calls: string[] = [];
   failure: "createPerson" | "createCadenceUser" | "createAuthenticationIdentity" | null = null;
+  readbackValidFrom: string | undefined;
 
   async findPersonById(id: string): Promise<CadencePerson | null> {
     this.calls.push(`findPerson:${id}`);
@@ -82,7 +83,9 @@ class FakeIdentityRepository
     this.calls.push(`listIdentities:${personIdValue}`);
     return this.authenticationIdentities.filter(
       (identity) => identity.personId === personIdValue,
-    );
+    ).map((identity) => this.readbackValidFrom === undefined
+      ? identity
+      : { ...identity, validFrom: this.readbackValidFrom });
   }
 
   async findAuthenticationIdentitiesByProviderSubject(
@@ -281,6 +284,56 @@ test("creates missing Person, Auth account, Cadence User, and authentication ide
   assert.equal(result.evidence.personId, personId);
   assert.equal(result.evidence.cadenceUserId, cadenceUserId);
   assert.equal(result.evidence.providerSubjectId, authSubject);
+});
+
+
+test("accepts equivalent timestamp serialization during identity postcondition verification", async () => {
+  const setup = service();
+  setup.repository.readbackValidFrom = "2026-09-01T00:00:00+00:00";
+
+  await assert.doesNotReject(() =>
+    setup.service.preparePilotIdentity(intent(), context()),
+  );
+});
+
+
+test("rejects a genuinely different timestamp during identity postcondition verification", async () => {
+  const setup = service();
+  setup.repository.readbackValidFrom = "2026-09-01T00:00:01+00:00";
+
+  await assert.rejects(
+    () => setup.service.preparePilotIdentity(intent(), context()),
+    /Authentication identity preparation failed/,
+  );
+});
+
+
+test("rejects null and non-null identity validity timestamps as incompatible", async () => {
+  const setup = service();
+  exactState(setup.repository, setup.provider);
+  const baseIntent = intent();
+
+  await assert.rejects(
+    () => setup.service.preparePilotIdentity({
+      ...baseIntent,
+      authentication: {
+        ...baseIntent.authentication,
+        validTo: "2026-09-02T00:00:00.000Z",
+      },
+    }, context()),
+    /Authentication identity history conflicts/,
+  );
+});
+
+
+test("rejects an invalid identity validity timestamp during postcondition verification", async () => {
+  const setup = service();
+  setup.repository.readbackValidFrom = "not-a-timestamp";
+
+  await assert.rejects(
+    () => setup.service.preparePilotIdentity(intent(), context()),
+    /Authentication identity preparation failed/,
+  );
 });
 
 
