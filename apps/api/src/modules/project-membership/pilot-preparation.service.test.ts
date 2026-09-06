@@ -679,9 +679,13 @@ test("protected APPOINT reuses exact holder/history and rejects different or con
   setup.memberships.current = membership();
   setup.projectAssignments.assignments = [{
     ...roleAssignment("PROJECT_OWNER", roleAssignmentId),
+    effectiveFrom: "2026-09-01T00:00:00+00:00",
     changeReason: "VS004 pilot owner appointment",
   }];
-  setup.transfers.transfers = [setup.roles.protectedResult.transfer];
+  setup.transfers.transfers = [{
+    ...setup.roles.protectedResult.transfer,
+    effectiveAt: "2026-09-01T00:00:00+00:00",
+  }];
   assert.equal((await setup.service.prepareProtectedRoleAppointment(protectedRequest())).actualResult, "REUSED");
   assert.equal(setup.roles.protectedCalls.length, 0);
 
@@ -738,6 +742,38 @@ test("protected REUSE reuses exact holder and rejects multiple project holders",
     /PROTECTED_ROLE_CONFLICT/,
   );
   assert.equal(multiple.roles.protectedCalls.length, 0);
+});
+
+
+test("protected compatibility rejects different, null-mismatched, and invalid timestamps", async () => {
+  const cases = [
+    (setup: ReturnType<typeof service>) => {
+      setup.projectAssignments.assignments[0].effectiveFrom = "2026-09-01T00:00:01.000Z";
+    },
+    (setup: ReturnType<typeof service>) => {
+      setup.projectAssignments.assignments[0].effectiveTo = "2026-09-02T00:00:00.000Z";
+    },
+    (setup: ReturnType<typeof service>) => {
+      setup.projectAssignments.assignments[0].effectiveFrom = "not-a-timestamp";
+    },
+    (setup: ReturnType<typeof service>) => {
+      setup.transfers.transfers[0].effectiveAt = "2026-09-01T00:00:01.000Z";
+    },
+  ];
+  for (const mutate of cases) {
+    const setup = service();
+    setup.memberships.current = membership();
+    setup.projectAssignments.assignments = [{
+      ...roleAssignment("PROJECT_OWNER", roleAssignmentId),
+      changeReason: "VS004 pilot owner appointment",
+    }];
+    setup.transfers.transfers = [setup.roles.protectedResult.transfer];
+    mutate(setup);
+    await assert.rejects(
+      setup.service.prepareProtectedRoleAppointment(protectedRequest("REUSE")),
+      /PROTECTED_ROLE_CONFLICT/,
+    );
+  }
 });
 
 

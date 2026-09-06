@@ -123,6 +123,7 @@ function completeOperations(
         manifestKey: user.key,
         id: user.roleAssignmentId,
         role: user.role,
+        effectiveAt: "2026-09-01T00:00:00.001Z",
         ...(action === "CREATE" ? {
           expectedPredecessor: ordinaryPredecessor(pilotManifest, user),
         } : {}),
@@ -579,6 +580,54 @@ test("passes expectedPredecessor unchanged and dispatches protected roles only a
   await executeControlledPilot(input);
   assert.deepEqual(receivedPredecessor, expectedPredecessor);
   assert.equal(protectedAction, "APPOINT");
+});
+
+
+test("uses the deterministic controlled successor instant for an Observer transition", async () => {
+  const pilotManifest = manifest();
+  const observer = pilotManifest.users.find((user) => user.role === "PROJECT_OBSERVER")!;
+  const operations = completeOperations(pilotManifest).map((operation) =>
+    operation.manifestKey === observer.key && operation.kind === "CHANGE_ORDINARY_ROLE"
+      ? { ...operation, effectiveAt: "2026-09-01T00:00:00.001Z" }
+      : operation,
+  );
+  const { input } = executionInput(pilotManifest, operations);
+  let receivedEffectiveFrom: string | undefined;
+  const original = input.services.membership.prepareOrdinaryRoleAssignment;
+  input.services.membership.prepareOrdinaryRoleAssignment = async (request) => {
+    if (request.intent.role === "PROJECT_OBSERVER") {
+      receivedEffectiveFrom = request.intent.effectiveFrom;
+    }
+    return original(request);
+  };
+
+  await executeControlledPilot(input);
+  assert.equal(receivedEffectiveFrom, "2026-09-01T00:00:00.001Z");
+});
+
+
+test("rejects same-instant, earlier, and malformed controlled successors before service calls", async (t) => {
+  const pilotManifest = manifest();
+  const observer = pilotManifest.users.find((user) => user.role === "PROJECT_OBSERVER")!;
+  for (const effectiveAt of [
+    "2026-09-01T00:00:00.000Z",
+    "2026-08-31T23:59:59.999Z",
+    "not-a-timestamp",
+  ]) {
+    await t.test(effectiveAt, async () => {
+      const operations = completeOperations(pilotManifest).map((operation) =>
+        operation.manifestKey === observer.key && operation.kind === "CHANGE_ORDINARY_ROLE"
+          ? { ...operation, effectiveAt }
+          : operation,
+      );
+      const { input, events } = executionInput(pilotManifest, operations);
+      await assert.rejects(
+        executeControlledPilot(input),
+        (error: { category?: string }) => error.category === "PREPARED_EXECUTION",
+      );
+      assert.deepEqual(events, []);
+    });
+  }
 });
 
 

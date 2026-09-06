@@ -205,16 +205,19 @@ function existingState(
         pilotUser.membership.grantedByPersonId,
       createdAt: pilotUser.membership.effectiveFrom,
     });
+    const roleEffectiveFrom = pilotUser.role === "PROJECT_OBSERVER" || pilotUser.role === "PROJECT_AUDITOR"
+      ? new Date(Date.parse(pilotUser.membership.effectiveFrom) + 1).toISOString()
+      : pilotUser.membership.effectiveFrom;
     state.roleAssignments.push({
       id: pilotUser.roleAssignmentId,
       projectId: pilotManifest.project.id,
       membershipId: pilotUser.membership.id,
       role: pilotUser.role,
-      effectiveFrom: pilotUser.membership.effectiveFrom,
+      effectiveFrom: roleEffectiveFrom,
       effectiveTo: pilotUser.membership.effectiveTo,
       assignedBy: pilotUser.membership.grantedByPersonId,
       changeReason: pilotUser.protectedRoleReason ?? null,
-      createdAt: pilotUser.membership.effectiveFrom,
+      createdAt: roleEffectiveFrom,
     });
     if (
       pilotUser.role === "PROJECT_OWNER" ||
@@ -367,6 +370,19 @@ test("ordinary replacement operations carry the exact declared initial predecess
     assignedByPersonId: observer.membership.grantedByPersonId,
     changeReason: null,
   });
+  assert.equal(operation?.effectiveAt, "2026-09-01T00:00:00.001Z");
+});
+
+
+test("generates the controlled ordinary-role successor exactly one millisecond after admission", () => {
+  const pilotManifest = manifestForCreation();
+  const observer = pilotManifest.users.find((user) => user.role === "PROJECT_OBSERVER");
+  assert.ok(observer);
+  const operation = buildPilotPreflightPlan(input(pilotManifest, emptyState())).operations.find(
+    (candidate) => candidate.kind === "CHANGE_ORDINARY_ROLE" && candidate.manifestKey === observer.key,
+  );
+
+  assert.equal(operation?.effectiveAt, "2026-09-01T00:00:00.001Z");
 });
 
 
@@ -555,6 +571,7 @@ test("reuses an exact final Observer without generating a repair operation", () 
   const finalAssignment = observerPredecessor(pilotManifest, {
     id: observer.roleAssignmentId,
     role: "PROJECT_OBSERVER",
+    effectiveFrom: "2026-09-01T00:00:00.001Z",
   });
   const planned = buildPilotPreflightPlan(
     input(pilotManifest, observerStateWithAssignment(pilotManifest, finalAssignment)),
@@ -917,6 +934,59 @@ test("accepts equivalent persisted Owner admission timestamps before protected a
 });
 
 
+test("accepts equivalent protected assignment and transfer timestamp serialization", () => {
+  const pilotManifest = manifest();
+  const observed = existingState(pilotManifest);
+  const owner = pilotManifest.users.find((user) => user.role === "PROJECT_OWNER");
+  assert.ok(owner);
+  const ownerAssignment = observed.roleAssignments.find(
+    (assignment) => assignment.id === owner.roleAssignmentId,
+  );
+  const ownerTransfer = observed.protectedTransfers.find(
+    (transfer) => transfer.id === owner.protectedTransferId,
+  );
+  assert.ok(ownerAssignment);
+  assert.ok(ownerTransfer);
+  ownerAssignment.effectiveFrom = "2026-09-01T00:00:00+00:00";
+  ownerTransfer.effectiveAt = "2026-09-01T00:00:00+00:00";
+
+  const plan = buildPilotPreflightPlan(input(pilotManifest, observed));
+  assert.ok(plan.operations.some(
+    (operation) => operation.kind === "REUSE" &&
+      operation.resourceKey === `protected-role:${owner.role}`,
+  ));
+});
+
+
+test("rejects incompatible protected assignment and transfer timestamps", () => {
+  const cases = [
+    (observed: MutableObservedPilotState, owner: ValidatedPilotManifest["users"][number]) => {
+      observed.roleAssignments.find((assignment) => assignment.id === owner.roleAssignmentId)!.effectiveFrom = "2026-09-01T00:00:01.000Z";
+    },
+    (observed: MutableObservedPilotState, owner: ValidatedPilotManifest["users"][number]) => {
+      observed.roleAssignments.find((assignment) => assignment.id === owner.roleAssignmentId)!.effectiveTo = "2026-09-02T00:00:00.000Z";
+    },
+    (observed: MutableObservedPilotState, owner: ValidatedPilotManifest["users"][number]) => {
+      observed.roleAssignments.find((assignment) => assignment.id === owner.roleAssignmentId)!.effectiveFrom = "not-a-timestamp";
+    },
+    (observed: MutableObservedPilotState, owner: ValidatedPilotManifest["users"][number]) => {
+      observed.protectedTransfers.find((transfer) => transfer.id === owner.protectedTransferId)!.effectiveAt = "2026-09-01T00:00:01.000Z";
+    },
+  ];
+  const pilotManifest = manifest();
+  const owner = pilotManifest.users.find((user) => user.role === "PROJECT_OWNER");
+  assert.ok(owner);
+  for (const mutate of cases) {
+    const observed = existingState(pilotManifest);
+    mutate(observed, owner);
+    assert.throws(
+      () => buildPilotPreflightPlan(input(pilotManifest, observed)),
+      /protected|history|PROTECTED_ROLE/i,
+    );
+  }
+});
+
+
 test("rejects a different persisted membership instant", () => {
   const pilotManifest = manifest();
   const observed = existingState(pilotManifest);
@@ -1001,7 +1071,7 @@ test("accepts equivalent persisted ordinary-role timestamps for an existing repl
     (assignment) => assignment.id === observer.roleAssignmentId,
   );
   assert.ok(observerAssignment);
-  observerAssignment.effectiveFrom = observer.membership.effectiveFrom.replace(".000Z", "+00:00");
+  observerAssignment.effectiveFrom = "2026-09-01T00:00:00.001+00:00";
 
   const plan = buildPilotPreflightPlan(input(pilotManifest, observed));
   assert.ok(plan.operations.some(

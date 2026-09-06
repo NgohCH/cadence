@@ -660,8 +660,8 @@ function protectedAssignmentMatches(
     assignment.projectId === intent.projectId &&
     assignment.membershipId === intent.membershipId &&
     assignment.role === intent.role &&
-    assignment.effectiveFrom === intent.effectiveAt &&
-    assignment.effectiveTo === intent.effectiveTo &&
+    sameTimestampInstant(assignment.effectiveFrom, intent.effectiveAt) &&
+    sameNullableTimestampInstant(assignment.effectiveTo, intent.effectiveTo) &&
     assignment.assignedBy === intent.authorisedByPersonId &&
     assignment.changeReason === intent.reason;
 }
@@ -681,7 +681,7 @@ function protectedTransferMatches(
     transfer.authorisedByPersonId === intent.authorisedByPersonId &&
     transfer.reason === intent.reason &&
     transfer.correlationId === request.context.runCorrelationId &&
-    transfer.effectiveAt === intent.effectiveAt;
+    sameTimestampInstant(transfer.effectiveAt, intent.effectiveAt);
 }
 
 

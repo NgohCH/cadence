@@ -179,6 +179,7 @@ export interface PilotPlanOperation {
   readonly progressPercent?: number;
   readonly role?: ProjectRole;
   readonly reason?: string;
+  readonly effectiveAt?: string;
   readonly expectedPredecessor?: PilotPlanOrdinaryRolePredecessor;
 }
 
@@ -216,6 +217,38 @@ export type PilotPreflightErrorCategory =
   | "MEMBERSHIP"
   | "ROLE"
   | "PROTECTED_ROLE";
+
+
+export function controlledBootstrapSuccessorEffectiveAt(
+  predecessorEffectiveFrom: string,
+): string | null {
+  if (!sameTimestampInstant(predecessorEffectiveFrom, predecessorEffectiveFrom)) {
+    return null;
+  }
+  const instant = Date.parse(predecessorEffectiveFrom);
+  if (!Number.isFinite(instant)) {
+    return null;
+  }
+  return new Date(instant + 1).toISOString();
+}
+
+
+export function isTimestampStrictlyAfter(
+  successor: string,
+  predecessor: string,
+): boolean {
+  if (
+    !sameTimestampInstant(successor, successor) ||
+    !sameTimestampInstant(predecessor, predecessor)
+  ) {
+    return false;
+  }
+  const successorInstant = Date.parse(successor);
+  const predecessorInstant = Date.parse(predecessor);
+  return Number.isFinite(successorInstant) &&
+    Number.isFinite(predecessorInstant) &&
+    successorInstant > predecessorInstant;
+}
 
 
 export class PilotPreflightError extends Error {
@@ -778,6 +811,12 @@ function planRole(
       ),
   );
   if (isOrdinaryProjectRole(intended.role)) {
+    const successorEffectiveAt = intended.role === "PROJECT_MEMBER"
+      ? intended.membership.effectiveFrom
+      : controlledBootstrapSuccessorEffectiveAt(intended.membership.effectiveFrom);
+    if (!successorEffectiveAt) {
+      throw preflightError("ROLE", `The ordinary-role transition time is invalid for ${intended.key}.`);
+    }
     const ordinaryActive = active.filter((assignment) => isOrdinaryProjectRole(assignment.role));
     if (ordinaryActive.length > 1) {
       throw preflightError("ROLE", `Contradictory overlapping ordinary role exists for ${intended.key}.`);
@@ -786,11 +825,18 @@ function planRole(
       (assignment) =>
         assignment.id === intended.roleAssignmentId &&
         assignment.role === intended.role &&
-        sameTimestampInstant(assignment.effectiveFrom, intended.membership.effectiveFrom) &&
+        sameTimestampInstant(assignment.effectiveFrom, successorEffectiveAt) &&
         sameNullableTimestampInstant(assignment.effectiveTo, intended.membership.effectiveTo),
     );
     if (exact) {
-      addReuse(operations, `role-assignment:${exact.id}`, intended.key, exact.id, intended.role);
+      addReuse(
+        operations,
+        `role-assignment:${exact.id}`,
+        intended.key,
+        exact.id,
+        intended.role,
+        intended.role === "PROJECT_MEMBER" ? undefined : successorEffectiveAt,
+      );
       return;
     }
     if (intended.role === "PROJECT_MEMBER" && assignments.length === 0) {
@@ -838,6 +884,7 @@ function planRole(
       manifestKey: intended.key,
       id: intended.roleAssignmentId,
       role: intended.role,
+      effectiveAt: successorEffectiveAt,
       expectedPredecessor,
     });
     return;
@@ -920,6 +967,12 @@ function planProtectedRole(
   if (holder.id !== intended.roleAssignmentId) {
     throw preflightError("PROTECTED_ROLE", `Protected ${role} has an incompatible assignment.`);
   }
+  if (
+    !sameTimestampInstant(holder.effectiveFrom, intended.membership.effectiveFrom) ||
+    !sameNullableTimestampInstant(holder.effectiveTo, intended.membership.effectiveTo)
+  ) {
+    throw preflightError("PROTECTED_ROLE", `Protected ${role} has an incompatible validity period.`);
+  }
   const matchingLedger = ledger.filter(
     (transfer) =>
       transfer.id === intended.protectedTransferId &&
@@ -927,7 +980,7 @@ function planProtectedRole(
       transfer.outgoingAssignmentId === null &&
       transfer.authorisedByPersonId === operatorPersonId &&
       transfer.reason === intended.protectedRoleReason &&
-      transfer.effectiveAt === intended.membership.effectiveFrom,
+      sameTimestampInstant(transfer.effectiveAt, intended.membership.effectiveFrom),
   );
   if (matchingLedger.length !== 1) {
     throw preflightError("PROTECTED_ROLE", `Protected ${role} has a missing or mismatched immutable transfer ledger.`);
@@ -962,6 +1015,7 @@ function addReuse(
   manifestKey?: string,
   id?: string,
   role?: ProjectRole,
+  effectiveAt?: string,
 ): void {
   operations.push({
     kind: "REUSE",
@@ -969,6 +1023,7 @@ function addReuse(
     ...(manifestKey ? { manifestKey } : {}),
     ...(id ? { id } : {}),
     ...(role ? { role } : {}),
+    ...(effectiveAt ? { effectiveAt } : {}),
   });
 }
 

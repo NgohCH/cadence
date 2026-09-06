@@ -29,12 +29,18 @@ import {
   type ValidatedPilotManifest,
 } from "./vs004-pilot-manifest";
 import {
+  controlledBootstrapSuccessorEffectiveAt,
+  isTimestampStrictlyAfter,
   validatePilotRuntimeTarget,
   type PilotPlanOperation,
   type PilotPlanOperationKind,
   type PilotPreflightPlan,
   type PilotRuntimeTarget,
 } from "./vs004-preflight";
+import {
+  sameNullableTimestampInstant,
+  sameTimestampInstant,
+} from "../src/shared/timestamp-equivalence";
 import type {
   PreparedPilotExecution,
 } from "./vs004-controlled-pilot-preflight";
@@ -547,9 +553,18 @@ function validateOperation(
     ) {
       throw executionError("PREPARED_EXECUTION", "Prepared ordinary-role operation does not match the manifest.", { runCorrelationId: "validation" });
     }
-    if (operation.kind === "CHANGE_ORDINARY_ROLE" && isReplacementRole(user.role)) {
+    if (isReplacementRole(user.role)) {
       const expected = expectedPredecessor(manifest, user);
-      if (!predecessorMatches(operation.expectedPredecessor, expected)) {
+      const successorEffectiveAt = controlledBootstrapSuccessorEffectiveAt(expected.effectiveFrom);
+      if (
+        successorEffectiveAt === null ||
+        operation.effectiveAt === undefined ||
+        !sameTimestampInstant(operation.effectiveAt, successorEffectiveAt) ||
+        !isTimestampStrictlyAfter(operation.effectiveAt, expected.effectiveFrom)
+      ) {
+        throw executionError("PREPARED_EXECUTION", "Prepared ordinary-role successor time is invalid.", { runCorrelationId: "validation" });
+      }
+      if (operation.kind === "CHANGE_ORDINARY_ROLE" && !predecessorMatches(operation.expectedPredecessor, expected)) {
         throw executionError("PREPARED_EXECUTION", "Prepared ordinary-role predecessor does not match the manifest.", { runCorrelationId: "validation" });
       }
     }
@@ -701,7 +716,7 @@ async function executeOrdinaryRolePhase(
         projectId: manifest.project.id,
         membershipId: user.membership.id,
         role: user.role as "PROJECT_MEMBER" | "PROJECT_OBSERVER" | "PROJECT_AUDITOR",
-        effectiveFrom: user.membership.effectiveFrom,
+        effectiveFrom: operation.effectiveAt ?? user.membership.effectiveFrom,
         effectiveTo: user.membership.effectiveTo,
         assignedByPersonId: user.membership.grantedByPersonId,
         changeReason: user.protectedRoleReason ?? null,
@@ -1014,8 +1029,8 @@ function predecessorMatches(
     actual.projectId === expected.projectId &&
     actual.membershipId === expected.membershipId &&
     actual.role === expected.role &&
-    actual.effectiveFrom === expected.effectiveFrom &&
-    actual.effectiveTo === expected.effectiveTo &&
+    sameTimestampInstant(actual.effectiveFrom, expected.effectiveFrom) &&
+    sameNullableTimestampInstant(actual.effectiveTo, expected.effectiveTo) &&
     actual.assignedByPersonId === expected.assignedByPersonId &&
     actual.changeReason === expected.changeReason;
 }

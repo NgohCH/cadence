@@ -460,6 +460,7 @@ function assertPilotPlanOperation(value: unknown, path: string): void {
       "progressPercent",
       "role",
       "reason",
+      "effectiveAt",
       "expectedPredecessor",
     ]),
     path,
@@ -480,6 +481,15 @@ function assertPilotPlanOperation(value: unknown, path: string): void {
   }
   if (operation.reason !== undefined) {
     nonBlankString(operation.reason, `${path}.reason`);
+  }
+  if (operation.effectiveAt !== undefined) {
+    if (
+      operation.kind !== "CHANGE_ORDINARY_ROLE" &&
+      !(operation.kind === "REUSE" && typeof operation.resourceKey === "string" && operation.resourceKey.startsWith("role-assignment:"))
+    ) {
+      throw new PilotArtifactValidationError(`${path}.effectiveAt is only valid for ordinary-role operations.`);
+    }
+    timestamp(operation.effectiveAt, `${path}.effectiveAt`);
   }
   if (operation.expectedPredecessor !== undefined) {
     assertPilotPlanPredecessor(
