@@ -106,10 +106,22 @@ TypeScript configuration type, semantic validation, canonical fingerprint,
 example/CI fixtures, and generated deployment artifact must all adopt this
 same extension during the later implementation checkpoint.
 
-For the reviewed Beta target, semantic validation additionally requires the
-exact approved tuple in Section 3. A different marker, account, Worker, URL,
-Supabase ref, or controlled Project fails before provider mutation. The
-validator must not derive `workerName` from `environment`.
+Validation has two deliberately separate layers:
+
+1. **Generic canonical configuration validation** checks required fields,
+   formats, provider-specific structure, semantic relationships, general
+   environment safety, and the presence of `cloudflare.accountId` and
+   `cloudflare.workerName` whenever the Cloudflare provider is selected. It
+   does not hard-code the reviewed Beta account, Worker, Supabase ref, or
+   controlled Project IDs. The same schema and TypeScript model therefore
+   remain usable for a separately authorized future target.
+2. **Task 15 Beta target policy** checks the exact reviewed tuple in Section
+   3 before a Beta deployment plan can pass. A structurally valid
+   configuration that differs from that tuple is rejected by the Task 15
+   deployment target guard. This policy must not be folded into generic
+   reusable configuration validation.
+
+The target policy must not derive `workerName` from `environment`.
 
 ### 4.2 Canonical fingerprint
 
@@ -144,9 +156,13 @@ supabase.projectRef
 pilot.projectId
 ```
 
-The Beta validator must reject `cadence-dev`, a different safe marker, a
-different project/ref, or any other alternate tuple. A config path alone is
-not authorization and a config value alone is not provider-state proof.
+Generic validation establishes that the configuration is structurally and
+semantically valid, but does not establish that it is the reviewed Beta
+target. The Task 15 Beta target policy must reject `cadence-dev`, a different
+safe marker, a different project/ref, or any other alternate tuple. A config
+path alone is not authorization and a config value alone is not
+provider-state proof. Future clean-room targets use the generic model with a
+separately authorized target policy.
 
 ### Observed provider facts
 
@@ -157,11 +173,20 @@ identity. Application verification separately confirms the runtime's
 environment, target ref, controlled Project, and release identity through
 credential-free safe surfaces and governed API behavior.
 
+Each inspected fact has one semantic state:
+
+```text
+OBSERVED_VALUE
+OBSERVED_ABSENT
+UNAVAILABLE
+```
+
 Planning fails closed when any required intended fact is invalid, any
-required observed fact is unavailable, or any intended/observed comparison
-differs. Unknown is not equivalent to matching. A first deployment may report
-`workerExists=false` as an observed absence, but it must still prove the
-reviewed account and intended Worker name before mutation.
+required fact for the current phase is `UNAVAILABLE`, or any intended/observed
+comparison differs. `OBSERVED_ABSENT` is not equivalent to `UNAVAILABLE` and
+is not automatically a failure when the absence is an expected precondition
+represented in the reviewed mutation envelope. Unknown is never silently
+treated as a match.
 
 The minimum mismatch failures are:
 
@@ -200,9 +225,38 @@ provider permits:
 - current deployed version and prior-version availability where available;
 - hostname/public-route readiness where applicable.
 
-Every field is either an observed safe value, an explicit observed absence,
-or an unavailable fact. An unavailable fact that is required by the plan is a
-hard blocker. Raw provider output, credentials, secret values, response
+Every inspected fact is classified as `OBSERVED_VALUE`, `OBSERVED_ABSENT`, or
+`UNAVAILABLE`. The required observations are phase-scoped:
+
+### First-deployment readiness
+
+- authenticated account: `OBSERVED_VALUE` required and must equal the
+  intended account;
+- intended Worker name: exact canonical value required;
+- Worker existence: observation required; `OBSERVED_ABSENT` is valid before
+  first deployment;
+- current Worker configuration: required when the Worker exists;
+- Cron state: required when the Worker exists; explicit absence may be valid
+  when Cron creation is in the reviewed mutation envelope;
+- required named secret presence: observation required; absence may be valid
+  when setting that secret is explicitly in the reviewed mutation envelope;
+- current deployment/release: required when the Worker exists; and
+- prior rollback version: not required for a first-ever deployment.
+
+### Rollback readiness
+
+Rollback requires:
+
+- current deployed version identity;
+- explicit retained prior version A evidence;
+- intended and observed account/Worker identity;
+- provider rollback availability; and
+- applicable release and configuration fingerprints.
+
+For any fact required by the current phase, `UNAVAILABLE` is a hard
+fail-closed result. `OBSERVED_ABSENT` is acceptable only when the absence is
+an expected precondition and the exact resulting mutation is represented in
+the reviewed plan. Raw provider output, credentials, secret values, response
 bodies, and unrestricted exceptions are not passed into evidence artifacts.
 
 The adapter must never make Cloudflare state canonical business state. It only
@@ -217,7 +271,8 @@ The existing plan-bound architecture remains intact.
 The plan records:
 
 - the complete intended target tuple;
-- the complete safe observed provider snapshot;
+- the phase-scoped safe observed provider snapshot, including semantic
+  observation states;
 - the exact release and configuration fingerprint;
 - the exact mutation envelope: Web Static Assets, API Worker, scheduled
   Worker, required bindings, and named secret configuration if needed;
@@ -225,6 +280,10 @@ The plan records:
 - an empty destructive-action list;
 - rollback availability without implying database rollback;
 - readiness `PASS` only when all required comparisons and observations pass.
+
+For first deployment, the plan does not require a nonexistent prior version.
+For rollback, the plan and retained evidence must identify explicit prior
+version A.
 
 Planning is read-only. It must not create a Worker, change a binding, upload
 a secret, change Cron, write business data, or reset/migrate the database.
@@ -241,6 +300,15 @@ repeats provider inspection immediately before mutation. It refuses:
 - a plan whose generated artifact does not carry `mycadence` and the reviewed
   account target;
 - any plan containing a database action or destructive action.
+
+Apply interprets observations according to the operation phase. A first
+deployment may accept `OBSERVED_ABSENT` for a Worker, Cron trigger, or named
+secret only when the reviewed mutation envelope explicitly creates or sets
+that item. It must not require prior-version evidence when no prior Worker
+deployment exists. A rollback apply requires the current deployed version,
+retained version A, rollback availability, and the applicable target,
+release, and configuration observations. `UNAVAILABLE` for any phase-required
+fact fails before mutation.
 
 Apply cannot silently retarget the Worker or account. Mutation failures retain
 the existing safe failure contract and record whether mutation was attempted,
@@ -292,6 +360,14 @@ non-secret target file into the canonical T15-A model. It does not alter the
 frozen VS005 design/plan, requirement counts, database history, or hosted
 authorization boundary.
 
+The Supabase display/name label is `cadence-beta` for operator-facing review.
+The machine-authoritative Supabase identity is the project ref
+`pwmhasbmacmeerbsagda`. The existing target model does not add a redundant
+Supabase project-name field solely for deployment authority. Although the
+display label and safe marker both currently read `cadence-beta`, they remain
+different concepts; fail-closed deployment comparison uses
+`supabase.projectRef`, not the display label.
+
 Clean-room proof must be reproducible from the governed repository/release,
 the canonical template/model, owner-supplied non-secret target facts, and
 externally supplied secrets. It must not depend on an ignored developer-only
@@ -299,10 +375,12 @@ file.
 
 ## 9. HANDOFF reconciliation
 
-The later narrow `HANDOFF.md` update must reconcile the stale `305d123`
-reference by recording:
+The VS004 recovery closure baseline is `3378e15`. The T15-A design freeze is
+`7800e04`. The later narrow `HANDOFF.md` update must reconcile the stale
+`305d123` reference by recording:
 
-- current pre-T15-A checkpoint `3378e15`;
+- VS004 recovery closure baseline `3378e15`;
+- T15-A design freeze `7800e04`;
 - VS005 Tasks 1-14 locally completed/prepared, with no hosted Task 15 evidence;
 - VS004 controlled Beta recovery `VERIFIED / CLOSED`;
 - T15-A target-contract reconciliation in progress;
@@ -312,6 +390,11 @@ reference by recording:
 - Task 15 remote mutation not authorized;
 - Pilot Activation not authorized; and
 - unchanged governance counts: 44 parent commitments and 178 child records.
+
+After local T15-A implementation, the eventual Handoff update must also
+record the actual implementation checkpoint/HEAD produced by that
+implementation. It must not describe `3378e15` as the then-current repository
+HEAD after later commits exist.
 
 This is documentation reconciliation, not hosted evidence. It must not claim
 deployment, scheduling, drift, rollback, clean-room, or Pilot Activation
@@ -384,7 +467,8 @@ The subsequent local implementation checkpoint may cover only:
 
 1. canonical `cloudflare.accountId`/`cloudflare.workerName` model extension;
 2. schema, TypeScript, semantic-validation, and fingerprint extension;
-3. exact Beta target validation and `cadence-dev` fail-closed protection;
+3. generic target validation plus a separate exact Beta target policy and
+   `cadence-dev` fail-closed protection;
 4. provider read-only observation interface and safe completeness handling;
 5. intended/observed target capture in plan artifacts;
 6. apply and verify target binding without weakening Tasks 11-14 controls;
@@ -400,7 +484,9 @@ clean-room reconstruction, or authorize Pilot Activation.
 ## 14. Testing requirements
 
 Strict RED -> GREEN -> fresh verification is required for each behavior
-change. Focused coverage must prove rejection of:
+change. Generic validation coverage must prove acceptance of a structurally
+valid, separately authorized future target without requiring the reviewed Beta
+IDs. Task 15 Beta-policy coverage must prove rejection of:
 
 - wrong Cloudflare account ID;
 - wrong Worker name;
