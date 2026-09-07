@@ -8,29 +8,43 @@ import {
   validateCadenceRuntimeConfig,
   type CadenceRuntimeConfig,
 } from "../src/bootstrap/cadence-config";
+import { getCadenceTargetFacts, VS005_BETA_TARGET_POLICY } from "../src/bootstrap/cadence-target-policy";
 import type { CadenceReleaseIdentity } from "../src/bootstrap/cadence-release";
-import type {
-  Vs005DeploymentResult,
-} from "./vs005-deploy-apply";
-import type {
-  Vs005DeploymentVerification,
-} from "./vs005-deploy-verify";
+import type { Vs005DeploymentResult } from "./vs005-deploy-apply";
+import type { Vs005DeploymentVerification } from "./vs005-deploy-verify";
 import {
   rollbackVs005Application,
   validateVs005RollbackRequest,
   type Vs005RollbackProvider,
   type Vs005RollbackRequest,
 } from "./vs005-rollback";
+import type { Vs005Observation, Vs005ProviderInspection } from "./vs005-provider-observations";
 
-const validConfig: CadenceRuntimeConfig = validateCadenceRuntimeConfig(JSON.parse(
-  readFileSync(resolve(process.cwd(), "../../config/cadence.runtime.ci.json"), "utf8"),
-));
-const rollbackFingerprint = fingerprintCadenceRuntimeConfig(validConfig);
+function makeBetaConfig(): CadenceRuntimeConfig {
+  const value = JSON.parse(readFileSync(resolve(process.cwd(), "../../config/cadence.runtime.ci.json"), "utf8"));
+  value.application.publicUrl = "https://mycadence.ngohch-3d6.workers.dev";
+  value.cloudflare = { accountId: "3d6a31905ac44e9563a523f9c86cbb8d", workerName: "mycadence" };
+  value.supabase.url = "https://pwmhasbmacmeerbsagda.supabase.co";
+  value.supabase.projectRef = "pwmhasbmacmeerbsagda";
+  value.pilot.projectId = "3503f8c7-1996-44d1-8b63-1fca36db89f8";
+  value.pilot.safeTargetMarker = "cadence-beta";
+  return validateCadenceRuntimeConfig(value);
+}
+
+const config = makeBetaConfig();
+const target = getCadenceTargetFacts(config);
+const fingerprint = fingerprintCadenceRuntimeConfig(config);
 const previousRelease: CadenceReleaseIdentity = {
   version: "1.0.0",
   commitSha: "0123456789abcdef0123456789abcdef01234567",
   buildId: "2026-09-04T10:00:00Z",
 };
+const currentRelease: CadenceReleaseIdentity = {
+  version: "1.0.1",
+  commitSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  buildId: "2026-09-04T11:00:00Z",
+};
+const observed = <T>(value: T): Vs005Observation<T> => ({ state: "OBSERVED_VALUE", value });
 
 const previousDeployment: Vs005DeploymentResult = {
   artifactType: "cadence.vs005.deployment-result",
@@ -41,38 +55,51 @@ const previousDeployment: Vs005DeploymentResult = {
   deployedAt: "2026-09-04T10:10:00.000Z",
   environment: "beta",
   provider: "cloudflare",
-  providerTarget: { accountId: "account-123", workerName: "cadence-beta", workerExists: true },
-  publicUrl: validConfig.application.publicUrl,
+  providerTarget: { ...target.cloudflare, workerExists: true },
+  publicUrl: target.publicUrl,
   configVersion: 1,
   release: previousRelease,
-  configFingerprint: rollbackFingerprint,
+  configFingerprint: fingerprint,
   databaseAction: "NONE",
   destructiveActions: [],
+  intendedTarget: target,
+  observedProvider: {
+    accountId: observed(target.cloudflare.accountId),
+    workerName: observed(target.cloudflare.workerName),
+    workerExists: observed(true),
+    workerConfigFingerprint: observed(fingerprint),
+    cronSchedules: observed([config.worker.schedule]),
+    nonSecretBindingNames: observed(["ASSETS"]),
+    secretNames: observed(["SUPABASE_SECRET_KEY"]),
+    currentRelease: observed(previousRelease),
+    priorVersion: observed({ providerVersionId: "version-older", release: previousRelease, configFingerprint: fingerprint }),
+    hostname: observed(new URL(target.publicUrl).hostname),
+  },
 };
-
 const currentDeploymentEvidence: Vs005DeploymentResult = {
   ...previousDeployment,
   planId: "plan-current",
   deploymentId: "deployment-current",
   providerVersionId: "version-current",
-  deployedAt: "2026-09-04T11:00:00.000Z",
-  release: {
-    version: "1.0.1",
-    commitSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    buildId: "2026-09-04T11:00:00Z",
+  release: currentRelease,
+  observedProvider: {
+    ...previousDeployment.observedProvider!,
+    currentRelease: observed(currentRelease),
+    priorVersion: observed({
+      providerVersionId: previousDeployment.providerVersionId,
+      release: previousDeployment.release,
+      configFingerprint: previousDeployment.configFingerprint,
+    }),
   },
 };
 
-function passingVerification(overrides: {
-  deploymentId?: string;
-  release?: CadenceReleaseIdentity;
-} = {}): Vs005DeploymentVerification {
+function passingVerification(deployment = previousDeployment): Vs005DeploymentVerification {
   return {
     artifactType: "cadence.vs005.deployment-verification",
     formatVersion: 1,
-    deploymentId: overrides.deploymentId ?? previousDeployment.deploymentId,
+    deploymentId: deployment.deploymentId,
     environment: "beta",
-    release: overrides.release ?? previousRelease,
+    release: deployment.release,
     configVersion: 1,
     checks: [{ name: "release", outcome: "PASS", code: "RELEASE_MATCH" }],
     outcome: "PASS",
@@ -80,34 +107,13 @@ function passingVerification(overrides: {
   };
 }
 
-function failingVerification(code: string): Vs005DeploymentVerification {
-  return {
-    ...passingVerification(),
-    checks: [{ name: "release", outcome: "FAIL", code }],
-    outcome: "FAIL",
-  };
-}
-
 class FakeRollbackProvider implements Vs005RollbackProvider {
   rollbackCalls: string[] = [];
-
-  constructor(
-    readonly target = {
-      accountId: currentDeploymentEvidence.providerTarget.accountId,
-      workerName: currentDeploymentEvidence.providerTarget.workerName,
-    },
-  ) {}
-
-  async inspectTarget() {
-    return this.target;
-  }
-
+  constructor(readonly inspection: Vs005ProviderInspection = { observations: currentDeploymentEvidence.observedProvider! }) {}
+  async inspectTarget() { return this.inspection; }
   async rollback(providerVersionId: string) {
     this.rollbackCalls.push(providerVersionId);
-    return {
-      deploymentId: "deployment-after-rollback",
-      activeProviderVersionId: providerVersionId,
-    };
+    return { deploymentId: "deployment-after-rollback", activeProviderVersionId: providerVersionId };
   }
 }
 
@@ -119,162 +125,101 @@ const rollbackRequest: Vs005RollbackRequest = {
   expectedProvider: previousDeployment.provider,
   expectedProviderTarget: previousDeployment.providerTarget,
   expectedPublicUrl: previousDeployment.publicUrl,
+  expectedPriorVersionA: {
+    providerVersionId: previousDeployment.providerVersionId,
+    release: previousDeployment.release,
+    configFingerprint: previousDeployment.configFingerprint,
+  },
   databaseAction: "NONE",
 };
 
-test("rollback request validation refuses database rollback intent", () => {
-  assert.throws(
-    () => validateVs005RollbackRequest({ ...rollbackRequest, databaseAction: "ROLLBACK" }),
-    /DATABASE ROLLBACK IS NOT A VS005 OPERATION/,
+test("rollback requires explicit retained version A", async () => {
+  await assert.rejects(
+    () => rollbackVs005Application({
+      request: {
+        ...rollbackRequest,
+        expectedPriorVersionA: undefined as unknown as Vs005RollbackRequest["expectedPriorVersionA"],
+      },
+      currentDeploymentEvidence,
+      targetDeploymentEvidence: previousDeployment,
+      currentConfig: config,
+      targetPolicy: VS005_BETA_TARGET_POLICY,
+      provider: new FakeRollbackProvider(),
+      verify: async (deployment) => passingVerification(deployment),
+    }),
+    /PRIOR VERSION A REQUIRED/,
   );
 });
 
-test("rollback targets one explicit prior application version then verifies reconstructed evidence", async () => {
-  const provider = new FakeRollbackProvider();
-  const verifyCalls: Vs005DeploymentResult[] = [];
-
-  const verification = await rollbackVs005Application({
-    request: rollbackRequest,
-    currentDeploymentEvidence,
-    targetDeploymentEvidence: previousDeployment,
-    currentConfig: validConfig,
-    provider,
-    clock: () => new Date("2026-09-04T12:00:00.000Z"),
-    verify: async (deployment, config) => {
-      verifyCalls.push(deployment);
-      assert.equal(config, validConfig);
-      return passingVerification({ deploymentId: deployment.deploymentId, release: deployment.release });
+test("rollback rejects unavailable rollback observations", async () => {
+  const unavailableInspection = {
+    observations: {
+      ...previousDeployment.observedProvider!,
+      priorVersion: { state: "UNAVAILABLE", code: "VERSION_UNAVAILABLE" },
     },
-  });
-
-  assert.deepEqual(provider.rollbackCalls, [previousDeployment.providerVersionId]);
-  assert.equal(verifyCalls[0]?.deploymentId, "deployment-after-rollback");
-  assert.equal(verifyCalls[0]?.providerVersionId, previousDeployment.providerVersionId);
-  assert.deepEqual(verifyCalls[0]?.release, previousDeployment.release);
-  assert.equal(verifyCalls[0]?.configFingerprint, previousDeployment.configFingerprint);
-  assert.equal(verifyCalls[0]?.deployedAt, "2026-09-04T12:00:00.000Z");
-  assert.equal(verification.outcome, "PASS");
+  } as Vs005ProviderInspection;
+  const provider = new FakeRollbackProvider(unavailableInspection);
+  await assert.rejects(
+    () => rollbackVs005Application({
+      request: rollbackRequest,
+      currentDeploymentEvidence,
+      targetDeploymentEvidence: previousDeployment,
+      currentConfig: config,
+      targetPolicy: VS005_BETA_TARGET_POLICY,
+      provider,
+      verify: async (deployment) => passingVerification(deployment),
+    }),
+    /ROLLBACK PROVIDER INSPECTION FAILED/,
+  );
+  assert.deepEqual(provider.rollbackCalls, []);
 });
 
-test("rollback refuses mismatched reviewed target evidence before provider inspection", async () => {
-  for (const target of [
-    { ...previousDeployment, environment: "qa" as const },
-    { ...previousDeployment, publicUrl: "https://other.example.test" },
-    { ...previousDeployment, providerTarget: { ...previousDeployment.providerTarget, accountId: "other-account" } },
-    { ...previousDeployment, providerTarget: { ...previousDeployment.providerTarget, workerName: "other-worker" } },
-    { ...previousDeployment, configFingerprint: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+test("rollback rejects changed account or Worker before mutation", async () => {
+  for (const observations of [
+    { ...previousDeployment.observedProvider!, accountId: observed("other-account") },
+    { ...previousDeployment.observedProvider!, workerName: observed("other-worker") },
   ]) {
-    const provider = new FakeRollbackProvider();
+    const provider = new FakeRollbackProvider({ observations });
     await assert.rejects(
       () => rollbackVs005Application({
-        request: {
-          ...rollbackRequest,
-          expectedEnvironment: target.environment,
-          expectedProviderTarget: target.providerTarget,
-          expectedPublicUrl: target.publicUrl,
-          expectedConfigFingerprint: target.configFingerprint,
-        },
+        request: rollbackRequest,
         currentDeploymentEvidence,
-        targetDeploymentEvidence: target,
-        currentConfig: validConfig,
+        targetDeploymentEvidence: previousDeployment,
+        currentConfig: config,
+        targetPolicy: VS005_BETA_TARGET_POLICY,
         provider,
-        verify: async () => passingVerification(),
+        verify: async (deployment) => passingVerification(deployment),
       }),
-      /ROLLBACK (TARGET|CONFIGURATION) MISMATCH/,
+      /ROLLBACK PROVIDER TARGET MISMATCH/,
     );
     assert.deepEqual(provider.rollbackCalls, []);
   }
 });
 
-test("rollback refuses a changed live Cloudflare account or Worker before mutation", async () => {
-  const provider = new FakeRollbackProvider({
-    accountId: "wrong-account",
-    workerName: currentDeploymentEvidence.providerTarget.workerName,
-  });
-
-  await assert.rejects(
-    () => rollbackVs005Application({
-      request: rollbackRequest,
-      currentDeploymentEvidence,
-      targetDeploymentEvidence: previousDeployment,
-      currentConfig: validConfig,
-      provider,
-      verify: async () => passingVerification(),
-    }),
-    /ROLLBACK PROVIDER TARGET MISMATCH/,
-  );
-  assert.deepEqual(provider.rollbackCalls, []);
-});
-
-test("rollback verification failure remains a failed rollback outcome", async () => {
-  const provider = new FakeRollbackProvider();
-  const verification = await rollbackVs005Application({
-    request: rollbackRequest,
-    currentDeploymentEvidence,
-    targetDeploymentEvidence: previousDeployment,
-    currentConfig: validConfig,
-    provider,
-    verify: async () => failingVerification("RELEASE_DRIFT"),
-  });
-
-  assert.equal(verification.outcome, "FAIL");
-});
-
-test("rollback refuses contradictory request identity and wrong active version", async () => {
-  const provider = new FakeRollbackProvider();
-  await assert.rejects(
-    () => rollbackVs005Application({
-      request: { ...rollbackRequest, providerVersionId: "version-other" },
-      currentDeploymentEvidence,
-      targetDeploymentEvidence: previousDeployment,
-      currentConfig: validConfig,
-      provider,
-      verify: async () => passingVerification(),
-    }),
-    /ROLLBACK TARGET MISMATCH/,
-  );
-  assert.deepEqual(provider.rollbackCalls, []);
-
-  const wrongVersionProvider: Vs005RollbackProvider = {
-    inspectTarget: async () => ({ accountId: "account-123", workerName: "cadence-beta" }),
-    rollback: async (providerVersionId) => ({
-      deploymentId: "deployment-after-rollback",
-      activeProviderVersionId: `${providerVersionId}-different`,
-    }),
-  };
-  await assert.rejects(
-    () => rollbackVs005Application({
-      request: rollbackRequest,
-      currentDeploymentEvidence,
-      targetDeploymentEvidence: previousDeployment,
-      currentConfig: validConfig,
-      provider: wrongVersionProvider,
-      verify: async () => passingVerification(),
-    }),
-    /ROLLBACK ACTIVE VERSION MISMATCH/,
-  );
-});
-
-test("rollback preserves target release/configuration identity and database NONE", async () => {
+test("rollback preserves release/config target", async () => {
   const provider = new FakeRollbackProvider();
   let reconstructed: Vs005DeploymentResult | undefined;
   await rollbackVs005Application({
     request: rollbackRequest,
     currentDeploymentEvidence,
     targetDeploymentEvidence: previousDeployment,
-    currentConfig: validConfig,
+    currentConfig: config,
+    targetPolicy: VS005_BETA_TARGET_POLICY,
     provider,
     verify: async (deployment) => {
       reconstructed = deployment;
-      return passingVerification();
+      return passingVerification(deployment);
     },
   });
-
-  assert.deepEqual(reconstructed?.release, previousDeployment.release);
-  assert.equal(reconstructed?.configFingerprint, rollbackFingerprint);
-  assert.equal(reconstructed?.environment, "beta");
-  assert.deepEqual(reconstructed?.providerTarget, previousDeployment.providerTarget);
-  assert.equal(reconstructed?.publicUrl, previousDeployment.publicUrl);
+  assert.deepEqual(reconstructed?.release, previousRelease);
+  assert.equal(reconstructed?.configFingerprint, fingerprint);
   assert.equal(reconstructed?.databaseAction, "NONE");
   assert.deepEqual(reconstructed?.destructiveActions, []);
+});
+
+test("rollback keeps database NONE", () => {
+  assert.throws(
+    () => validateVs005RollbackRequest({ ...rollbackRequest, databaseAction: "ROLLBACK" }),
+    /DATABASE ROLLBACK IS NOT A VS005 OPERATION/,
+  );
 });

@@ -305,7 +305,15 @@ export function createCloudflareDeploymentProvider(
       }
     },
 
-    async inspectTarget() {
+    async inspectTarget(input?: { accountId: string; workerName: string }) {
+      if (input) {
+        try {
+          const facts = await io.inspectReadOnly(input);
+          return { observations: sanitizeReadOnlyFacts(facts) };
+        } catch {
+          return { observations: unavailableReadOnlyFacts("CLOUDFLARE_INSPECTION_UNAVAILABLE") };
+        }
+      }
       const identity = await io.runWrangler(["wrangler", "whoami", "--json"]);
       if (identity.exitCode !== 0) throw new Error("CLOUDFLARE_AUTH_UNAVAILABLE");
       return {

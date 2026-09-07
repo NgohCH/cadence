@@ -5,6 +5,12 @@ import {
   type CadenceRuntimeConfig,
 } from "../src/bootstrap/cadence-config";
 import {
+  assertCadenceTargetPolicy,
+  getCadenceTargetFacts,
+  VS005_BETA_TARGET_POLICY,
+  type CadenceTargetPolicy,
+} from "../src/bootstrap/cadence-target-policy";
+import {
   loadCadenceReleaseIdentity,
   type CadenceReleaseIdentity,
 } from "../src/bootstrap/cadence-release";
@@ -18,7 +24,11 @@ import {
   createCloudflareDeploymentProvider,
   createDefaultCloudflareProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
-import type { Vs005ProviderInspection } from "./vs005-provider-observations";
+import {
+  validateVs005ObservationCompleteness,
+  type Vs005MutationEnvelope,
+  type Vs005ProviderInspection,
+} from "./vs005-provider-observations";
 
 export interface Vs005RollbackRequest {
   providerVersionId: string;
@@ -31,11 +41,16 @@ export interface Vs005RollbackRequest {
     workerName: string;
   };
   expectedPublicUrl: string;
+  expectedPriorVersionA: {
+    providerVersionId: string;
+    release: CadenceReleaseIdentity;
+    configFingerprint: string;
+  };
   databaseAction: "NONE";
 }
 
 export interface Vs005RollbackProvider {
-  inspectTarget(): Promise<Vs005ProviderInspection | {
+  inspectTarget(input?: { accountId: string; workerName: string }): Promise<Vs005ProviderInspection | {
     accountId: string;
     workerName: string;
   }>;
@@ -122,6 +137,19 @@ export function validateVs005RollbackRequest(value: unknown): Vs005RollbackReque
     throw new Vs005RollbackError("INVALID_ROLLBACK_REQUEST");
   }
 
+  if (!isRecord(value.expectedPriorVersionA)
+    || !isSafeIdentifier(value.expectedPriorVersionA.providerVersionId)
+    || !isSha256(value.expectedPriorVersionA.configFingerprint)) {
+    throw new Vs005RollbackError("PRIOR VERSION A REQUIRED");
+  }
+
+  let priorRelease: CadenceReleaseIdentity;
+  try {
+    priorRelease = loadCadenceReleaseIdentity(value.expectedPriorVersionA.release);
+  } catch {
+    throw new Vs005RollbackError("PRIOR VERSION A REQUIRED");
+  }
+
   return {
     providerVersionId: value.providerVersionId,
     expectedRelease,
@@ -133,6 +161,11 @@ export function validateVs005RollbackRequest(value: unknown): Vs005RollbackReque
       workerName: target.workerName,
     },
     expectedPublicUrl: value.expectedPublicUrl,
+    expectedPriorVersionA: {
+      providerVersionId: value.expectedPriorVersionA.providerVersionId,
+      release: priorRelease,
+      configFingerprint: value.expectedPriorVersionA.configFingerprint,
+    },
     databaseAction: "NONE",
   };
 }
@@ -167,7 +200,7 @@ export function validateVs005DeploymentEvidence(value: unknown): Vs005Deployment
     throw new Vs005RollbackError("INVALID_DEPLOYMENT_EVIDENCE");
   }
 
-  return {
+  const result: Vs005DeploymentResult = {
     artifactType: "cadence.vs005.deployment-result",
     formatVersion: 1,
     planId: value.planId,
@@ -188,6 +221,9 @@ export function validateVs005DeploymentEvidence(value: unknown): Vs005Deployment
     databaseAction: "NONE",
     destructiveActions: [],
   };
+  if (value.intendedTarget !== undefined) result.intendedTarget = value.intendedTarget as Vs005DeploymentResult["intendedTarget"];
+  if (value.observedProvider !== undefined) result.observedProvider = value.observedProvider as Vs005DeploymentResult["observedProvider"];
+  return result;
 }
 
 function requireMatch(condition: boolean, code: string): asserts condition {
@@ -196,16 +232,21 @@ function requireMatch(condition: boolean, code: string): asserts condition {
 
 function normalizeRollbackTarget(
   value: Awaited<ReturnType<Vs005RollbackProvider["inspectTarget"]>>,
-): { accountId: string; workerName: string } {
-  if (!("observations" in value)) return value;
-  if (value.observations.accountId.state !== "OBSERVED_VALUE"
-    || value.observations.workerName.state !== "OBSERVED_VALUE") {
+): Vs005ProviderInspection {
+  if (!("observations" in value)) {
     throw new Vs005RollbackError("ROLLBACK PROVIDER INSPECTION UNAVAILABLE");
   }
-  return {
-    accountId: value.observations.accountId.value,
-    workerName: value.observations.workerName.value,
-  };
+  if (value.observations.accountId.state !== "OBSERVED_VALUE"
+    || value.observations.workerName.state !== "OBSERVED_VALUE"
+    || value.observations.workerExists.state !== "OBSERVED_VALUE"
+    || value.observations.workerExists.value !== true
+    || value.observations.currentRelease.state !== "OBSERVED_VALUE"
+    || value.observations.priorVersion.state !== "OBSERVED_VALUE"
+    || value.observations.workerConfigFingerprint.state !== "OBSERVED_VALUE"
+    || value.observations.hostname.state !== "OBSERVED_VALUE") {
+    throw new Vs005RollbackError("ROLLBACK PROVIDER INSPECTION UNAVAILABLE");
+  }
+  return value;
 }
 
 export async function rollbackVs005Application(input: {
@@ -213,6 +254,7 @@ export async function rollbackVs005Application(input: {
   currentDeploymentEvidence: Vs005DeploymentResult;
   targetDeploymentEvidence: Vs005DeploymentResult;
   currentConfig: CadenceRuntimeConfig;
+  targetPolicy: CadenceTargetPolicy;
   provider: Vs005RollbackProvider;
   verify: (
     deployment: Vs005DeploymentResult,
@@ -226,6 +268,18 @@ export async function rollbackVs005Application(input: {
   validateCadenceRuntimeConfig(input.currentConfig);
   const currentConfig = input.currentConfig;
   const currentFingerprint = fingerprintCadenceRuntimeConfig(currentConfig);
+  const currentTarget = getCadenceTargetFacts(currentConfig);
+
+  try {
+    assertCadenceTargetPolicy(currentConfig, input.targetPolicy);
+  } catch {
+    throw new Vs005RollbackError("ROLLBACK TARGET POLICY MISMATCH");
+  }
+
+  requireMatch(Boolean(targetEvidence.intendedTarget && targetEvidence.observedProvider), "ROLLBACK DEPLOYMENT PROVENANCE REQUIRED");
+  requireMatch(Boolean(currentEvidence.intendedTarget && currentEvidence.observedProvider), "ROLLBACK DEPLOYMENT PROVENANCE REQUIRED");
+  requireMatch(equalJson(currentTarget, targetEvidence.intendedTarget), "ROLLBACK TARGET MISMATCH");
+  requireMatch(equalJson(currentTarget, currentEvidence.intendedTarget), "ROLLBACK TARGET MISMATCH");
 
   requireMatch(request.expectedConfigFingerprint === currentFingerprint, "ROLLBACK CONFIGURATION MISMATCH");
   requireMatch(targetEvidence.configFingerprint === currentFingerprint, "ROLLBACK CONFIGURATION MISMATCH");
@@ -239,6 +293,11 @@ export async function rollbackVs005Application(input: {
     workerName: targetEvidence.providerTarget.workerName,
   }), "ROLLBACK TARGET MISMATCH");
   requireMatch(request.expectedPublicUrl === targetEvidence.publicUrl, "ROLLBACK TARGET MISMATCH");
+  requireMatch(equalJson(request.expectedPriorVersionA, {
+    providerVersionId: targetEvidence.providerVersionId,
+    release: targetEvidence.release,
+    configFingerprint: targetEvidence.configFingerprint,
+  }), "PRIOR VERSION A REQUIRED");
 
   requireMatch(currentEvidence.environment === targetEvidence.environment, "ROLLBACK TARGET MISMATCH");
   requireMatch(currentEvidence.provider === targetEvidence.provider, "ROLLBACK TARGET MISMATCH");
@@ -248,16 +307,52 @@ export async function rollbackVs005Application(input: {
   requireMatch(currentEvidence.databaseAction === "NONE" && targetEvidence.databaseAction === "NONE", "ROLLBACK DATABASE ACTION INVALID");
   requireMatch(currentEvidence.destructiveActions.length === 0 && targetEvidence.destructiveActions.length === 0, "ROLLBACK DESTRUCTIVE ACTION INVALID");
 
-  let liveTarget: { accountId: string; workerName: string };
+  let liveInspection: Vs005ProviderInspection;
   try {
-    liveTarget = normalizeRollbackTarget(await input.provider.inspectTarget());
+    liveInspection = normalizeRollbackTarget(await input.provider.inspectTarget({
+      accountId: targetEvidence.providerTarget.accountId,
+      workerName: targetEvidence.providerTarget.workerName,
+    }));
   } catch {
     throw new Vs005RollbackError("ROLLBACK PROVIDER INSPECTION FAILED");
   }
+  const liveTarget = liveInspection.observations;
+  const rollbackObservationBlockers = validateVs005ObservationCompleteness({
+    phase: "ROLLBACK_READINESS",
+    observations: liveTarget,
+    mutationEnvelope: {
+      workerAction: "CREATE_OR_UPDATE",
+      cronAction: "NO_CHANGE",
+      secretNamesToSet: [],
+    } satisfies Vs005MutationEnvelope,
+  });
+  requireMatch(rollbackObservationBlockers.length === 0, "ROLLBACK PROVIDER INSPECTION FAILED");
   requireMatch(
-    liveTarget.accountId === targetEvidence.providerTarget.accountId
-      && liveTarget.workerName === targetEvidence.providerTarget.workerName,
+    liveTarget.accountId.state === "OBSERVED_VALUE"
+      && liveTarget.accountId.value === targetEvidence.providerTarget.accountId
+      && liveTarget.workerName.state === "OBSERVED_VALUE"
+      && liveTarget.workerName.value === targetEvidence.providerTarget.workerName,
     "ROLLBACK PROVIDER TARGET MISMATCH",
+  );
+  requireMatch(
+    liveTarget.currentRelease.state === "OBSERVED_VALUE"
+      && equalJson(liveTarget.currentRelease.value, currentEvidence.release),
+    "ROLLBACK RELEASE MISMATCH",
+  );
+  requireMatch(
+    liveTarget.workerConfigFingerprint.state === "OBSERVED_VALUE"
+      && liveTarget.workerConfigFingerprint.value === currentEvidence.configFingerprint,
+    "ROLLBACK CONFIGURATION MISMATCH",
+  );
+  requireMatch(
+    liveTarget.priorVersion.state === "OBSERVED_VALUE"
+      && equalJson(liveTarget.priorVersion.value, request.expectedPriorVersionA),
+    "ROLLBACK PRIOR VERSION MISMATCH",
+  );
+  requireMatch(
+    liveTarget.hostname.state === "OBSERVED_VALUE"
+      && liveTarget.hostname.value === new URL(request.expectedPublicUrl).hostname,
+    "ROLLBACK HOSTNAME MISMATCH",
   );
 
   let rollbackResult: { deploymentId: string; activeProviderVersionId: string };
@@ -352,26 +447,9 @@ function createVerificationReaders(
       };
     },
     probeApi: async () => ({ status: (await response("/api/v1")).status }),
-    inspectProvider: async () => {
-      const inspected = await provider.inspect(config);
-      const target = normalizeRollbackTarget(inspected);
-      return {
-        accountId: target.accountId,
-        workerName: target.workerName,
-        schedule: config.worker.schedule,
-        configuredSecrets: inspected.observations
-          ? inspected.observations.secretNames.state === "OBSERVED_VALUE"
-            ? inspected.observations.secretNames.value
-            : []
-          : inspected.configuredSecrets,
-        configFingerprint: inspected.observations
-          ? inspected.observations.workerConfigFingerprint.state === "OBSERVED_VALUE"
-            ? inspected.observations.workerConfigFingerprint.value
-            : ""
-          : inspected.configFingerprint ?? "",
-        supabaseProjectRef: config.supabase.projectRef,
-      };
-    },
+    inspectProvider: async () => (await provider.inspect(config)).observations,
+    inspectRuntimeTarget: async () => ({ environment: "", safeTargetMarker: "", supabaseProjectRef: null, pilotProjectId: null }),
+    probeControlledProject: async () => ({ status: 0, projectId: null }),
   };
 }
 
@@ -398,6 +476,11 @@ async function runRollbackCli(args: readonly string[]): Promise<void> {
       expectedProvider: targetDeployment.provider,
       expectedProviderTarget: targetDeployment.providerTarget,
       expectedPublicUrl: targetDeployment.publicUrl,
+      expectedPriorVersionA: {
+        providerVersionId: targetDeployment.providerVersionId,
+        release: targetDeployment.release,
+        configFingerprint: targetDeployment.configFingerprint,
+      },
       databaseAction: targetDeployment.databaseAction,
     };
 
@@ -416,10 +499,12 @@ async function runRollbackCli(args: readonly string[]): Promise<void> {
       currentDeploymentEvidence: currentDeployment,
       targetDeploymentEvidence: targetDeployment,
       currentConfig: config,
+      targetPolicy: VS005_BETA_TARGET_POLICY,
       provider,
       verify: (deployment, expectedConfig) => verifyVs005Deployment({
         deployment,
         expectedConfig,
+        targetPolicy: VS005_BETA_TARGET_POLICY,
         readers: createVerificationReaders(expectedConfig, provider),
       }),
     });

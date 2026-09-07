@@ -78,6 +78,11 @@ test("health does not expose server secrets or pilot project identity", async ()
   assert.doesNotMatch(text, /secretKeySecretRef/);
 });
 
+test("health does not expose reviewed target authority", async () => {
+  const text = JSON.stringify((await requestHealth(app)).body);
+  assert.doesNotMatch(text, /cadence-beta|mycadence|pwmhasbmacmeerbsagda/i);
+});
+
 test("request body limit rejects oversized JSON before business routing", async () => {
   const { baseUrl, close } = await startTestApp(app);
   try {
