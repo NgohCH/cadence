@@ -1,4 +1,9 @@
 import type { CadenceReleaseIdentity } from "../src/bootstrap/cadence-release";
+import type { CadenceTargetFacts } from "../src/bootstrap/cadence-target-policy";
+import type {
+  Vs005MutationEnvelope,
+  Vs005ProviderObservationSnapshot,
+} from "./vs005-provider-observations";
 
 export interface Vs005OperatorFailure {
   artifactType: "cadence.vs005.operator-failure";
@@ -15,7 +20,7 @@ export interface Vs005OperatorFailure {
 
 export interface Vs005DeploymentPlan {
   artifactType: "cadence.vs005.deployment-plan";
-  formatVersion: 1;
+  formatVersion: 1 | 2;
   planId: string;
   configFingerprint: string;
   release: CadenceReleaseIdentity;
@@ -51,6 +56,20 @@ export interface Vs005DeploymentPlan {
   destructiveActions: readonly [];
   readiness: "PASS" | "BLOCKED";
   blockers: readonly { code: string; message: string }[];
+  intendedTarget?: CadenceTargetFacts;
+  targetPolicy?: { name: string };
+  observedProvider?: Vs005ProviderObservationSnapshot;
+  observationPhase?: "FIRST_DEPLOYMENT_READINESS";
+  mutationEnvelope?: Vs005MutationEnvelope;
+}
+
+export interface Vs005DeploymentPlanV2 extends Vs005DeploymentPlan {
+  formatVersion: 2;
+  intendedTarget: CadenceTargetFacts;
+  targetPolicy: { name: string };
+  observedProvider: Vs005ProviderObservationSnapshot;
+  observationPhase: "FIRST_DEPLOYMENT_READINESS";
+  mutationEnvelope: Vs005MutationEnvelope;
 }
 
 export function makeVs005OperatorFailure(
