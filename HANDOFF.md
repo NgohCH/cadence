@@ -153,6 +153,14 @@ inspection has proven Worker existence, Cron, secret binding presence,
 deployed release, hosted health, hosted API behavior, rollback, or clean-room
 state at this checkpoint.
 
+The T15-A implementation checkpoint after Tasks 1-9 is
+`8987af89d18de06445a4dec7b476ea040e32fd94`; the final local gate records the
+fresh all-pass test and readiness result from that checkpoint. This remains
+local implementation evidence only: hosted Task 15 evidence is absent, VS004
+recovery is **VERIFIED / CLOSED**, remote mutation is **NOT AUTHORIZED**, Pilot
+Activation is **NOT AUTHORIZED**, clean-room selection remains separate, and
+the 44-parent/178-child governance baseline is unchanged.
+
 VS004 controlled Beta recovery remains **VERIFIED / CLOSED**. VS005 Tasks
 1-14 were completed or prepared locally before T15-A, and T15-A Tasks 1-9
 were performed locally only. Task 15 remote mutation remains **NOT
