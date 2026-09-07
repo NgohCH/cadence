@@ -72,6 +72,28 @@ export interface Vs005DeploymentPlanV2 extends Vs005DeploymentPlan {
   mutationEnvelope: Vs005MutationEnvelope;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isVs005DeploymentPlanV2(value: unknown): value is Vs005DeploymentPlanV2 {
+  return isRecord(value)
+    && value.artifactType === "cadence.vs005.deployment-plan"
+    && value.formatVersion === 2
+    && typeof value.planId === "string"
+    && typeof value.configFingerprint === "string"
+    && value.provider === "cloudflare"
+    && (value.readiness === "PASS" || value.readiness === "BLOCKED")
+    && isRecord(value.intendedTarget)
+    && isRecord(value.targetPolicy)
+    && typeof value.targetPolicy.name === "string"
+    && isRecord(value.observedProvider)
+    && value.observationPhase === "FIRST_DEPLOYMENT_READINESS"
+    && isRecord(value.mutationEnvelope)
+    && isRecord(value.database)
+    && Array.isArray(value.destructiveActions);
+}
+
 export function makeVs005OperatorFailure(
   input: Omit<Vs005OperatorFailure, "artifactType" | "formatVersion">,
 ): Vs005OperatorFailure {
