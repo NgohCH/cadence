@@ -1,14 +1,41 @@
 # VS005 Deployment Runbook
 
-The operator must first prepare ONE reviewed real-target configuration from
-`config/cadence.runtime.example.json`, replacing only values approved from
-non-secret environment facts. No script may guess the public URL, Supabase
-URL or project reference, pilot project ID, or safe target marker. A real
-target configuration exists only after those facts are reviewed. Task 14 does
-not create `config/cadence.runtime.beta.json`.
+The operator must use ONE reviewed real-target configuration containing only
+approved non-secret environment facts. The governed Beta configuration is
+`config/cadence.runtime.beta.json`; it was originally created locally under
+narrow controlled-Beta bootstrap/preflight authorization, reconciled during
+T15-A Task 8, and is now tracked. That history is an approved sequencing
+deviation, not hosted Task 15 evidence. No script may guess the public URL,
+Supabase URL or project reference, pilot project ID, or safe target marker.
 
 This runbook documents the governed operator path. It is not authorization to
 perform a hosted deployment during this checkpoint.
+
+## Reviewed Beta target contract
+
+The reviewed Beta target is:
+
+```text
+environment:             beta
+safe target marker:       cadence-beta
+Cloudflare account:       3d6a31905ac44e9563a523f9c86cbb8d
+Cloudflare Worker:        mycadence
+public URL:               https://mycadence.ngohch-3d6.workers.dev
+Supabase display label:   cadence-beta (operator-facing only)
+Supabase project ref:     pwmhasbmacmeerbsagda (machine authority)
+controlled Project:       3503f8c7-1996-44d1-8b63-1fca36db89f8
+```
+
+`cadence-beta` and `mycadence` are separate concepts. The former identifies
+the governed Beta environment/safe target; the latter identifies the
+reviewed Cloudflare Worker. `cadence-dev` and unrelated QA projects are not
+Task 15 targets.
+
+The canonical configuration proves only the intended/reviewed target. It does
+not prove Cloudflare authentication, Worker existence, Cron state, secret
+binding presence, deployed release, provider fingerprint, hosted health, or
+hosted API behavior. Those facts require later host-operated read-only
+inspection and safe runtime verification.
 
 ## Before deployment
 
@@ -29,6 +56,22 @@ Record only the safe account identifier. Never record an API token, OAuth
 credential, session credential, or any other authentication material. Never
 paste Cloudflare API tokens or Supabase keys into command arguments, canonical
 JSON, chat, or Git.
+
+The account check is only one provider observation. Before any hosted
+mutation, the bounded read-only inspection must establish the applicable
+account and Worker identity, Worker existence, relevant configuration and
+bindings, Cron state, named `SUPABASE_SECRET_KEY` presence, current release,
+and hostname/version facts. Unsupported or unavailable facts remain
+`UNAVAILABLE` and fail closed; no provider command is inferred from this
+runbook.
+
+For first-deployment readiness, an absent Worker, absent Cron, absent named
+secret, and absent prior rollback version can be valid only when the reviewed
+mutation plan explicitly represents the corresponding creation/configuration.
+An existing Worker requires its configuration, Cron, secret-name, and current
+release observations. Rollback readiness is stricter: it requires current
+release identity, explicit retained prior version A, target identity,
+rollback availability, and applicable release/configuration fingerprints.
 
 ## Secret handling
 
@@ -104,7 +147,7 @@ fails closed.
 ## Optional application rollback
 
 For an explicitly authorized application rollback, retain the prior deployment
-result and run:
+result as explicit version A evidence and run:
 
 ```powershell
 npm run cadence:rollback -- `
@@ -115,8 +158,8 @@ npm run cadence:rollback -- `
 ```
 
 Rollback targets one explicit prior provider version, requires the same
-current canonical configuration, and requires post-rollback verification. It
-is application rollback only:
+current canonical configuration, requires full current provider observation,
+and requires post-rollback verification. It is application rollback only:
 
 ```text
 Database action: NONE
@@ -134,6 +177,8 @@ backup/restore/support/recovery proof.
 - Secret values live in provider/local secret storage, not canonical JSON.
 - Deployment PASS does not authorize M1 Pilot Activation.
 - Deployment readiness, deployment success, and Pilot Activation are separate concepts.
+- Task 9 local readiness evidence is not hosted evidence and does not authorize
+  provider inspection or remote mutation.
 - A provider or health result alone is not deployment verification.
 - Do not continue after a stale plan, target drift, release drift, secret drift,
   or failed verification; return to the reviewed plan boundary.

@@ -58,8 +58,9 @@ DH-001 — Progressive Project Formalisation and Complex Governance is recorded
 as DEFERRED / NOT BASELINED and creates no VS005 scope change.
 
 VS005 — Portable Deployment and Supervised Runtime is the active M1 vertical
-slice. Task 1 contract/governance freeze is complete; runtime implementation
-tasks have not started.
+slice. Tasks 1-14 were completed or prepared locally before T15-A. T15-A
+Tasks 1-9 are now local-only implementation and readiness work; no hosted
+Task 15 evidence exists.
 
 VS006 — Pilot Operations, Recovery and Support remains planned after VS005,
 and VS007 — M1 Team Agent/AI Assistance follows VS006 under the single-stream
@@ -89,8 +90,9 @@ execution branch is recorded separately below.
 
 `feature/vs-005-portable-deployment-runtime`
 
-Current Task 1 checkpoint: `305d123`. This checkpoint is
-documentation/governance-only.
+Current T15-A checkpoint: `62f9077` before Task 9 implementation. The
+VS004 recovery closure baseline remains `3378e15`; it is not the current
+repository HEAD.
 
 ## Current Delivery State
 
@@ -100,20 +102,64 @@ Active Vertical Slice:
 
 Status:
 
-**TASK 1 COMPLETE — VS005 contract and governance reconciliation are frozen;
-runtime implementation begins only in the subsequent approved tasks.**
+**T15-A TASKS 1-9 COMPLETE LOCALLY — target contract, bounded verification,
+governed Beta configuration, local readiness evidence, and narrow operator
+documentation reconciliation are complete; hosted Task 15 work remains
+separately gated.**
 
 Current checkpoint:
 
 **VS003 and VS004 are closed and merged. DH-001 is recorded as deferred and
-not baselined. The repository has completed the VS005 Task 1 contract freeze
-from the post-VS004 M1 handoff checkpoint.**
+not baselined. The repository has completed T15-A Tasks 1-9 locally from the
+post-VS004 M1 handoff checkpoint.**
 
 - M1 Controlled Pilot remains active.
 - Pilot Activation has not occurred.
 - VS006 remains planned after VS005, followed by VS007 and the controlled M1
   rehearsal before the separate Pilot Activation decision.
 - No baseline requirement is changed by this handoff update.
+
+## VS005 T15-A Local Readiness Checkpoint
+
+T15-A checkpoint lineage:
+
+```text
+VS004 recovery closure baseline: 3378e15
+T15-A design freeze:             7800e04
+T15-A design amendment:          7f2f03f
+T15-A implementation plan:       aad6ed4
+T15-A Task 1:                    b73b12b
+T15-A Task 2:                    a9ef09d
+T15-A Task 3:                    69c9d05
+T15-A Task 4:                    69f38d4
+T15-A Task 5:                    0da5b68
+T15-A Task 6:                    9dd7b0d
+T15-A Task 7:                    051aa55
+T15-A Task 8:                    62f9077
+```
+
+The current Task 9 reconciliation records the governed Beta target as
+`environment=beta`, safe marker `cadence-beta`, and Cloudflare Worker
+`mycadence`. These are distinct concepts; `cadence-beta` is not the Worker
+name. The early local Beta configuration was created under narrow controlled
+Beta bootstrap/preflight authorization as an approved sequencing deviation,
+was reconciled during Task 8, and is now tracked as governed non-secret
+configuration. Its tracking does not prove hosted state.
+
+Task 9 local readiness evidence is written only under the ignored
+`.cadence/vs005/` directory. It records intended/reviewed target facts and
+local provenance, not observed Cloudflare or Supabase state. No real provider
+inspection has proven Worker existence, Cron, secret binding presence,
+deployed release, hosted health, hosted API behavior, rollback, or clean-room
+state at this checkpoint.
+
+VS004 controlled Beta recovery remains **VERIFIED / CLOSED**. VS005 Tasks
+1-14 were completed or prepared locally before T15-A, and T15-A Tasks 1-9
+were performed locally only. Task 15 remote mutation remains **NOT
+AUTHORIZED**. Pilot Activation remains **NOT AUTHORIZED**. Clean-room
+authorization and execution remain separate later gates. The governance
+baseline remains 44 parent commitments and 178 child traceability records;
+no commitment was removed or moved beyond M3.
 
 ## VS004 Closure Record
 
