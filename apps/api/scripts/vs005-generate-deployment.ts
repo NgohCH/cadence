@@ -54,6 +54,13 @@ export function buildCloudflareDeployment(input: {
     );
   }
 
+  const cloudflare = input.config.cloudflare;
+  if (!cloudflare) {
+    throw new Error(
+      "Cloudflare deployment requires an explicit Cloudflare target.",
+    );
+  }
+
   const publicUrl = new URL(input.config.application.publicUrl);
   if (publicUrl.protocol !== "https:") {
     throw new Error(
@@ -64,7 +71,7 @@ export function buildCloudflareDeployment(input: {
   const workersDev = publicUrl.hostname.endsWith(".workers.dev");
   const deployment: GeneratedCloudflareDeployment = {
     wrangler: {
-      name: `cadence-${input.config.application.environment}`,
+      name: cloudflare.workerName,
       main: "src/index.ts",
       compatibility_date: "2026-09-04",
       compatibility_flags: ["nodejs_compat"],

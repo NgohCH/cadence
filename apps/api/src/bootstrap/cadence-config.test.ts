@@ -20,6 +20,10 @@ const valid = {
     requestBodyLimitBytes: 1048576,
   },
   runtime: { provider: "cloudflare" },
+  cloudflare: {
+    accountId: "account-123",
+    workerName: "worker-test",
+  },
   supabase: {
     url: "https://abc123.supabase.co",
     projectRef: "abc123",
@@ -42,6 +46,45 @@ const valid = {
 
 test("accepts one valid beta configuration", () => {
   assert.deepEqual(validateCadenceRuntimeConfig(valid), valid);
+});
+
+test("rejects a Cloudflare config without accountId", () => {
+  assert.throws(
+    () => validateCadenceRuntimeConfig({
+      ...valid,
+      cloudflare: { workerName: "worker-test" },
+    }),
+    /accountId/,
+  );
+});
+
+test("rejects a Cloudflare config without workerName", () => {
+  assert.throws(
+    () => validateCadenceRuntimeConfig({
+      ...valid,
+      cloudflare: { accountId: "account-123" },
+    }),
+    /workerName/,
+  );
+});
+
+test("accepts a structurally valid alternate Cloudflare target", () => {
+  assert.doesNotThrow(() => validateCadenceRuntimeConfig({
+    ...valid,
+    application: {
+      ...valid.application,
+      publicUrl: "https://alternate.example.test",
+    },
+    cloudflare: {
+      accountId: "account-alternate",
+      workerName: "worker-alternate",
+    },
+    supabase: {
+      ...valid.supabase,
+      url: "https://alternate.supabase.co",
+      projectRef: "alternate",
+    },
+  }));
 });
 
 test("configuration fingerprint is deterministic and changes with material config", () => {
@@ -81,6 +124,20 @@ test("configuration fingerprint includes every mutable non-secret setting", () =
     ["runtime.provider", (base) => ({
       ...base,
       runtime: { provider: "node" },
+    })],
+    ["cloudflare.accountId", (base) => ({
+      ...base,
+      cloudflare: {
+        accountId: "account-other",
+        workerName: base.cloudflare?.workerName ?? "worker-test",
+      },
+    })],
+    ["cloudflare.workerName", (base) => ({
+      ...base,
+      cloudflare: {
+        accountId: base.cloudflare?.accountId ?? "account-123",
+        workerName: "worker-other",
+      },
     })],
     ["supabase.url/projectRef", (base) => ({
       ...base,

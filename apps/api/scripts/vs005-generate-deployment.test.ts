@@ -26,6 +26,10 @@ const ciConfig: CadenceRuntimeConfig =
       requestBodyLimitBytes: 1048576,
     },
     runtime: { provider: "cloudflare" },
+    cloudflare: {
+      accountId: "account-123",
+      workerName: "worker-test",
+    },
     supabase: {
       url: "https://abc123.supabase.co",
       projectRef: "abc123",
@@ -52,7 +56,7 @@ const release: CadenceReleaseIdentity = {
   buildId: "2026-09-04T00:00:00Z",
 };
 
-test("generator derives one safe Cloudflare deployment from canonical config", () => {
+test("generator uses the explicit Worker name", () => {
   const result = buildCloudflareDeployment({
     config: ciConfig,
     release,
@@ -61,7 +65,7 @@ test("generator derives one safe Cloudflare deployment from canonical config", (
     result.wrangler.vars.CADENCE_RUNTIME_CONFIG_JSON,
   );
 
-  assert.equal(result.wrangler.name, "cadence-beta");
+  assert.equal(result.wrangler.name, ciConfig.cloudflare?.workerName);
   assert.equal(result.wrangler.main, "src/index.ts");
   assert.equal(result.wrangler.compatibility_date, "2026-09-04");
   assert.deepEqual(result.wrangler.compatibility_flags, ["nodejs_compat"]);
@@ -74,6 +78,7 @@ test("generator derives one safe Cloudflare deployment from canonical config", (
   assert.deepEqual(result.wrangler.triggers.crons, ["* * * * *"]);
   assert.deepEqual(result.wrangler.secrets.required, ["SUPABASE_SECRET_KEY"]);
   assert.deepEqual(embeddedConfig, ciConfig);
+  assert.deepEqual(embeddedConfig.cloudflare, ciConfig.cloudflare);
   assert.equal(
     result.wrangler.vars.CADENCE_CONFIG_FINGERPRINT,
     fingerprintCadenceRuntimeConfig(ciConfig),

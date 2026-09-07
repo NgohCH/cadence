@@ -44,6 +44,15 @@ export const CADENCE_RUNTIME_CONFIG_SCHEMA = {
         provider: { enum: ["node", "cloudflare"] },
       },
     },
+    cloudflare: {
+      type: "object",
+      additionalProperties: false,
+      required: ["accountId", "workerName"],
+      properties: {
+        accountId: { type: "string", minLength: 1 },
+        workerName: { type: "string", minLength: 1 },
+      },
+    },
     supabase: {
       type: "object",
       additionalProperties: false,
@@ -116,4 +125,17 @@ export const CADENCE_RUNTIME_CONFIG_SCHEMA = {
       },
     },
   },
+  allOf: [{
+    if: {
+      properties: {
+        runtime: {
+          type: "object",
+          properties: { provider: { const: "cloudflare" } },
+          required: ["provider"],
+        },
+      },
+      required: ["runtime"],
+    },
+    then: { required: ["cloudflare"] },
+  }],
 } as const;

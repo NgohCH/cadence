@@ -9,6 +9,11 @@ import { validateCadenceEnvironmentSafety } from "./environment-safety";
 export type CadenceEnvironment = "local" | "qa" | "beta";
 export type CadenceRuntimeProvider = "node" | "cloudflare";
 
+export interface CadenceCloudflareTarget {
+  accountId: string;
+  workerName: string;
+}
+
 export interface CadenceRuntimeConfig {
   configVersion: 1;
   application: {
@@ -21,6 +26,7 @@ export interface CadenceRuntimeConfig {
   runtime: {
     provider: CadenceRuntimeProvider;
   };
+  cloudflare?: CadenceCloudflareTarget;
   supabase: {
     url: string;
     projectRef: string | null;
@@ -91,6 +97,9 @@ export function validateCadenceRuntimeConfig(value: unknown): CadenceRuntimeConf
       url: safety.supabaseUrl,
       projectRef: safety.supabaseProjectRef,
     }),
+    cloudflare: config.cloudflare
+      ? Object.freeze({ ...config.cloudflare })
+      : undefined,
   });
 }
 
@@ -107,6 +116,12 @@ export function fingerprintCadenceRuntimeConfig(config: CadenceRuntimeConfig): s
     runtime: {
       provider: config.runtime.provider,
     },
+    cloudflare: config.cloudflare
+      ? {
+        accountId: config.cloudflare.accountId,
+        workerName: config.cloudflare.workerName,
+      }
+      : null,
     supabase: {
       url: config.supabase.url,
       projectRef: config.supabase.projectRef,
@@ -165,6 +180,14 @@ export function resolveCadenceSecrets(
 }
 
 function validateSemanticConfiguration(config: CadenceRuntimeConfig): void {
+  if (config.runtime.provider === "cloudflare") {
+    if (!config.cloudflare) {
+      throw new Error("cloudflare target is required for the Cloudflare provider");
+    }
+    validateCloudflareIdentifier(config.cloudflare.accountId, "cloudflare.accountId");
+    validateCloudflareIdentifier(config.cloudflare.workerName, "cloudflare.workerName");
+  }
+
   const publicUrl = parseHttpUrl(config.application.publicUrl, "application.publicUrl");
   if (publicUrl.pathname !== "/" || publicUrl.search || publicUrl.hash) {
     throw new Error("application.publicUrl must be an origin URL with no path, query, or fragment");
@@ -209,6 +232,12 @@ function validateSemanticConfiguration(config: CadenceRuntimeConfig): void {
     if (config.retry.delaysSeconds[index] < config.retry.delaysSeconds[index - 1]) {
       throw new Error("retry.delaysSeconds must be nondecreasing");
     }
+  }
+}
+
+function validateCloudflareIdentifier(value: string, field: string): void {
+  if (value.trim() !== value || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) {
+    throw new Error(`${field} must be a nonblank safe identifier`);
   }
 }
 

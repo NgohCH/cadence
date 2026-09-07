@@ -66,6 +66,24 @@
         }
       }
     },
+    "cloudflare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountId",
+        "workerName"
+      ],
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workerName": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "supabase": {
       "type": "object",
       "additionalProperties": false,
@@ -175,5 +193,32 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "runtime": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "const": "cloudflare"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          }
+        },
+        "required": [
+          "runtime"
+        ]
+      },
+      "then": {
+        "required": [
+          "cloudflare"
+        ]
+      }
+    }
+  ]
 }

@@ -8,6 +8,10 @@
     "requestBodyLimitBytes": 1048576
   },
   "runtime": { "provider": "cloudflare" },
+  "cloudflare": {
+    "accountId": "account-example",
+    "workerName": "worker-example"
+  },
   "supabase": {
     "url": "https://example.supabase.co",
     "projectRef": "example",

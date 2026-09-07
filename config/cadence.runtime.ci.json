@@ -8,6 +8,10 @@
     "requestBodyLimitBytes": 1048576
   },
   "runtime": { "provider": "cloudflare" },
+  "cloudflare": {
+    "accountId": "account-ci",
+    "workerName": "worker-ci"
+  },
   "supabase": {
     "url": "https://abc123.supabase.co",
     "projectRef": "abc123",
