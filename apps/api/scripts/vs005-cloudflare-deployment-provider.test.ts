@@ -9,8 +9,10 @@ import {
 } from "../src/bootstrap/cadence-config";
 import {
   createCloudflareDeploymentProvider,
+  type CloudflareReadOnlyProviderFacts,
   type CloudflareDeploymentProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
+import type { Vs005Observation } from "./vs005-provider-observations";
 
 interface RollbackProvider {
   inspectTarget(): Promise<{ accountId: string; workerName: string }>;
@@ -31,6 +33,30 @@ const config = validateCadenceRuntimeConfig(JSON.parse(
   readFileSync(resolve(process.cwd(), "../../config/cadence.runtime.ci.json"), "utf8"),
 ));
 
+const observed = <T>(value: T): Vs005Observation<T> => ({
+  state: "OBSERVED_VALUE",
+  value,
+});
+
+const absent = <T>(): Vs005Observation<T> => ({ state: "OBSERVED_ABSENT" });
+
+const readOnlyFacts: CloudflareReadOnlyProviderFacts = {
+  accountId: observed("account-123"),
+  workerName: observed("worker-ci"),
+  workerExists: observed(true),
+  workerConfigFingerprint: observed("config-fingerprint"),
+  cronSchedules: observed(["0 * * * *"]),
+  nonSecretBindingNames: observed(["ASSETS"]),
+  secretNames: observed(["SUPABASE_SECRET_KEY"]),
+  currentRelease: observed({
+    version: "0.0.0-test",
+    commitSha: "0123456789012345678901234567890123456789",
+    buildId: "build-test",
+  }),
+  priorVersion: absent(),
+  hostname: observed("worker.example.test"),
+};
+
 function fakeProviderIo(overrides: Partial<CloudflareDeploymentProviderIo> = {}) {
   const calls: Array<{ args: readonly string[]; content?: string; mode?: number }> = [];
   const deleted: string[] = [];
@@ -49,9 +75,15 @@ function fakeProviderIo(overrides: Partial<CloudflareDeploymentProviderIo> = {})
         stdout: JSON.stringify({ deployment_id: "deployment-1", version_id: "version-1" }),
       };
     },
+    inspectReadOnly: async () => readOnlyFacts,
     ...overrides,
   };
   return { io, calls, deleted };
+}
+
+function observationsOf(result: Awaited<ReturnType<ReturnType<typeof createCloudflareDeploymentProvider>["inspect"]>>) {
+  assert.ok(result.observations);
+  return result.observations;
 }
 
 test("bootstrap secret uses a protected temporary file and never enters argv", async () => {
@@ -134,6 +166,129 @@ test("provider returns bounded deployment identifiers", async () => {
     deploymentId: "deployment-2",
     providerVersionId: "version-2",
   });
+});
+
+test("inspection returns account and Worker identity", async () => {
+  let requested: { accountId: string; workerName: string } | undefined;
+  const fake = fakeProviderIo({
+    inspectReadOnly: async (input) => {
+      requested = input;
+      return readOnlyFacts;
+    },
+  });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+
+  const result = await provider.inspect(config);
+  const observations = observationsOf(result);
+
+  assert.deepEqual(requested, { accountId: "account-ci", workerName: "worker-ci" });
+  assert.deepEqual(observations.accountId, readOnlyFacts.accountId);
+  assert.deepEqual(observations.workerName, readOnlyFacts.workerName);
+});
+
+test("inspection distinguishes absent Worker", async () => {
+  const fake = fakeProviderIo({
+    inspectReadOnly: async () => ({
+      ...readOnlyFacts,
+      workerExists: absent(),
+    }),
+  });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+
+  const result = await provider.inspect(config);
+  const observations = observationsOf(result);
+
+  assert.deepEqual(observations.workerExists, { state: "OBSERVED_ABSENT" });
+});
+
+test("inspection preserves absent Cron and secret states", async () => {
+  const fake = fakeProviderIo({
+    inspectReadOnly: async () => ({
+      ...readOnlyFacts,
+      cronSchedules: absent(),
+      secretNames: absent(),
+    }),
+  });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+
+  const result = await provider.inspect(config);
+  const observations = observationsOf(result);
+
+  assert.deepEqual(observations.cronSchedules, { state: "OBSERVED_ABSENT" });
+  assert.deepEqual(observations.secretNames, { state: "OBSERVED_ABSENT" });
+});
+
+test("inspection returns release and fingerprint facts without raw output", async () => {
+  const fake = fakeProviderIo();
+  const provider = createCloudflareDeploymentProvider(fake.io);
+
+  const result = await provider.inspect(config);
+  const observations = observationsOf(result);
+
+  assert.deepEqual(observations.currentRelease, readOnlyFacts.currentRelease);
+  assert.deepEqual(observations.workerConfigFingerprint, readOnlyFacts.workerConfigFingerprint);
+  assert.equal("rawOutput" in result, false);
+  assert.equal(JSON.stringify(result).includes("deployment-raw-output"), false);
+});
+
+test("inspection never returns secret values", async () => {
+  const maliciousFacts = {
+    ...readOnlyFacts,
+    secretNames: observed(["SUPABASE_SECRET_KEY"]),
+    secretValue: "server-secret-must-not-escape",
+  } as CloudflareReadOnlyProviderFacts & { secretValue: string };
+  const fake = fakeProviderIo({ inspectReadOnly: async () => maliciousFacts });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+
+  const result = await provider.inspect(config);
+  const observations = observationsOf(result);
+
+  assert.equal(JSON.stringify(result).includes("server-secret-must-not-escape"), false);
+  assert.deepEqual(observations.secretNames, observed(["SUPABASE_SECRET_KEY"]));
+});
+
+test("inspection has no deploy or rollback capability", async () => {
+  const fake = fakeProviderIo();
+  const provider = createCloudflareDeploymentProvider(fake.io);
+
+  const result = await provider.inspect(config);
+
+  assert.equal("deploy" in result, false);
+  assert.equal("rollback" in result, false);
+});
+
+test("provider failure maps to UNAVAILABLE", async () => {
+  const fake = fakeProviderIo({
+    inspectReadOnly: async () => {
+      throw new Error("provider failed token=do-not-copy");
+    },
+  });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+
+  const result = await provider.inspect(config);
+  const observations = observationsOf(result);
+
+  assert.equal(observations.accountId.state, "UNAVAILABLE");
+  assert.equal(JSON.stringify(result).includes("do-not-copy"), false);
+});
+
+test("malformed provider facts fail closed without propagating raw values", async () => {
+  const fake = fakeProviderIo({
+    inspectReadOnly: async () => ({
+      ...readOnlyFacts,
+      accountId: { state: "OBSERVED_VALUE", value: "token=must-not-escape" },
+      cronSchedules: { state: "OBSERVED_VALUE", value: ["unexpected\noutput"] },
+    } as unknown as CloudflareReadOnlyProviderFacts),
+  });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+
+  const result = await provider.inspect(config);
+  const observations = observationsOf(result);
+
+  assert.equal(observations.accountId.state, "UNAVAILABLE");
+  assert.equal(observations.cronSchedules.state, "UNAVAILABLE");
+  assert.equal(JSON.stringify(result).includes("token=must-not-escape"), false);
+  assert.equal(JSON.stringify(result).includes("unexpected"), false);
 });
 
 test("inspectTarget uses only the read-only provider inspection command", async () => {

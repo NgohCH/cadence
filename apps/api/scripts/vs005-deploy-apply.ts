@@ -16,6 +16,7 @@ import {
 } from "../src/bootstrap/cadence-release";
 import type { Vs005DeploymentPlan } from "./vs005-deployment-artifacts";
 import { makeVs005OperatorFailure } from "./vs005-deployment-artifacts";
+import type { Vs005ProviderObservationSnapshot } from "./vs005-provider-observations";
 import {
   createCloudflareDeploymentProvider,
   createDefaultCloudflareProviderIo,
@@ -27,6 +28,7 @@ export interface Vs005DeploymentProviderInspection {
   workerExists: boolean;
   configuredSecrets: readonly string[];
   configFingerprint: string | null;
+  observations?: Vs005ProviderObservationSnapshot;
 }
 
 export interface Vs005DeploymentProvider {
@@ -98,6 +100,35 @@ function requireMatch(condition: boolean, code: string): asserts condition {
   if (!condition) throw new Vs005ApplyError(code);
 }
 
+function normalizeProviderInspection(
+  value: Vs005DeploymentProviderInspection,
+): Vs005DeploymentProviderInspection {
+  if (!value.observations) return value;
+
+  const { observations } = value;
+  if (observations.accountId.state !== "OBSERVED_VALUE"
+    || observations.workerName.state !== "OBSERVED_VALUE"
+    || observations.workerExists.state === "UNAVAILABLE") {
+    throw new Vs005ApplyError("PROVIDER_INSPECTION_UNAVAILABLE");
+  }
+
+  const configuredSecrets = observations.secretNames.state === "OBSERVED_VALUE"
+    ? observations.secretNames.value
+    : [];
+  const configFingerprint = observations.workerConfigFingerprint.state === "OBSERVED_VALUE"
+    ? observations.workerConfigFingerprint.value
+    : null;
+  return {
+    accountId: observations.accountId.value,
+    workerName: observations.workerName.value,
+    workerExists: observations.workerExists.state === "OBSERVED_VALUE"
+      ? observations.workerExists.value
+      : false,
+    configuredSecrets,
+    configFingerprint,
+  };
+}
+
 export async function applyVs005Deployment(input: {
   plan: unknown;
   config: unknown;
@@ -134,7 +165,7 @@ export async function applyVs005Deployment(input: {
 
   let observed: Vs005DeploymentProviderInspection;
   try {
-    observed = await input.provider.inspect(config);
+    observed = normalizeProviderInspection(await input.provider.inspect(config));
   } catch {
     throw new Vs005ApplyError("PROVIDER_INSPECTION_FAILED");
   }

@@ -18,6 +18,7 @@ import {
   createCloudflareDeploymentProvider,
   createDefaultCloudflareProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
+import type { Vs005ProviderInspection } from "./vs005-provider-observations";
 
 export interface Vs005RollbackRequest {
   providerVersionId: string;
@@ -34,7 +35,7 @@ export interface Vs005RollbackRequest {
 }
 
 export interface Vs005RollbackProvider {
-  inspectTarget(): Promise<{
+  inspectTarget(): Promise<Vs005ProviderInspection | {
     accountId: string;
     workerName: string;
   }>;
@@ -193,6 +194,20 @@ function requireMatch(condition: boolean, code: string): asserts condition {
   if (!condition) throw new Vs005RollbackError(code);
 }
 
+function normalizeRollbackTarget(
+  value: Awaited<ReturnType<Vs005RollbackProvider["inspectTarget"]>>,
+): { accountId: string; workerName: string } {
+  if (!("observations" in value)) return value;
+  if (value.observations.accountId.state !== "OBSERVED_VALUE"
+    || value.observations.workerName.state !== "OBSERVED_VALUE") {
+    throw new Vs005RollbackError("ROLLBACK PROVIDER INSPECTION UNAVAILABLE");
+  }
+  return {
+    accountId: value.observations.accountId.value,
+    workerName: value.observations.workerName.value,
+  };
+}
+
 export async function rollbackVs005Application(input: {
   request: Vs005RollbackRequest;
   currentDeploymentEvidence: Vs005DeploymentResult;
@@ -235,7 +250,7 @@ export async function rollbackVs005Application(input: {
 
   let liveTarget: { accountId: string; workerName: string };
   try {
-    liveTarget = await input.provider.inspectTarget();
+    liveTarget = normalizeRollbackTarget(await input.provider.inspectTarget());
   } catch {
     throw new Vs005RollbackError("ROLLBACK PROVIDER INSPECTION FAILED");
   }
@@ -339,12 +354,21 @@ function createVerificationReaders(
     probeApi: async () => ({ status: (await response("/api/v1")).status }),
     inspectProvider: async () => {
       const inspected = await provider.inspect(config);
+      const target = normalizeRollbackTarget(inspected);
       return {
-        accountId: inspected.accountId,
-        workerName: inspected.workerName,
+        accountId: target.accountId,
+        workerName: target.workerName,
         schedule: config.worker.schedule,
-        configuredSecrets: inspected.configuredSecrets,
-        configFingerprint: inspected.configFingerprint ?? "",
+        configuredSecrets: inspected.observations
+          ? inspected.observations.secretNames.state === "OBSERVED_VALUE"
+            ? inspected.observations.secretNames.value
+            : []
+          : inspected.configuredSecrets,
+        configFingerprint: inspected.observations
+          ? inspected.observations.workerConfigFingerprint.state === "OBSERVED_VALUE"
+            ? inspected.observations.workerConfigFingerprint.value
+            : ""
+          : inspected.configFingerprint ?? "",
         supabaseProjectRef: config.supabase.projectRef,
       };
     },
