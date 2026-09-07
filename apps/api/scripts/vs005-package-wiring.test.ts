@@ -9,6 +9,7 @@ const apiPackage = JSON.parse(readFileSync(resolve(repoRoot, "apps/api/package.j
 const cloudflarePackage = JSON.parse(readFileSync(resolve(repoRoot, "apps/runtime-cloudflare/package.json"), "utf8"));
 const workflow = readFileSync(resolve(repoRoot, ".github/workflows/quality.yml"), "utf8");
 const nodeVersion = readFileSync(resolve(repoRoot, ".node-version"), "utf8").trim();
+const betaConfigRelativePath = "config/cadence.runtime.beta.json";
 
 test("root exposes the governed VS005 operator commands", () => {
   for (const name of [
@@ -45,4 +46,9 @@ test("authoritative quality includes config, web tests, and non-mutating Cloudfl
   assert.match(workflow, /working-directory:\s*apps\/runtime-cloudflare/);
   assert.match(workflow, /npm run quality/);
   assert.doesNotMatch(workflow, /wrangler\s+deploy(?![^\n]*--dry-run)/);
+});
+
+test("governed Beta config uses a source-controlled, non-ignored path", () => {
+  assert.equal(betaConfigRelativePath, "config/cadence.runtime.beta.json");
+  assert.doesNotMatch(betaConfigRelativePath, /\.env|developer-only|ignored/i);
 });

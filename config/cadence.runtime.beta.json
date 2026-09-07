@@ -1,0 +1,37 @@
+{
+  "configVersion": 1,
+  "application": {
+    "name": "cadence",
+    "environment": "beta",
+    "publicUrl": "https://mycadence.ngohch-3d6.workers.dev",
+    "apiBaseUrl": "",
+    "requestBodyLimitBytes": 1048576
+  },
+  "runtime": {
+    "provider": "cloudflare"
+  },
+  "cloudflare": {
+    "accountId": "3d6a31905ac44e9563a523f9c86cbb8d",
+    "workerName": "mycadence"
+  },
+  "supabase": {
+    "url": "https://pwmhasbmacmeerbsagda.supabase.co",
+    "projectRef": "pwmhasbmacmeerbsagda",
+    "publishableKey": "sb_publishable_4LfhGMdrIFEey87RqUFaBg_PedLSTOM",
+    "secretKeySecretRef": "SUPABASE_SECRET_KEY"
+  },
+  "pilot": {
+    "projectId": "3503f8c7-1996-44d1-8b63-1fca36db89f8",
+    "safeTargetMarker": "cadence-beta"
+  },
+  "worker": {
+    "schedule": "* * * * *",
+    "maxRounds": 10,
+    "maxDeliveryAttempts": 20,
+    "maxMembershipExpiryAttempts": 20,
+    "softDeadlineSeconds": 20
+  },
+  "retry": {
+    "delaysSeconds": [60, 300, 900, 3600]
+  }
+}
