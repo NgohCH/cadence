@@ -9,6 +9,7 @@ import {
 } from "../src/bootstrap/cadence-config";
 import {
   createCloudflareDeploymentProvider,
+  inspectCloudflareAccountMembership,
   type CloudflareReadOnlyProviderFacts,
   type CloudflareDeploymentProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
@@ -85,6 +86,147 @@ function observationsOf(result: Awaited<ReturnType<ReturnType<typeof createCloud
   assert.ok(result.observations);
   return result.observations;
 }
+
+async function inspectAccountFixture(input: {
+  expectedAccountId: string;
+  stdout?: string;
+  exitCode?: number;
+  error?: Error;
+}): Promise<{ observation: Vs005Observation<string>; calls: readonly (readonly string[])[] }> {
+  const calls: Array<readonly string[]> = [];
+  const observation = await inspectCloudflareAccountMembership({
+    expectedAccountId: input.expectedAccountId,
+    runWrangler: async (args) => {
+      calls.push(args);
+      if (input.error) throw input.error;
+      return {
+        exitCode: input.exitCode ?? 0,
+        stdout: input.stdout ?? "",
+      };
+    },
+  });
+  return { observation, calls };
+}
+
+test("account inspection selects the expected account from Wrangler 4.127.1 membership JSON", async () => {
+  const fixture = JSON.stringify({
+    loggedIn: true,
+    authType: "OAuth Token",
+    email: "operator@example.test",
+    accounts: [{ id: "account-expected", name: "Operator Account" }],
+    tokenPermissions: ["Workers Scripts:Read"],
+    unrelatedSecret: "secret-looking-value-must-not-escape",
+  });
+
+  const result = await inspectAccountFixture({
+    expectedAccountId: "account-expected",
+    stdout: fixture,
+  });
+
+  assert.deepEqual(result.observation, observed("account-expected"));
+  assert.deepEqual(result.calls, [["wrangler", "whoami", "--json"]]);
+  assert.doesNotMatch(JSON.stringify(result.observation), /operator|OAuth|Workers Scripts|secret-looking/i);
+});
+
+test("account inspection deterministically selects the expected account from multiple memberships", async () => {
+  const result = await inspectAccountFixture({
+    expectedAccountId: "account-expected",
+    stdout: JSON.stringify({
+      accounts: [
+        { id: "account-other", name: "Other" },
+        { id: "account-expected", name: "Expected" },
+        { id: "account-third", name: "Third" },
+      ],
+    }),
+  });
+
+  assert.deepEqual(result.observation, observed("account-expected"));
+});
+
+test("account inspection fails closed when the expected membership is absent", async () => {
+  for (const accounts of [
+    [{ id: "account-other" }],
+    [],
+  ]) {
+    const result = await inspectAccountFixture({
+      expectedAccountId: "account-expected",
+      stdout: JSON.stringify({ accounts }),
+    });
+    assert.deepEqual(result.observation, {
+      state: "UNAVAILABLE",
+      code: "CLOUDFLARE_ACCOUNT_UNAVAILABLE",
+    });
+  }
+});
+
+test("account inspection rejects missing, malformed, and obsolete membership shapes", async () => {
+  const invalidOutputs = [
+    JSON.stringify({ loggedIn: true }),
+    JSON.stringify({ accounts: "account-expected" }),
+    JSON.stringify({ accounts: [{ name: "Missing ID" }] }),
+    JSON.stringify({ account_id: "account-expected" }),
+    "not-json secret-looking-value-must-not-escape",
+  ];
+
+  for (const stdout of invalidOutputs) {
+    const result = await inspectAccountFixture({
+      expectedAccountId: "account-expected",
+      stdout,
+    });
+    assert.deepEqual(result.observation, {
+      state: "UNAVAILABLE",
+      code: "CLOUDFLARE_ACCOUNT_UNAVAILABLE",
+    });
+    assert.doesNotMatch(JSON.stringify(result.observation), /secret-looking/i);
+  }
+});
+
+test("account inspection ignores invalid unrelated entries when the expected membership is valid", async () => {
+  const result = await inspectAccountFixture({
+    expectedAccountId: "account-expected",
+    stdout: JSON.stringify({
+      accounts: [
+        null,
+        { name: "Missing ID" },
+        { id: "contains spaces" },
+        { id: "account-expected" },
+      ],
+    }),
+  });
+
+  assert.deepEqual(result.observation, observed("account-expected"));
+});
+
+test("account inspection maps command and authentication failures to UNAVAILABLE", async () => {
+  const failedCommand = await inspectAccountFixture({
+    expectedAccountId: "account-expected",
+    exitCode: 1,
+    stdout: "authentication failed token=must-not-escape",
+  });
+  const rejectedCommand = await inspectAccountFixture({
+    expectedAccountId: "account-expected",
+    error: new Error("network failed token=must-not-escape"),
+  });
+
+  for (const result of [failedCommand, rejectedCommand]) {
+    assert.deepEqual(result.observation, {
+      state: "UNAVAILABLE",
+      code: "CLOUDFLARE_AUTH_UNAVAILABLE",
+    });
+    assert.doesNotMatch(JSON.stringify(result.observation), /must-not-escape/);
+  }
+});
+
+test("account inspection remains portable to a non-Beta canonical account", async () => {
+  const result = await inspectAccountFixture({
+    expectedAccountId: "future-owner-account",
+    stdout: JSON.stringify({
+      accounts: [{ id: "future-owner-account", name: "Future Owner" }],
+    }),
+  });
+
+  assert.deepEqual(result.observation, observed("future-owner-account"));
+});
 
 test("bootstrap secret uses a protected temporary file and never enters argv", async () => {
   const fake = fakeProviderIo();
@@ -291,25 +433,22 @@ test("malformed provider facts fail closed without propagating raw values", asyn
   assert.equal(JSON.stringify(result).includes("unexpected"), false);
 });
 
-test("inspectTarget uses only the read-only provider inspection command", async () => {
+test("inspectTarget fails closed without a canonical account target", async () => {
   const fake = fakeProviderIo({
-    runWrangler: async (args) => {
-      assert.deepEqual(args, ["wrangler", "whoami", "--json"]);
-      return {
-        exitCode: 0,
-        stdout: JSON.stringify({ account_id: "account-123", worker_name: "cadence-beta" }),
-      };
-    },
+    runWrangler: async () => ({
+      exitCode: 0,
+      stdout: JSON.stringify({ account_id: "account-123", worker_name: "cadence-beta" }),
+    }),
   });
   const provider = createCloudflareDeploymentProvider(fake.io);
   assert.equal(isRollbackProvider(provider), true);
   if (!isRollbackProvider(provider)) return;
 
-  assert.deepEqual(await provider.inspectTarget(), {
-    accountId: "account-123",
-    workerName: "cadence-beta",
-  });
-  assert.equal(fake.calls.some((call) => call.args.includes("deploy")), false);
+  await assert.rejects(
+    () => provider.inspectTarget(),
+    /CLOUDFLARE_TARGET_UNAVAILABLE/,
+  );
+  assert.equal(fake.calls.length, 0);
 });
 
 test("rollback targets one explicit provider version through argv and returns bounded identifiers", async () => {

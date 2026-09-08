@@ -218,43 +218,42 @@ function parseDeploymentIdentifiers(stdout: string): {
   return { deploymentId, providerVersionId };
 }
 
-function parseAccountId(stdout: string): string {
-  let parsed: unknown;
+export async function inspectCloudflareAccountMembership(input: {
+  expectedAccountId: string;
+  runWrangler: CloudflareDeploymentProviderIo["runWrangler"];
+}): Promise<Vs005Observation<string>> {
+  let identity: { exitCode: number; stdout: string };
   try {
-    parsed = JSON.parse(stdout);
+    identity = await input.runWrangler(["wrangler", "whoami", "--json"]);
   } catch {
-    parsed = undefined;
+    return unavailable("CLOUDFLARE_AUTH_UNAVAILABLE");
   }
-  const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-    ? parsed as Record<string, unknown>
-    : {};
-  const accountId = typeof record.account_id === "string"
-    ? record.account_id
-    : stdout.match(/account[_-]?id\s*[:=]\s*([A-Za-z0-9_-]{1,128})/)?.[1];
-  if (!accountId || !/^[A-Za-z0-9_-]{1,128}$/.test(accountId)) {
-    throw new Error("CLOUDFLARE_ACCOUNT_UNAVAILABLE");
+  if (identity.exitCode !== 0) {
+    return unavailable("CLOUDFLARE_AUTH_UNAVAILABLE");
   }
-  return accountId;
-}
 
-function parseWorkerName(stdout: string, expectedWorkerName?: string): string {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stdout);
+    parsed = JSON.parse(identity.stdout);
   } catch {
-    parsed = undefined;
+    return unavailable("CLOUDFLARE_ACCOUNT_UNAVAILABLE");
   }
-  const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-    ? parsed as Record<string, unknown>
-    : {};
-  const workerName = expectedWorkerName
-    ?? (typeof record.worker_name === "string" ? record.worker_name : undefined)
-    ?? (typeof record.workerName === "string" ? record.workerName : undefined)
-    ?? stdout.match(/worker[_-]?name\s*[:=]\s*([A-Za-z0-9._-]{1,128})/)?.[1];
-  if (!workerName || !/^[A-Za-z0-9._-]{1,128}$/.test(workerName)) {
-    throw new Error("CLOUDFLARE_WORKER_UNAVAILABLE");
+  if (!isRecord(parsed) || !Array.isArray(parsed.accounts)) {
+    return unavailable("CLOUDFLARE_ACCOUNT_UNAVAILABLE");
   }
-  return workerName;
+
+  const expectedAccountId = boundedIdentifier(input.expectedAccountId);
+  if (!expectedAccountId) {
+    return unavailable("CLOUDFLARE_ACCOUNT_UNAVAILABLE");
+  }
+  const expectedMembershipExists = parsed.accounts.some((account) => (
+    isRecord(account)
+    && typeof account.id === "string"
+    && boundedIdentifier(account.id) === expectedAccountId
+  ));
+  return expectedMembershipExists
+    ? observedValue(expectedAccountId)
+    : unavailable("CLOUDFLARE_ACCOUNT_UNAVAILABLE");
 }
 
 function parseRollbackIdentifiers(stdout: string): {
@@ -314,12 +313,7 @@ export function createCloudflareDeploymentProvider(
           return { observations: unavailableReadOnlyFacts("CLOUDFLARE_INSPECTION_UNAVAILABLE") };
         }
       }
-      const identity = await io.runWrangler(["wrangler", "whoami", "--json"]);
-      if (identity.exitCode !== 0) throw new Error("CLOUDFLARE_AUTH_UNAVAILABLE");
-      return {
-        accountId: parseAccountId(identity.stdout),
-        workerName: parseWorkerName(identity.stdout, rollbackTarget?.workerName),
-      };
+      throw new Error("CLOUDFLARE_TARGET_UNAVAILABLE");
     },
 
     async deploy(input) {
@@ -389,12 +383,14 @@ export function createDefaultCloudflareProviderIo(): CloudflareDeploymentProvide
       await rm(path, { force: true });
     },
     runWrangler,
-    async inspectReadOnly() {
+    async inspectReadOnly(input) {
       try {
-        const identity = await runWrangler(["wrangler", "whoami", "--json"]);
-        if (identity.exitCode !== 0) return unavailableReadOnlyFacts("CLOUDFLARE_AUTH_UNAVAILABLE");
+        const accountId = await inspectCloudflareAccountMembership({
+          expectedAccountId: input.accountId,
+          runWrangler,
+        });
         return sanitizeReadOnlyFacts({
-          accountId: { state: "OBSERVED_VALUE", value: parseAccountId(identity.stdout) },
+          accountId,
           workerName: { state: "UNAVAILABLE" },
           workerExists: { state: "UNAVAILABLE" },
           workerConfigFingerprint: { state: "UNAVAILABLE" },
