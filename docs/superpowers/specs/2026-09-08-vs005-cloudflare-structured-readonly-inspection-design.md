@@ -1,12 +1,14 @@
 # VS005 Cloudflare Structured Read-Only Inspection Design
 
-**Status:** Design freeze for review
+**Status:** Amended design freeze for review
 
 **Date:** 2026-09-08
 
 **Branch:** `feature/vs-005-portable-deployment-runtime`
 
 **Starting checkpoint:** `7246ac2` (`fix(vs005): bind Cloudflare inspection target explicitly`)
+
+**Design amendment checkpoint:** `d9cd51d` (`docs(vs005): design structured Cloudflare inspection`)
 
 ## 1. Purpose and blocker
 
@@ -29,7 +31,7 @@ In scope:
 
 Out of scope:
 
-- API-token creation or use;
+- live API-token creation or use during this design checkpoint;
 - any live Cloudflare or Supabase request;
 - deployment, rollback, Cron mutation, route mutation, binding mutation, or secret mutation;
 - a generic Cloudflare API client;
@@ -71,8 +73,9 @@ The transport applies these fixed controls:
 - The credential appears only in the `Authorization` header, never in a URL or query string.
 - Target path segments are encoded independently.
 - Requests have a 15-second timeout.
-- A response body larger than 1 MiB is rejected before governed parsing.
-- Pagination is bounded to 10 pages and 1,000 aggregate items; exceeding either bound becomes `UNAVAILABLE`.
+- A trustworthy `Content-Length` greater than 1 MiB is rejected before body consumption.
+- Every non-rejected response body, including one with a trustworthy acceptable length, is consumed through a bounded reader. The reader aborts and rejects as soon as accumulated bytes exceed 1 MiB. JSON parsing begins only after a complete body has been read within the limit; unbounded `response.json()` is prohibited as the security boundary.
+- No generic pagination machinery is part of M1. The deployable-versions operation uses the provider's fixed `deployable=true` query, which returns deployable versions without pagination. Every other required M1 operation is consumed as one bounded response; any indication that a result is incomplete becomes `UNAVAILABLE`.
 - Raw request or response bodies are never logged.
 
 ## 5. Credential-provider abstraction
@@ -99,7 +102,7 @@ Wrangler deployment credentials remain separate. Supplying an inspection credent
 
 ## 7. Least-privilege provider permissions strategy
 
-The M1 inspection token uses the Cloudflare API-token permission group `Workers Scripts Read`, scoped to the exact owner-controlled account used by the separately authorized target policy. It must not deliberately include `Workers Scripts Edit`, account administration, DNS edit, token management, or any other mutation permission.
+The M1 inspection token uses the Cloudflare API-token permission group `Workers Scripts Read`, scoped to the exact owner-controlled account used by the separately authorized target policy. It must not deliberately include `Workers Scripts Write`, account administration, DNS edit, token management, or any other mutation permission.
 
 Installed Wrangler 4.127.1 source confirms that the required resources are under the account-scoped Workers Scripts API family. The bundled Wrangler OAuth path requests a write-capable Workers scope, so Wrangler authentication is not reused as the read-only inspection credential.
 
@@ -127,11 +130,10 @@ The provider-facing interface is `CloudflareStructuredReadOnlyProvider`. It expo
 - `inspectCurrentDeployment(target)`;
 - `inspectWorkerSettings(target)`;
 - `inspectCronSchedules(target)`;
-- `inspectSecretNames(target)`;
 - `inspectDeployableVersions(target)`;
 - `inspectVersion(target, versionId)`;
 - `inspectWorkersDevState(target)`;
-- `inspectAccountWorkersDevSubdomain(accountId)`.
+- `inspectAccountWorkersDevSubdomain(target)`.
 
 There is no public `request(method, url)` function. The private `CloudflareReadOnlyTransport` accepts an internal route descriptor whose method is not caller-configurable. It always sends the literal method `GET` and rejects any internal descriptor that is not classified read-only before invoking `fetch`.
 
@@ -155,6 +157,8 @@ and:
 `canonical workerName == generated name == request workerName`.
 
 A mismatch becomes `UNAVAILABLE`; the adapter does not substitute, normalize to a different target, choose an account from credential metadata, or infer a Worker from environment or safe marker.
+
+The account-subdomain operation also accepts the complete validated target rather than a standalone account ID. It derives the account route from that target while retaining Worker and fingerprint correlation in its result envelope. Business or deployment code therefore cannot use this operation to inspect an arbitrary account detached from the governed target.
 
 ## 11. Structured error mapping
 
@@ -181,11 +185,12 @@ Worker absence is authoritative only from the exact `inspectCurrentDeployment` r
 1. the request used the fixed Cloudflare API origin;
 2. the request path contains the validated canonical account and Worker;
 3. no redirect occurred;
-4. a parseable Cloudflare failure envelope was received;
-5. the first structured provider error code is exactly `10007` or `10090`;
-6. the response is correlated to the in-flight current-deployment operation.
+4. a parseable Cloudflare envelope with `success: false` was received;
+5. the structured `errors` array is non-empty;
+6. every entry is well formed and every numeric error code belongs to the exact allowlist `{10007, 10090}`;
+7. the response is correlated to the in-flight current-deployment operation.
 
-Only then does Worker existence become `OBSERVED_ABSENT`. Prose matching, stderr parsing, generic HTTP 404, a generic non-2xx response, empty output, an empty body, or an empty deployments list cannot prove absence.
+Only then does Worker existence become `OBSERVED_ABSENT`. A mixed array, any additional or unknown code, a malformed entry, authentication or permission failure, or any transport ambiguity becomes `UNAVAILABLE`. Prose matching, stderr parsing, generic HTTP 404, a generic non-2xx response, empty output, an empty body, or an empty deployments list cannot prove absence.
 
 A successful deployments response with an empty deployment list proves that the Worker-scoped endpoint was reached but does not prove a current release. Worker existence may be `OBSERVED_VALUE(true)` while `currentRelease` is `OBSERVED_ABSENT`; the applicable readiness profile then decides whether that state is acceptable.
 
@@ -196,19 +201,28 @@ Raw Cloudflare JSON exists only inside the operation parser. Each operation vali
 - author names and email addresses;
 - free-form annotations and messages;
 - unrelated metadata and timestamps;
-- raw binding values;
-- plaintext non-secret variable values;
+- raw binding values outside the explicit identity allowlist;
+- plaintext variable values outside the explicit identity allowlist;
 - authentication metadata;
 - response headers and request identifiers not required for correlation;
 - arbitrary nested provider fields.
 
-Provider observations contain only account/Worker correlation, identifiers, binding names/types, schedule expressions, secret names, hostname state, and the release/config fields required by the existing Cadence contracts. A parser that encounters a missing required field, unexpected type, oversized collection, or unsupported shape returns `UNAVAILABLE` for the affected fact.
+Provider observations contain only account/Worker correlation, identifiers, binding names/types, schedule expressions, secret names, hostname state, and the release/config fields required by the existing Cadence contracts. The only existing plaintext identity bindings whose values may survive settings parsing are:
 
-## 14. Secret-name-only inspection
+- `CADENCE_CONFIG_FINGERPRINT`;
+- `CADENCE_RELEASE_VERSION`;
+- `CADENCE_COMMIT_SHA`;
+- `CADENCE_BUILD_ID`.
 
-`inspectSecretNames` calls only the secret-metadata list endpoint and extracts string binding names. Cadence checks whether the exact name `SUPABASE_SECRET_KEY` is present. It represents only present, absent, or unavailable state under the existing tri-state observation.
+Each value is retained only when its binding name and Cloudflare `plain_text` type match and the value passes the existing bounded Cadence identity validation. `CADENCE_RUNTIME_CONFIG_JSON` is not required as raw provider evidence: only its binding name and type may survive. Its value is always discarded. Every other plaintext value and every secret value is discarded. A parser that encounters a missing required field, duplicate allowlisted identity binding, wrong type, invalid identity value, oversized collection, or unsupported shape returns `UNAVAILABLE` for the affected fact.
 
-The adapter never requests a secret value and exposes no operation capable of creating, updating, deleting, or retrieving secret material. Although Cloudflare's metadata response omits secret values, the parser still allowlists only names and discards every other field. Unexpected plaintext or secret-looking fixture data must be absent from snapshots, serialized evidence, diagnostics, and captured test logs.
+## 14. Secret presence from Worker settings
+
+M1 has no dedicated secret-list operation and does not call the Cloudflare `/secrets` endpoint. `inspectWorkerSettings` derives required secret presence from the complete successful Worker settings binding set.
+
+`SUPABASE_SECRET_KEY` is present only when exactly one binding has that exact name and the current Cloudflare binding type is exactly `secret_text`. A complete successful settings response with no such binding produces `OBSERVED_ABSENT` for the existing `secretNames` observation. The expected name with any other type, duplicate entries, an incomplete binding set, or malformed settings produces a bounded mismatch or `UNAVAILABLE` according to the existing observation conventions; it never becomes present.
+
+The settings parser retains only the expected secret name and type-derived presence state. It never retains a secret value and exposes no operation capable of creating, updating, deleting, listing through a separate secret surface, or retrieving secret material. Unexpected plaintext or secret-looking fixture data must be absent from snapshots, serialized evidence, diagnostics, and captured test logs.
 
 ## 15. Required provider operations and endpoints
 
@@ -217,25 +231,24 @@ The fixed M1 operation-to-endpoint mapping is:
 | Named operation | Fixed `GET` path under `https://api.cloudflare.com/client/v4` | Bounded purpose |
 |---|---|---|
 | `inspectCurrentDeployment` | `/accounts/{accountId}/workers/scripts/{workerName}/deployments` | Worker existence plus current deployment and active version IDs |
-| `inspectWorkerSettings` | `/accounts/{accountId}/workers/scripts/{workerName}/settings` | Binding names/types and allowlisted release/config identity |
+| `inspectWorkerSettings` | `/accounts/{accountId}/workers/scripts/{workerName}/settings` | Binding names/types, required secret-name/type presence, and allowlisted release/config identity values |
 | `inspectCronSchedules` | `/accounts/{accountId}/workers/scripts/{workerName}/schedules` | Cron expressions and explicit empty state |
-| `inspectSecretNames` | `/accounts/{accountId}/workers/scripts/{workerName}/secrets` | Secret names only |
-| `inspectDeployableVersions` | `/accounts/{accountId}/workers/scripts/{workerName}/versions` | Bounded available version IDs for rollback readiness |
+| `inspectDeployableVersions` | `/accounts/{accountId}/workers/scripts/{workerName}/versions?deployable=true` | Complete bounded deployable version IDs for rollback readiness; the provider ignores pagination for this query |
 | `inspectVersion` | `/accounts/{accountId}/workers/scripts/{workerName}/versions/{versionId}` | Bounded identity/fingerprint metadata for one explicitly selected version |
 | `inspectWorkersDevState` | `/accounts/{accountId}/workers/scripts/{workerName}/subdomain` | Script workers.dev enabled/state facts |
-| `inspectAccountWorkersDevSubdomain` | `/accounts/{accountId}/workers/subdomain` | Account workers.dev subdomain label needed to correlate the public hostname |
+| `inspectAccountWorkersDevSubdomain` | `/accounts/{accountId}/workers/subdomain` | Account workers.dev subdomain label derived from and correlated with the complete validated target |
 
-Installed Wrangler 4.127.1 source uses these account-scoped endpoints and treats deployments-list result index zero as the latest deployment actively serving traffic. Cadence will preserve only deployment `id` and bounded `versions[].version_id`/traffic allocation fields required by the existing release identity contract. It will not infer a rollback target from list order.
+Installed Wrangler 4.127.1 source uses these account-scoped endpoints and treats deployments-list result index zero as the latest deployment actively serving traffic. Cadence will preserve only deployment `id` and bounded `versions[].version_id`/traffic allocation fields required by the existing release identity contract. It will not infer a rollback target from list order. No required M1 endpoint needs reusable multi-page traversal.
 
 ## 16. Observation mapping for each operation
 
 | Operation | `OBSERVED_VALUE` | `OBSERVED_ABSENT` | `UNAVAILABLE` |
 |---|---|---|---|
 | Current deployment | Exact Worker request succeeds; Worker is present and bounded deployment/version identity is parsed | Worker only when approved structured code `10007`/`10090` is correlated; current release may be absent on a successful empty list | Auth, permission, network, TLS, timeout, malformed/unknown response, binding mismatch |
-| Worker settings | Required binding/config facts parse from a successful result | Explicitly empty allowlisted binding set | Required field missing, unsafe or malformed shape, any uncertain failure |
+| Worker settings/config | Required binding names/types and allowlisted identity values parse from a complete successful result | Explicitly empty allowlisted non-secret binding set where the phase permits it | Required field missing, duplicate/wrongly typed identity, unsafe or malformed shape, any uncertain failure |
+| Required secret presence from settings | Exactly one `SUPABASE_SECRET_KEY` binding has type `secret_text` | Complete successful settings contains no binding with that name | Expected name has wrong/duplicate type, settings is incomplete, or inspection fails |
 | Cron schedules | Bounded schedule list parses | Successful exact response contains an empty list | Any failed or ambiguous inspection |
-| Secret names | Expected name is present in a bounded list | Successful exact response proves expected name is not in the complete bounded list | Incomplete pagination, failed request, malformed entry, or uncertain result |
-| Deployable versions | Bounded version IDs parse and include the required retained version | Successful complete list contains no eligible version only where the rollback profile defines absence | Incomplete list or any failed/ambiguous inspection |
+| Deployable versions | The fixed `deployable=true` result parses and includes the required retained version | The complete bounded result contains no eligible version only where the rollback profile defines absence | Oversized, incomplete, malformed, or failed result |
 | Version detail | Exact requested version identity/fingerprint parses | Not emitted in M1; absence is established from the complete deployable-versions list | Unapproved code, missing listed version detail, malformed result, or failed request |
 | Worker workers.dev state | A successful response reports `enabled: true` and hostname correlation parses | A successful response reports `enabled: false` | Any failed, missing, or malformed state |
 | Account subdomain | A successful response contains a bounded, non-empty account subdomain label | Not emitted in M1 | Empty/missing label or any failed/malformed inspection |
@@ -265,6 +278,10 @@ The current `inspectReadOnly` public seam remains the deployment subsystem's pro
 The migration may retain Task 1 account-membership parsing as a non-authoritative parser utility, but the governed host `inspectReadOnly` path does not execute Wrangler `whoami`. Account observation comes from a successful, exact account-scoped REST operation or a correlated structured Worker-not-found response. Wrangler output cannot satisfy Worker-scoped observation or override a structured REST result. The direct REST route target comes from the Task 2 canonical account/Worker binding helper.
 
 `inspectReadOnly` reduces operation results to the existing tri-state snapshot and then calls `validateVs005ObservationCompleteness` for the requested phase. It cannot replace missing provider facts with canonical config values. Unsupported or unproven fields remain `UNAVAILABLE`.
+
+The default deployment planner has a separate local-readiness defect: it currently supplies constant `generatedConfigValid: false` and `webBuildReady: false`. The implementation plan must replace those constants with deterministic local checks. `generatedConfigValid` must use the existing `buildCloudflareDeployment` output and current generated-target validation to prove that account, Worker, fingerprint, release identity, assets, Cron, required secret declaration, and other generated fields match the canonical config and release. `webBuildReady` must use the existing `buildCadencePublicWebConfig`/Beta web-build path, prove the generated public config exactly matches the canonical browser-safe projection, require the local Beta build to succeed, and verify that the resulting `apps/web/dist/index.html` and every referenced local asset exist.
+
+These checks run locally, make no provider or hosted HTTP call, and remain separate from `Vs005ProviderObservationSnapshot`. A provider observation cannot make either boolean true, and local generated/build evidence cannot become a provider observation.
 
 ## 19. Task 6 apply reinspection
 
@@ -296,11 +313,15 @@ Fixture coverage must include:
 - structured Worker-not-found codes `10007` and `10090` on the exact Worker request;
 - the same codes on an uncorrelated operation, which must remain `UNAVAILABLE`;
 - 401, 403, generic 404, 429, 5xx, redirect, timeout, TLS/network failure, malformed JSON, malformed envelope, empty body, and oversized body;
-- complete, empty, truncated, and over-limit pagination;
+- complete, empty, malformed, oversized, and provider-indicated incomplete collections;
+- trustworthy oversized `Content-Length`, missing/untrusted length with bounded-reader overflow, and exact-limit body handling before JSON parsing;
 - account/Worker/generated-config binding mismatches;
 - non-Beta account and Worker targets;
+- complete settings with the exact `SUPABASE_SECRET_KEY`/`secret_text` binding, missing binding, wrong type, duplicate binding, and secret-looking values;
+- exact allowlisted identity values, wrong binding types, invalid bounded identity values, and proof that `CADENCE_RUNTIME_CONFIG_JSON` content is discarded;
 - Task 3 first-deployment and rollback completeness profiles;
 - Task 5 plan capture, Task 6 fresh reinspection, and Task 7 verification binding;
+- local `generatedConfigValid` checks against existing generator output and local `webBuildReady` checks against a successful Beta build and referenced assets, with proof that neither calls the provider;
 - proof that every constructed operation is `GET` and every mutation verb/route is inexpressible.
 
 ## 23. Secret-leakage tests
@@ -309,9 +330,10 @@ Adversarial fixtures place credential-like strings in provider messages, annotat
 
 Separate tests prove that:
 
-- only the name `SUPABASE_SECRET_KEY` can survive secret inspection;
+- only the name `SUPABASE_SECRET_KEY` and its type-derived presence state can survive Worker settings secret inspection;
 - the inspection bearer credential never appears in argv, URLs, query strings, snapshots, errors, or logs;
-- plaintext Worker variable values from settings are discarded;
+- only `CADENCE_CONFIG_FINGERPRINT`, `CADENCE_RELEASE_VERSION`, `CADENCE_COMMIT_SHA`, and `CADENCE_BUILD_ID` plaintext values can survive after name/type/value validation;
+- `CADENCE_RUNTIME_CONFIG_JSON` and every other plaintext Worker variable value are discarded;
 - raw response bodies are inaccessible after the parser boundary;
 - malformed responses fail without embedding their content in diagnostics.
 
@@ -352,11 +374,12 @@ Migration is incremental and fail closed:
 
 1. Add the credential-provider and fixed-origin GET-only transport with offline tests.
 2. Add named deployments inspection and structured Worker-not-found mapping.
-3. Add settings, Cron, secret-name, version, and workers.dev operations one bounded parser at a time.
+3. Add settings parsing for binding names/types, secret presence, and the four allowlisted identity values; add Cron, deployable-version, exact-version, and workers.dev operations one bounded parser at a time.
 4. Compose them behind the existing `inspectReadOnly` seam and preserve unsupported facts as `UNAVAILABLE` until their parser is complete.
-5. Bind planner, apply, verify, and rollback readiness to the structured result and target-correlation envelope.
-6. Remove Wrangler CLI output as authoritative provider evidence only after the full local regression gate proves parity. Wrangler remains the mutation mechanism.
-7. Produce local readiness evidence identifying every host fact as unobserved until a separately authorized host read-only inspection occurs.
+5. Replace the default planner's constant local readiness values with deterministic generated-config and Beta web-build checks, kept outside provider observations.
+6. Bind planner, apply, verify, and rollback readiness to the structured result and target-correlation envelope.
+7. Remove Wrangler CLI output as authoritative provider evidence only after the full local regression gate proves parity. Wrangler remains the mutation mechanism.
+8. Produce local readiness evidence identifying every host fact as unobserved until a separately authorized host read-only inspection occurs.
 
 At no point may CLI prose, manual evidence, or canonical config be promoted into a provider observation.
 
@@ -368,12 +391,16 @@ The design is satisfied when local tests and review prove all of the following:
 - redirects, arbitrary origins, mutation verbs, and generic provider requests are impossible or rejected before transport;
 - credentials come only from `CloudflareCredentialProvider` and cannot influence target identity;
 - every request is correlated to canonical account, Worker, generated target, and canonical fingerprint;
-- only structured, correlated error codes `10007` and `10090` can establish Worker absence;
+- only a correlated `success: false` envelope with a non-empty error array whose every code belongs to `{10007, 10090}` can establish Worker absence;
 - every uncertain condition becomes `UNAVAILABLE`;
 - all required operations produce bounded observations without raw response retention;
-- only `SUPABASE_SECRET_KEY` presence by name is represented;
+- response bytes are bounded to 1 MiB before JSON parsing, including when no trustworthy acceptable `Content-Length` exists;
+- `SUPABASE_SECRET_KEY` presence is derived only from an exact `secret_text` binding in complete Worker settings; no M1 secret-list operation exists;
+- only the four existing allowlisted plaintext identity-binding values survive settings parsing, while `CADENCE_RUNTIME_CONFIG_JSON` content and all other plaintext values are discarded;
+- deployable versions use the fixed `versions?deployable=true` operation and no generic M1 pagination machinery;
 - plan/apply/verify/rollback consumers reuse the existing authority and fingerprint chain;
 - Task 6 always performs fresh structured reinspection before mutation;
+- the default planner computes `generatedConfigValid` and `webBuildReady` from real deterministic local checks rather than constants or provider observations;
 - offline adversarial tests prove credential, secret, plaintext-variable, and raw-output non-leakage;
 - generic non-Beta portability remains intact;
 - no dependency, paid component, database action, remote operation, or mutation is introduced by the design checkpoint.
@@ -384,15 +411,16 @@ Host inspection remains separately authorized after implementation and local rev
 
 The subsequent implementation plan should use independently reviewable commits in this order:
 
-1. Define credential-provider, fixed target-correlation, bounded failure, and GET-only transport contracts with offline transport tests.
-2. Implement deployments inspection, Worker presence/absence, and current deployment/version parsing with structured-code tests.
-3. Implement Worker settings and non-secret binding-name/config-fingerprint parsing with plaintext-value exclusion tests.
-4. Implement Cron and secret-name-only inspection with explicit empty/unavailable semantics.
-5. Implement versions and exact-version inspection for rollback readiness without automatic rollback-target selection.
-6. Implement Worker and account workers.dev state inspection and public-hostname correlation.
+1. Define credential-provider, fixed target-correlation, bounded failure, GET-only transport, and pre-parse 1 MiB bounded-reader contracts with offline transport tests.
+2. Implement deployments inspection, strict all-errors Worker presence/absence classification, and current deployment/version parsing with structured-code tests.
+3. Implement Worker settings parsing for binding names/types, `SUPABASE_SECRET_KEY` secret-type presence, and the four allowlisted plaintext identity values, with wrong-type and value-exclusion tests.
+4. Implement Cron inspection with explicit empty/unavailable semantics.
+5. Implement fixed `deployable=true` versions and exact-version inspection for rollback readiness without generic pagination or automatic rollback-target selection.
+6. Implement target-bound Worker and account workers.dev state inspection and public-hostname correlation.
 7. Compose all operations behind `inspectReadOnly`, preserve phase completeness, and remove Wrangler CLI output from authoritative observations.
-8. Integrate structured observations and correlation into planning and Task 6 fresh apply-time reinspection.
-9. Integrate post-deployment verification and rollback-readiness checks.
-10. Run the complete local T15-A regression, security, governance, and readiness-evidence gate.
+8. Replace constant `generatedConfigValid` and `webBuildReady` planner inputs with the existing deterministic local generated-config and Beta web-build checks, without provider calls.
+9. Integrate structured observations and correlation into planning and Task 6 fresh apply-time reinspection.
+10. Integrate post-deployment verification and rollback-readiness checks.
+11. Run the complete local T15-A regression, security, governance, and readiness-evidence gate.
 
 Each implementation task remains local/offline until a separate host-inspection authorization. No task in that implementation plan may perform a live provider request, provider mutation, Supabase operation, hosted verification, clean-room operation, or Pilot Activation.
