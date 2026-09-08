@@ -13,6 +13,7 @@ import {
 
 export interface GeneratedCloudflareDeployment {
   wrangler: {
+    account_id: string;
     name: string;
     main: string;
     compatibility_date: "2026-09-04";
@@ -71,6 +72,7 @@ export function buildCloudflareDeployment(input: {
   const workersDev = publicUrl.hostname.endsWith(".workers.dev");
   const deployment: GeneratedCloudflareDeployment = {
     wrangler: {
+      account_id: cloudflare.accountId,
       name: cloudflare.workerName,
       main: "src/index.ts",
       compatibility_date: "2026-09-04",

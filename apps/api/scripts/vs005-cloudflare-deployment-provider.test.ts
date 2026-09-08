@@ -8,6 +8,7 @@ import {
   type CadenceRuntimeConfig,
 } from "../src/bootstrap/cadence-config";
 import {
+  buildCloudflareWorkerStatusInspectionRequest,
   createCloudflareDeploymentProvider,
   inspectCloudflareAccountMembership,
   type CloudflareReadOnlyProviderFacts,
@@ -226,6 +227,104 @@ test("account inspection remains portable to a non-Beta canonical account", asyn
   });
 
   assert.deepEqual(result.observation, observed("future-owner-account"));
+});
+
+test("Worker status inspection request binds the canonical account, Worker, and generated config", () => {
+  const request = buildCloudflareWorkerStatusInspectionRequest({
+    accountId: "account-expected",
+    workerName: "worker-expected",
+    generatedWranglerPath: "path with spaces/wrangler.generated.jsonc",
+    generatedConfig: {
+      account_id: "account-expected",
+      name: "worker-expected",
+    },
+  });
+
+  assert.deepEqual(request, {
+    target: {
+      accountId: "account-expected",
+      workerName: "worker-expected",
+      generatedWranglerPath: "path with spaces/wrangler.generated.jsonc",
+    },
+    argv: [
+      "wrangler",
+      "deployments",
+      "status",
+      "--config",
+      "path with spaces/wrangler.generated.jsonc",
+      "--name",
+      "worker-expected",
+      "--json",
+    ],
+  });
+  assert.equal("workerExists" in request, false);
+});
+
+test("Worker status inspection request rejects missing or mismatched target bindings", () => {
+  const canonical = {
+    accountId: "account-expected",
+    workerName: "worker-expected",
+    generatedWranglerPath: "wrangler.generated.jsonc",
+    generatedConfig: {
+      account_id: "account-expected",
+      name: "worker-expected",
+    },
+  };
+
+  const invalidInputs = [
+    { ...canonical, accountId: "" },
+    { ...canonical, workerName: "" },
+    { ...canonical, generatedWranglerPath: "" },
+    {
+      ...canonical,
+      generatedConfig: { ...canonical.generatedConfig, account_id: "other-account" },
+    },
+    {
+      ...canonical,
+      generatedConfig: { ...canonical.generatedConfig, name: "other-worker" },
+    },
+  ];
+
+  for (const input of invalidInputs) {
+    assert.throws(
+      () => buildCloudflareWorkerStatusInspectionRequest(input),
+      /CLOUDFLARE_INSPECTION_TARGET_UNAVAILABLE/,
+    );
+  }
+});
+
+test("Worker status inspection request is portable and allowlists safe target data", () => {
+  const request = buildCloudflareWorkerStatusInspectionRequest({
+    accountId: "future-owner-account",
+    workerName: "future-worker",
+    generatedWranglerPath: "future/wrangler.generated.jsonc",
+    generatedConfig: {
+      account_id: "future-owner-account",
+      name: "future-worker",
+      CLOUDFLARE_API_TOKEN: "token-must-not-escape",
+      SUPABASE_SECRET_KEY: "secret-must-not-escape",
+    } as { account_id: string; name: string },
+  });
+  const serialized = JSON.stringify(request);
+
+  assert.deepEqual(request.argv, [
+    "wrangler",
+    "deployments",
+    "status",
+    "--config",
+    "future/wrangler.generated.jsonc",
+    "--name",
+    "future-worker",
+    "--json",
+  ]);
+  assert.doesNotMatch(serialized, /token-must-not-escape|secret-must-not-escape/);
+  assert.equal(request.argv.includes("deploy"), false);
+  assert.equal(request.argv.includes("delete"), false);
+  assert.equal(request.argv.includes("rollback"), false);
+  assert.equal(request.argv.includes("put"), false);
+  assert.equal(request.argv.includes("--account"), false);
+  assert.equal(request.argv.includes("--env"), false);
+  assert.equal(request.argv.includes("--profile"), false);
 });
 
 test("bootstrap secret uses a protected temporary file and never enters argv", async () => {

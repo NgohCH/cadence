@@ -13,6 +13,7 @@ import {
   type Vs005Observation,
   type Vs005ProviderObservationSnapshot,
 } from "./vs005-provider-observations";
+import type { GeneratedCloudflareDeployment } from "./vs005-generate-deployment";
 import type { Vs005RollbackProvider } from "./vs005-rollback";
 
 export interface CloudflareReadOnlyProviderFacts extends Vs005ProviderObservationSnapshot {}
@@ -189,6 +190,62 @@ function legacyInspectionProjection(
 function boundedIdentifier(value: string | undefined): string | undefined {
   if (!value || !/^[A-Za-z0-9._-]{1,128}$/.test(value)) return undefined;
   return value;
+}
+
+export interface CloudflareWorkerInspectionTarget {
+  accountId: string;
+  workerName: string;
+  generatedWranglerPath: string;
+}
+
+export interface CloudflareWorkerReadOnlyRequest {
+  target: CloudflareWorkerInspectionTarget;
+  argv: readonly string[];
+}
+
+function boundedConfigPath(value: string | undefined): string | undefined {
+  if (!value || value.length > 4096 || /[\0\r\n]/.test(value)) return undefined;
+  return value;
+}
+
+export function buildCloudflareWorkerStatusInspectionRequest(input: {
+  accountId: string;
+  workerName: string;
+  generatedWranglerPath: string;
+  generatedConfig: Pick<
+    GeneratedCloudflareDeployment["wrangler"],
+    "account_id" | "name"
+  >;
+}): CloudflareWorkerReadOnlyRequest {
+  const accountId = boundedIdentifier(input.accountId);
+  const workerName = boundedIdentifier(input.workerName);
+  const generatedWranglerPath = boundedConfigPath(input.generatedWranglerPath);
+  const configuredAccountId = boundedIdentifier(input.generatedConfig.account_id);
+  const configuredWorkerName = boundedIdentifier(input.generatedConfig.name);
+
+  if (
+    !accountId
+    || !workerName
+    || !generatedWranglerPath
+    || configuredAccountId !== accountId
+    || configuredWorkerName !== workerName
+  ) {
+    throw new Error("CLOUDFLARE_INSPECTION_TARGET_UNAVAILABLE");
+  }
+
+  return {
+    target: { accountId, workerName, generatedWranglerPath },
+    argv: [
+      "wrangler",
+      "deployments",
+      "status",
+      "--config",
+      generatedWranglerPath,
+      "--name",
+      workerName,
+      "--json",
+    ],
+  };
 }
 
 function parseDeploymentIdentifiers(stdout: string): {

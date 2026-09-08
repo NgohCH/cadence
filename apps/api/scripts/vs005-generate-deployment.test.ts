@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import {
@@ -56,6 +58,13 @@ const release: CadenceReleaseIdentity = {
   buildId: "2026-09-04T00:00:00Z",
 };
 
+const betaConfig = validateCadenceRuntimeConfig(JSON.parse(
+  readFileSync(
+    resolve(process.cwd(), "../../config/cadence.runtime.beta.json"),
+    "utf8",
+  ),
+));
+
 test("generator uses the explicit Worker name", () => {
   const result = buildCloudflareDeployment({
     config: ciConfig,
@@ -65,6 +74,7 @@ test("generator uses the explicit Worker name", () => {
     result.wrangler.vars.CADENCE_RUNTIME_CONFIG_JSON,
   );
 
+  assert.equal(result.wrangler.account_id, ciConfig.cloudflare?.accountId);
   assert.equal(result.wrangler.name, ciConfig.cloudflare?.workerName);
   assert.equal(result.wrangler.main, "src/index.ts");
   assert.equal(result.wrangler.compatibility_date, "2026-09-04");
@@ -92,6 +102,48 @@ test("generator uses the explicit Worker name", () => {
   assert.doesNotMatch(
     JSON.stringify(result),
     /server-secret|SUPABASE_SECRET_KEY=/,
+  );
+});
+
+test("generator binds the governed Beta account and explicit Worker", () => {
+  const result = buildCloudflareDeployment({
+    config: betaConfig,
+    release,
+  });
+
+  assert.equal(result.wrangler.account_id, "3d6a31905ac44e9563a523f9c86cbb8d");
+  assert.equal(result.wrangler.name, "mycadence");
+  assert.notEqual(result.wrangler.name, betaConfig.application.environment);
+});
+
+test("generator remains portable to a non-Beta account and Worker", () => {
+  const portableConfig = validateCadenceRuntimeConfig({
+    ...ciConfig,
+    application: {
+      ...ciConfig.application,
+      environment: "qa",
+      publicUrl: "https://future-worker.example.test",
+    },
+    cloudflare: {
+      accountId: "future-owner-account",
+      workerName: "future-worker",
+    },
+    pilot: {
+      ...ciConfig.pilot,
+      safeTargetMarker: "future-safe-target",
+    },
+  });
+  const result = buildCloudflareDeployment({
+    config: portableConfig,
+    release,
+  });
+
+  assert.equal(result.wrangler.account_id, "future-owner-account");
+  assert.equal(result.wrangler.name, "future-worker");
+  assert.notEqual(result.wrangler.name, portableConfig.application.environment);
+  assert.doesNotMatch(
+    JSON.stringify(result.wrangler),
+    /CLOUDFLARE_API_TOKEN|OAuth|server-secret/,
   );
 });
 
