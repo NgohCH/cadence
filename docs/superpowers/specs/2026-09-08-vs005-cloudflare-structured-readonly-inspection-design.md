@@ -6,9 +6,9 @@
 
 **Branch:** `feature/vs-005-portable-deployment-runtime`
 
-**Starting checkpoint:** `7246ac2` (`fix(vs005): bind Cloudflare inspection target explicitly`)
+**Initial design checkpoint:** `d9cd51d` (`docs(vs005): design structured Cloudflare inspection`)
 
-**Design amendment checkpoint:** `d9cd51d` (`docs(vs005): design structured Cloudflare inspection`)
+**First design amendment:** `8321b78` (`docs(vs005): refine structured Cloudflare inspection`)
 
 ## 1. Purpose and blocker
 
@@ -91,6 +91,8 @@ The provider boundary introduces a narrow `CloudflareCredentialProvider` contrac
 - HTTP method.
 
 The credential is consumed only while constructing the `Authorization: Bearer` header and is not returned in operation results, observations, errors, evidence, or logs. The abstraction prevents the transport from reading Wrangler's cached private authentication state.
+
+`CLOUDFLARE_INSPECTION_API_TOKEN` is available only to the structured read-only inspection path. It is not a general process credential. Every deployment or mutation child process, including Wrangler, must be launched with that variable explicitly omitted from its child environment even when the parent Node process inherited it. Child-environment construction must remove the inspection token before spawn rather than relying on incidental shell or host behavior. This firewall does not change Wrangler's separately governed deployment-authentication design.
 
 ## 6. M1 credential source
 
@@ -291,6 +293,8 @@ Manual command output, a prior host-inspection artifact, or a plan-time snapshot
 
 The REST inspection credential and adapter do not perform the later mutation. Wrangler remains behind the separately reviewed mutation boundary and may execute only the reviewed mutation envelope after every Task 6 gate passes.
 
+Immediately before the Wrangler mutation subprocess is created, apply constructs the bounded child environment and explicitly removes `CLOUDFLARE_INSPECTION_API_TOKEN`. The mutation subprocess must not receive the inspection token through inherited parent state. Failure to prove this omission fails before spawn and keeps `mutationAttempted` false; Wrangler's independently supplied deployment authentication remains unchanged.
+
 ## 20. Post-deploy verification
 
 Post-deployment verification calls the same structured read-only boundary again. It requires Worker presence, the expected deployment/version, config/release correlation, required Cron state, required secret-name presence, workers.dev/public-hostname consistency, and all other facts required by the verification profile.
@@ -322,6 +326,7 @@ Fixture coverage must include:
 - Task 3 first-deployment and rollback completeness profiles;
 - Task 5 plan capture, Task 6 fresh reinspection, and Task 7 verification binding;
 - local `generatedConfigValid` checks against existing generator output and local `webBuildReady` checks against a successful Beta build and referenced assets, with proof that neither calls the provider;
+- an inherited parent `CLOUDFLARE_INSPECTION_API_TOKEN` with an injected mutation-process spawn, proving the child environment omits that variable while leaving the separately supplied Wrangler deployment-authentication mechanism unchanged;
 - proof that every constructed operation is `GET` and every mutation verb/route is inexpressible.
 
 ## 23. Secret-leakage tests
@@ -332,6 +337,7 @@ Separate tests prove that:
 
 - only the name `SUPABASE_SECRET_KEY` and its type-derived presence state can survive Worker settings secret inspection;
 - the inspection bearer credential never appears in argv, URLs, query strings, snapshots, errors, or logs;
+- an injected/spawned Wrangler mutation child never receives `CLOUDFLARE_INSPECTION_API_TOKEN`, including when its parent environment contains the variable;
 - only `CADENCE_CONFIG_FINGERPRINT`, `CADENCE_RELEASE_VERSION`, `CADENCE_COMMIT_SHA`, and `CADENCE_BUILD_ID` plaintext values can survive after name/type/value validation;
 - `CADENCE_RUNTIME_CONFIG_JSON` and every other plaintext Worker variable value are discarded;
 - raw response bodies are inaccessible after the parser boundary;
@@ -400,6 +406,7 @@ The design is satisfied when local tests and review prove all of the following:
 - deployable versions use the fixed `versions?deployable=true` operation and no generic M1 pagination machinery;
 - plan/apply/verify/rollback consumers reuse the existing authority and fingerprint chain;
 - Task 6 always performs fresh structured reinspection before mutation;
+- every deployment or mutation child process, including Wrangler, is spawned with `CLOUDFLARE_INSPECTION_API_TOKEN` explicitly omitted from its environment without changing Wrangler's separate deployment authentication;
 - the default planner computes `generatedConfigValid` and `webBuildReady` from real deterministic local checks rather than constants or provider observations;
 - offline adversarial tests prove credential, secret, plaintext-variable, and raw-output non-leakage;
 - generic non-Beta portability remains intact;
@@ -419,7 +426,7 @@ The subsequent implementation plan should use independently reviewable commits i
 6. Implement target-bound Worker and account workers.dev state inspection and public-hostname correlation.
 7. Compose all operations behind `inspectReadOnly`, preserve phase completeness, and remove Wrangler CLI output from authoritative observations.
 8. Replace constant `generatedConfigValid` and `webBuildReady` planner inputs with the existing deterministic local generated-config and Beta web-build checks, without provider calls.
-9. Integrate structured observations and correlation into planning and Task 6 fresh apply-time reinspection.
+9. Integrate structured observations and correlation into planning and Task 6 fresh apply-time reinspection; at the mutation-spawn boundary, explicitly remove `CLOUDFLARE_INSPECTION_API_TOKEN` from every Wrangler/deployment child environment and prove the omission with an offline injected-spawn test.
 10. Integrate post-deployment verification and rollback-readiness checks.
 11. Run the complete local T15-A regression, security, governance, and readiness-evidence gate.
 
