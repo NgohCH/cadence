@@ -12,6 +12,11 @@ export interface CloudflareWorkerSettingsFacts {
   currentRelease: Vs005Observation<CadenceReleaseIdentity>;
 }
 
+export interface CloudflareIdentityBindingFacts {
+  workerConfigFingerprint: Vs005Observation<string>;
+  currentRelease: Vs005Observation<CadenceReleaseIdentity>;
+}
+
 const REQUIRED_SECRET_NAME = "SUPABASE_SECRET_KEY";
 const IDENTITY_BINDINGS = new Set([
   "CADENCE_CONFIG_FINGERPRINT",
@@ -35,8 +40,6 @@ export async function inspectWorkerSettings(
   }
 
   const nonSecretNames: string[] = [];
-  const identityValues = new Map<string, string>();
-  const invalidIdentityNames = new Set<string>();
   let requiredSecretCount = 0;
   let requiredSecretHasCorrectType = true;
 
@@ -49,31 +52,44 @@ export async function inspectWorkerSettings(
       requiredSecretCount += 1;
       requiredSecretHasCorrectType = requiredSecretHasCorrectType && binding.type === "secret_text";
     }
-    if (IDENTITY_BINDINGS.has(binding.name)) {
-      if (invalidIdentityNames.has(binding.name)
-        || binding.type !== "plain_text"
-        || typeof binding.value !== "string"
-        || identityValues.has(binding.name)) {
-        invalidIdentityNames.add(binding.name);
-        identityValues.delete(binding.name);
-        continue;
-      }
-      identityValues.set(binding.name, binding.value);
-    }
   }
 
-  const workerConfigFingerprint = parseFingerprint(identityValues.get("CADENCE_CONFIG_FINGERPRINT"));
-  const release = parseRelease(identityValues);
+  const identityFacts = reduceCloudflareIdentityBindings(bindings);
   return {
-    workerConfigFingerprint: workerConfigFingerprint
-      ? { state: "OBSERVED_VALUE", value: workerConfigFingerprint }
-      : unavailable("WORKER_CONFIG_FINGERPRINT_UNAVAILABLE"),
+    workerConfigFingerprint: identityFacts.workerConfigFingerprint,
     nonSecretBindingNames: { state: "OBSERVED_VALUE", value: nonSecretNames },
     secretNames: requiredSecretCount === 0
       ? { state: "OBSERVED_ABSENT" }
       : requiredSecretCount === 1 && requiredSecretHasCorrectType
         ? { state: "OBSERVED_VALUE", value: [REQUIRED_SECRET_NAME] }
         : unavailable("REQUIRED_SECRET_BINDING_UNAVAILABLE"),
+    currentRelease: identityFacts.currentRelease,
+  };
+}
+
+export function reduceCloudflareIdentityBindings(
+  bindings: readonly unknown[],
+): CloudflareIdentityBindingFacts {
+  const identityValues = new Map<string, string>();
+  const invalidIdentityNames = new Set<string>();
+  for (const binding of bindings) {
+    if (!isRecord(binding) || !boundedName(binding.name) || !IDENTITY_BINDINGS.has(binding.name)) continue;
+    if (invalidIdentityNames.has(binding.name)
+      || binding.type !== "plain_text"
+      || typeof binding.value !== "string"
+      || identityValues.has(binding.name)) {
+      invalidIdentityNames.add(binding.name);
+      identityValues.delete(binding.name);
+      continue;
+    }
+    identityValues.set(binding.name, binding.value);
+  }
+  const workerConfigFingerprint = parseFingerprint(identityValues.get("CADENCE_CONFIG_FINGERPRINT"));
+  const release = parseRelease(identityValues);
+  return {
+    workerConfigFingerprint: workerConfigFingerprint
+      ? { state: "OBSERVED_VALUE", value: workerConfigFingerprint }
+      : unavailable("WORKER_CONFIG_FINGERPRINT_UNAVAILABLE"),
     currentRelease: release
       ? { state: "OBSERVED_VALUE", value: release }
       : unavailable("CURRENT_RELEASE_UNAVAILABLE"),
