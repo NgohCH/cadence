@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { spawn } from "node:child_process";
 
 import {
   fingerprintCadenceRuntimeConfig,
@@ -32,6 +33,10 @@ import {
   createCloudflareDeploymentProvider,
   createDefaultCloudflareProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
+import {
+  inspectVs005LocalDeploymentReadiness,
+  type Vs005LocalDeploymentReadiness,
+} from "./vs005-local-deployment-readiness";
 
 export interface Vs005PlanInspection {
   observations: Vs005ProviderObservationSnapshot;
@@ -298,6 +303,37 @@ function observationsFromProviderInspection(
   return inspection.observations;
 }
 
+export async function inspectVs005PlanInputs(input: {
+  config: CadenceRuntimeConfig;
+  inspectProvider(): Promise<Vs005DeploymentProviderInspection>;
+  inspectLocalReadiness(): Promise<Vs005LocalDeploymentReadiness>;
+}): Promise<Vs005PlanInspection> {
+  const localReadiness = await input.inspectLocalReadiness();
+  let providerInspection: Vs005DeploymentProviderInspection;
+  try {
+    providerInspection = await input.inspectProvider();
+  } catch {
+    return {
+      observations: legacyUnavailableInspection(),
+      hostnameReady: false,
+      ...localReadiness,
+    };
+  }
+  if (!providerInspection.observations) {
+    return {
+      observations: legacyUnavailableInspection(),
+      hostnameReady: false,
+      ...localReadiness,
+    };
+  }
+  return {
+    observations: observationsFromProviderInspection(providerInspection),
+    hostnameReady: providerInspection.observations.hostname.state === "OBSERVED_VALUE"
+      && providerInspection.observations.hostname.value === new URL(input.config.application.publicUrl).hostname,
+    ...localReadiness,
+  };
+}
+
 export async function runVs005DeployPlan(
   input: { configPath: string; outputPath: string },
   dependencies: Vs005DeployPlanDependencies,
@@ -412,45 +448,53 @@ function loadReleaseFromEnvironment(): CadenceReleaseIdentity {
   });
 }
 
+function runLocalCommand(argv: readonly string[]): Promise<void> {
+  return new Promise((resolveCommand, reject) => {
+    const [command, ...args] = argv;
+    if (!command) {
+      reject(new Error("LOCAL_COMMAND_INVALID"));
+      return;
+    }
+    const child = spawn(command, args, { shell: false, windowsHide: true });
+    child.on("close", (exitCode) => {
+      if (exitCode === 0) resolveCommand();
+      else reject(new Error("LOCAL_COMMAND_FAILED"));
+    });
+    child.on("error", () => reject(new Error("LOCAL_COMMAND_FAILED")));
+  });
+}
+
 async function runCli(args: readonly string[]): Promise<void> {
   let configPath = "<unspecified>";
   let outputPath = ".cadence/vs005/deployment-plan.json";
 
   try {
     ({ configPath, outputPath } = parseArguments(args));
+    const release = loadReleaseFromEnvironment();
     const provider = createCloudflareDeploymentProvider(createDefaultCloudflareProviderIo());
+    const publicConfigPath = resolve(process.cwd(), "../web/.generated/cadence-public-config.json");
+    const webDistPath = resolve(process.cwd(), "../web/dist");
     const dependencies: Vs005DeployPlanDependencies = {
       targetPolicy: VS005_BETA_TARGET_POLICY,
       loadConfig: (path) => loadCadenceRuntimeConfig(path),
-      loadRelease: loadReleaseFromEnvironment,
-      inspect: async (config) => {
-        let providerInspection: Vs005DeploymentProviderInspection;
-        try {
-          providerInspection = await provider.inspect(config);
-        } catch {
-          return {
-            observations: legacyUnavailableInspection(),
-            hostnameReady: false,
-            generatedConfigValid: false,
-            webBuildReady: false,
-          };
-        }
-        if (!providerInspection.observations) {
-          return {
-            observations: legacyUnavailableInspection(),
-            hostnameReady: false,
-            generatedConfigValid: false,
-            webBuildReady: false,
-          };
-        }
-        return {
-          observations: observationsFromProviderInspection(providerInspection),
-          hostnameReady: providerInspection.observations.hostname.state === "OBSERVED_VALUE"
-            && providerInspection.observations.hostname.value === new URL(config.application.publicUrl).hostname,
-          generatedConfigValid: false,
-          webBuildReady: false,
-        };
-      },
+      loadRelease: () => release,
+      inspect: async (config) => inspectVs005PlanInputs({
+        config,
+        inspectProvider: () => provider.inspect(config),
+        inspectLocalReadiness: () => inspectVs005LocalDeploymentReadiness({
+          config,
+          configPath,
+          release,
+          publicConfigPath,
+          webDistPath,
+          io: {
+            platform: process.platform,
+            runCommand: runLocalCommand,
+            readText: (path) => readFileSync(path, "utf8"),
+            fileExists: existsSync,
+          },
+        }),
+      }),
       generatePlanId: () => `plan-${new Date().toISOString()}`,
       writePlan: async (path, plan) => writeJson(path, plan),
     };

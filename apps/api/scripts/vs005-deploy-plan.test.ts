@@ -9,10 +9,12 @@ import {
 import { VS005_BETA_TARGET_POLICY } from "../src/bootstrap/cadence-target-policy";
 import type { CadenceReleaseIdentity } from "../src/bootstrap/cadence-release";
 import {
+  inspectVs005PlanInputs,
   runVs005DeployPlan,
   type Vs005DeployPlanDependencies,
   type Vs005PlanInspection,
 } from "./vs005-deploy-plan";
+import type { Vs005LocalDeploymentReadiness } from "./vs005-local-deployment-readiness";
 import {
   type Vs005ProviderObservationSnapshot,
   validateVs005ObservationCompleteness,
@@ -110,6 +112,32 @@ function makeDependencies(
     ...overrides,
   };
 }
+
+test("planner inputs derive local readiness independently from provider facts", async () => {
+  const config = betaConfig();
+  let localCalls = 0;
+  const result = await inspectVs005PlanInputs({
+    config,
+    inspectProvider: async () => ({
+      accountId: config.cloudflare!.accountId,
+      workerName: config.cloudflare!.workerName,
+      workerExists: true,
+      configuredSecrets: [config.supabase.secretKeySecretRef],
+      configFingerprint: fingerprintCadenceRuntimeConfig(config),
+      observations: observations(config),
+      generatedConfigValid: false,
+      webBuildReady: false,
+    } as never),
+    inspectLocalReadiness: async (): Promise<Vs005LocalDeploymentReadiness> => {
+      localCalls += 1;
+      return { generatedConfigValid: true, webBuildReady: true };
+    },
+  });
+
+  assert.equal(localCalls, 1);
+  assert.equal(result.generatedConfigValid, true);
+  assert.equal(result.webBuildReady, true);
+});
 
 test("exact Beta tuple produces a PASS plan", async () => {
   const config = betaConfig();
