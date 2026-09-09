@@ -129,6 +129,10 @@ export interface Vs005CorrelatedDeploymentResult extends Vs005DeploymentResult {
   observedProvider: Vs005StructuredProviderObservationSnapshot;
 }
 
+export function isVs005CorrelatedDeploymentResult(
+  value: unknown,
+): value is Vs005CorrelatedDeploymentResult;
+
 export interface Vs005DeploymentMutationInput {
   config: CadenceRuntimeConfig;
   generatedWranglerPath: string;
@@ -173,6 +177,12 @@ export function withoutCloudflareInspectionCredential(
 `Vs005DeploymentResult` remains byte-for-byte unchanged in Task 1. The new
 correlated result is the only success type returned by `applyVs005Deployment`.
 It is not a union with the base result and it has no optional correlation.
+`isVs005CorrelatedDeploymentResult` must first require the existing valid/base
+`Vs005DeploymentResult` shape, then require and validate both
+`providerCorrelation` and structured `observedProvider` using the same bounded
+structural contracts used by Task 1 plan/result authority. It must not change
+`Vs005DeploymentResult`, convert or project a legacy result, or accept optional
+correlation. Successful apply must return a value for which this guard is true.
 
 - [ ] **Step 1: Inspect the exact current Task 9 interfaces and freeze the file boundary**
 
@@ -196,8 +206,25 @@ It is not a union with the base result and it has no optional correlation.
 
 - [ ] **Step 2: Write the specific failing Task 9 tests**
 
-  In `vs005-deployment-artifacts.test.ts`, add executable guard cases that use
-  a complete literal format-v2 plan and assert:
+  In `vs005-deployment-artifacts.test.ts`, add executable guard cases for a
+  complete literal correlated result and assert:
+
+  ```ts
+  assert.equal(isVs005CorrelatedDeploymentResult(validCorrelatedResult), true);
+  assert.equal(isVs005CorrelatedDeploymentResult(baseResultWithoutCorrelation), false);
+  assert.equal(isVs005CorrelatedDeploymentResult({ ...validCorrelatedResult, providerCorrelation: undefined }), false);
+  assert.equal(isVs005CorrelatedDeploymentResult({ ...validCorrelatedResult, observedProvider: undefined }), false);
+  assert.equal(isVs005CorrelatedDeploymentResult({ ...validCorrelatedResult, providerCorrelation: malformedCorrelation }), false);
+  assert.equal(isVs005CorrelatedDeploymentResult({ ...validCorrelatedResult, observedProvider: malformedStructuredObservation }), false);
+  ```
+
+  The base result fixture must be valid under the existing
+  `Vs005DeploymentResult` contract and must have no correlation fields. The
+  malformed fixtures must each violate one bounded structural contract rather
+  than merely omit an unrelated field. The successful apply test must call the
+  guard on its returned value and assert true.
+
+  Add the format-v2 plan guard cases using a complete literal plan and assert:
 
   ```ts
   assert.equal(isVs005DeploymentPlanV2(completeCorrelatedPlan), true);
@@ -753,6 +780,9 @@ explicit structured method.
 
   Do not add an overload, optional correlation, automatic version selection,
   database action, hosted operation, or Pilot authorization.
+  Reuse `isVs005CorrelatedDeploymentResult` when consuming persisted deployment
+  result evidence; do not invent a second correlated-result parser or cast a
+  legacy result into the correlated type.
 
 - [ ] **Step 5: Run focused Task 10 GREEN**
 
@@ -772,12 +802,23 @@ explicit structured method.
 
   ```powershell
   node --import tsx --test scripts/vs005-cloudflare-structured-inspection.test.ts scripts/vs005-cloudflare-version-inspection.test.ts scripts/vs005-provider-observations.test.ts scripts/vs005-deployment-artifacts.test.ts scripts/vs005-deploy-plan.test.ts src/runtime/create-cadence-app.test.ts
-  rg -n "\.inspect\(config\)|inspectTarget\(" scripts/vs005-deploy-plan.ts scripts/vs005-deploy-apply.ts scripts/vs005-deploy-verify.ts scripts/vs005-rollback.ts
+  rg -n "\.inspect\(|inspectTarget\(" `
+    scripts/vs005-deploy-plan.ts `
+    scripts/vs005-deploy-apply.ts `
+    scripts/vs005-deploy-verify.ts `
+    scripts/vs005-rollback.ts
   ```
 
-  The test command must pass. The authority audit must return no legacy
-  inspection call from plan, apply, verify, or rollback. Inspect any textual
-  match rather than relying on its presence or absence alone.
+  The test command must pass. The argument-independent authority audit must
+  return no legacy inspection call in any of the four deployment-workflow
+  files. `inspectStructured(...)` does not match this legacy-call pattern;
+  inspect every textual match rather than relying on its presence or absence
+  alone. The provider diff and tests must also confirm that legacy
+  `inspect`/`inspectTarget` is not exposed as deployment-workflow authority
+  after Task 10. If a legacy utility remains, it must use a separately named,
+  explicitly non-authoritative interface outside the workflow facade; removal
+  is not required when a legitimate isolated test/non-governed utility needs
+  it.
 
 - [ ] **Step 7: Run Task 10 script typecheck**
 
