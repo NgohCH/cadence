@@ -265,13 +265,17 @@ export async function inspectCurrentDeployment(
 ): Promise<CloudflareCurrentDeploymentFacts>;
 ```
 
-The success parser accepts only `success: true` with a bounded `result.deployments` array. Index zero is the latest deployment, and only `id` plus bounded `versions[].version_id` and finite percentages from 0 through 100 survive. A successful empty array yields Worker present plus current deployment absent. The failure parser yields Worker absent only for an exact current-deployment route whose `success:false` envelope has a non-empty errors array where every entry is a record with numeric code `10007` or `10090`.
+The success parser accepts only `success: true` with the bounded deployment collection as the `result` array itself. Index zero is the latest/current serving deployment according to the locally reviewed Wrangler/provider behavior, and only `id` plus bounded `versions[].version_id` and finite percentages from 0 through 100 survive. A successful empty `result` array yields Worker present plus current deployment absent. The failure parser yields Worker absent only for an exact current-deployment route whose `success:false` envelope has a non-empty errors array where every entry is a record with numeric code `10007` or `10090`.
 
-- [ ] **Step 1: Write the focused failing deployment-parser tests**
+- [ ] **Step 1: Reconfirm the installed/provider capability shape locally**
 
-  Cover Worker present; latest deployment index zero; bounded deployment ID; bounded version IDs and traffic; unrelated later deployments ignored; successful empty deployment list; `10007` only; `10090` only; both approved codes; mixed approved and unknown code; empty errors; malformed error entry; same approved code on an uncorrelated operation; generic 404; generic nonzero/provider failure; malformed result; duplicate version ID; invalid percentage; oversized collection; and canaries in author email, annotations, messages, arbitrary metadata, headers, and exception text. Assert no canary survives and no rollback target is selected.
+  Inspect the installed Wrangler 4.127.1 deployment-status source/types and bundled provider fixtures without executing a network-backed command. Require the successful Cloudflare envelope to be `success: true` with `result` as the deployment array and index zero as the latest/current serving deployment. If local installed/provider evidence contradicts that shape or ordering, stop with `PLAN_REVIEW_BLOCKED` before writing RED tests or production code; do not invent a compatibility schema.
 
-- [ ] **Step 2: Run RED and record the absent parser**
+- [ ] **Step 2: Write the focused failing deployment-parser tests**
+
+  Use fixtures shaped as `{ success: true, result: [deployment0, deployment1] }`. Cover Worker present; latest deployment at `result[0]`; bounded deployment ID; bounded version IDs and traffic; unrelated later deployments ignored; successful empty `result: []`; rejection of an obsolete nested object wrapper around the deployment array; `10007` only; `10090` only; both approved codes; mixed approved and unknown code; empty errors; malformed error entry; same approved code on an uncorrelated operation; generic 404; generic nonzero/provider failure; malformed result; duplicate version ID; invalid percentage; oversized collection; and canaries in author email, annotations, messages, arbitrary metadata, headers, and exception text. Assert no canary survives and no rollback target is selected.
+
+- [ ] **Step 3: Run RED and record the absent parser**
 
   ```powershell
   cd apps/api
@@ -280,7 +284,7 @@ The success parser accepts only `success: true` with a bounded `result.deploymen
 
   Expected RED: `inspectCurrentDeployment` and `CloudflareCurrentDeploymentFacts` are missing; the strict all-errors and latest-deployment behaviors cannot be exercised.
 
-- [ ] **Step 3: Implement the minimum current-deployment operation**
+- [ ] **Step 4: Implement the minimum current-deployment operation**
 
   ```ts
   const WORKER_NOT_FOUND_CODES = new Set([10007, 10090]);
@@ -292,9 +296,9 @@ The success parser accepts only `success: true` with a bounded `result.deploymen
   );
   ```
 
-  Build only the fixed `/accounts/{accountId}/workers/scripts/{workerName}/deployments` route. Correlate the route descriptor to the exact target. Do not use HTTP 404, response prose, error messages, empty output, or empty deployments as Worker absence. Return bounded IDs and traffic only.
+  Build only the fixed `/accounts/{accountId}/workers/scripts/{workerName}/deployments` route. Correlate the route descriptor to the exact target. For success, require `Array.isArray(result)`, read only `result[0]` as current, and reject any nested object wrapper around the array. Do not use HTTP 404, response prose, error messages, empty output, or an empty successful deployment array as Worker absence. Return bounded IDs and traffic only.
 
-- [ ] **Step 4: Run focused GREEN**
+- [ ] **Step 5: Run focused GREEN**
 
   ```powershell
   node --import tsx --test scripts/vs005-cloudflare-current-deployment.test.ts scripts/vs005-cloudflare-readonly-transport.test.ts
@@ -302,14 +306,14 @@ The success parser accepts only `success: true` with a bounded `result.deploymen
 
   Expected GREEN: only strict correlated all-approved codes produce `OBSERVED_ABSENT`; all mixed, malformed, uncorrelated, auth, permission, transport, and generic-status cases produce `UNAVAILABLE`.
 
-- [ ] **Step 5: Run Task 2 regressions**
+- [ ] **Step 6: Run Task 2 regressions**
 
   ```powershell
   node --import tsx --test scripts/vs005-provider-observations.test.ts scripts/vs005-cloudflare-deployment-provider.test.ts
   npm.cmd exec -- tsc --noEmit -p tsconfig.scripts.json
   ```
 
-- [ ] **Step 6: Inspect Task 2 safety and diff**
+- [ ] **Step 7: Inspect Task 2 safety and diff**
 
   ```powershell
   cd ..\..\
@@ -319,7 +323,7 @@ The success parser accepts only `success: true` with a bounded `result.deploymen
 
   Confirm no raw-text matching, no generic 404 absence, no auto-selected rollback version, no raw metadata, and no new route or verb.
 
-- [ ] **Step 7: Commit Task 2**
+- [ ] **Step 8: Commit Task 2**
 
   ```powershell
   git add apps/api/scripts/vs005-cloudflare-current-deployment.ts apps/api/scripts/vs005-cloudflare-current-deployment.test.ts
@@ -524,7 +528,7 @@ export async function inspectVersion(
 
 - [ ] **Step 1: Write the focused failing version tests**
 
-  Assert the exact URL ends in `/versions?deployable=true`; no page, cursor, or per-page parameter is accepted; a complete bounded `result.items` list yields IDs; empty list yields absent only for the explicitly sought retained version; required retained version present and absent are distinguished; duplicate/invalid/oversized IDs and incomplete collection markers yield unavailable. For exact version detail, require the requested ID and the same four validated identity bindings used by settings; mismatch, missing detail, malformed metadata, or unapproved error yields unavailable. Include author/annotation/arbitrary-binding/secret canaries and prove none survive. Assert the API never selects a prior version from ordering and requires a caller-provided `versionId` for detail.
+  Assert the exact URL ends in `/versions?deployable=true`; no page, cursor, or per-page parameter is accepted; a complete bounded `result.items` list yields `OBSERVED_VALUE([...ids])`; and a successful complete empty list yields `OBSERVED_VALUE([])`. Malformed, incomplete, oversized, failed, duplicate-ID, or invalid-ID responses yield `UNAVAILABLE`. The generic list parser has no expected-version input and never emits version-A absence. For exact version detail, require the requested ID and the same four validated identity bindings used by settings; mismatch, missing detail, malformed metadata, or unapproved error yields unavailable. Include author/annotation/arbitrary-binding/secret canaries and prove none survive. Assert the API never selects a prior version from ordering and requires a caller-provided `versionId` for detail.
 
 - [ ] **Step 2: Run RED and record the absent version operations**
 
@@ -537,7 +541,7 @@ export async function inspectVersion(
 
 - [ ] **Step 3: Implement the minimum version parsers**
 
-  Implement the fixed query route and a target-bound, encoded exact-version route. Reuse one private identity-binding reducer from `vs005-cloudflare-worker-settings.ts` rather than duplicating value acceptance rules; export that reducer only to the parser modules, not deployment business code. Return the complete bounded deployable ID set and one exact `CloudflareVersionIdentity`. Do not infer or rank rollback candidates.
+  Implement the fixed query route and a target-bound, encoded exact-version route. Reuse one private identity-binding reducer from `vs005-cloudflare-worker-settings.ts` rather than duplicating value acceptance rules; export that reducer only to the parser modules, not deployment business code. Return the complete bounded deployable ID set as `OBSERVED_VALUE`, including `OBSERVED_VALUE([])` for a successful complete empty set, and one exact `CloudflareVersionIdentity`. Do not accept an expected prior version in the generic list parser, infer or rank rollback candidates, or map an empty complete list to `OBSERVED_ABSENT`.
 
 - [ ] **Step 4: Run focused GREEN**
 
@@ -560,7 +564,7 @@ export async function inspectVersion(
   git diff -- apps/api/scripts/vs005-cloudflare-version-inspection.ts apps/api/scripts/vs005-cloudflare-version-inspection.test.ts apps/api/scripts/vs005-cloudflare-worker-settings.ts apps/api/scripts/vs005-cloudflare-worker-settings.test.ts
   ```
 
-  Confirm the only collection query is `deployable=true`, no pagination framework exists, no rollback target is selected, and no raw version metadata survives.
+  Confirm the only collection query is `deployable=true`, no pagination framework exists, complete empty is a value rather than absence, no rollback target is selected, and no raw version metadata survives.
 
 - [ ] **Step 7: Commit Task 5**
 
@@ -703,11 +707,11 @@ export async function inspectCloudflareReadOnly(
 ): Promise<Vs005CorrelatedProviderInspection>;
 ```
 
-The operation profile is phase-aware. First-deployment and verification profiles call current deployment, settings, Cron, Worker subdomain, and account subdomain when the Worker exists. A strict correlated Worker-not-found result yields account/Worker observations as values, Worker existence absent, and Worker-owned config/Cron/binding/secret/release/deployment facts absent without calling their endpoints; account subdomain remains independently inspected for workers.dev namespace readiness. Rollback additionally calls fixed deployable versions and exact detail for the caller-supplied prior version A. `completedOperations` is sorted in the module's fixed operation order.
+The operation profile is phase-aware. First-deployment and verification profiles call current deployment, settings, Cron, Worker subdomain, and account subdomain when the Worker exists. A strict correlated Worker-not-found result yields account/Worker observations as values, Worker existence absent, and Worker-owned config/Cron/binding/secret/release/deployment facts absent without calling their endpoints; account subdomain remains independently inspected for workers.dev namespace readiness. Rollback additionally calls the generic fixed deployable-version list and exact detail for the caller-supplied prior version A. The list operation returns the complete set, including an empty value; only this composition layer, which knows `expectedPriorVersion`, maps membership of that exact ID into the existing rollback-readiness prior-version observation. It never selects a version from list order. `completedOperations` is sorted in the module's fixed operation order.
 
 - [ ] **Step 1: Write the focused failing composition tests**
 
-  Cover complete first-deployment Worker-present snapshot; strict Worker-absent snapshot and no dependent calls; unavailable Worker state and no fabricated canonical observations; complete post-deploy profile; rollback profile with explicit prior version present/detail matched; missing prior version; operation failure propagation; exact operation-set recording; fixed origin/account/Worker/fingerprint/profile/timestamp correlation; operation-set variation for proven absent Worker; non-Beta policy target; no generic method; no mutation function; and a full canary fixture serialized through observations, bounded failures, and logger capture.
+  Cover complete first-deployment Worker-present snapshot; strict Worker-absent snapshot and no dependent calls; unavailable Worker state and no fabricated canonical observations; complete post-deploy profile; rollback profile where `OBSERVED_VALUE([...ids])` contains the explicit prior version and detail matches; successful `OBSERVED_VALUE([])` mapped to explicit expected-prior-version absence only in composition; non-empty list missing the expected ID mapped the same way; unavailable list/detail; operation failure propagation; exact operation-set recording; fixed origin/account/Worker/fingerprint/profile/timestamp correlation; operation-set variation for proven absent Worker; non-Beta policy target; no generic method; no mutation function; and a full canary fixture serialized through observations, bounded failures, and logger capture.
 
   Update provider tests so default authoritative `inspectReadOnly` is injected structured REST composition, does not call `inspectCloudflareAccountMembership`, does not execute `wrangler whoami`, preserves the existing deployment/rollback Wrangler methods, and sanitizes every structured field before exposing it.
 
@@ -784,7 +788,10 @@ export interface Vs005LocalDeploymentReadinessIo {
   runCommand(argv: readonly string[]): Promise<void>;
   readText(path: string): string;
   fileExists(path: string): boolean;
+  platform: NodeJS.Platform;
 }
+
+export function resolveNpmExecutable(platform: NodeJS.Platform): "npm" | "npm.cmd";
 
 export async function inspectVs005LocalDeploymentReadiness(input: {
   config: CadenceRuntimeConfig;
@@ -800,6 +807,8 @@ export async function inspectVs005LocalDeploymentReadiness(input: {
 
   Prove `generatedConfigValid` checks exact generated account, Worker, fingerprint, release values, assets, Cron, required secret name, workers.dev/routes, runtime-config canonical value, and compatibility fields; each tamper makes it false. Prove `webBuildReady` runs the existing config generation, TypeScript, and Vite Beta build argv; compares generated public JSON exactly with `buildCadencePublicWebConfig(config)`; rejects extra/server-only keys; requires `dist/index.html`; parses every generated `/assets/...` script/style reference; requires each referenced file; rejects traversal/non-local references; and fails on command/read/parse/missing-asset errors. Assert injected provider and hosted-HTTP call counts remain zero.
 
+  Add explicit command-resolution fixtures: `platform: "win32"` produces `npm.cmd`, `platform: "linux"` and `platform: "darwin"` produce `npm`, and all commands remain argv arrays passed to the existing shell-free spawn convention. Assert no shell-concatenated string is produced. Inspect the existing repository runner first; if it already exposes an equivalent narrow resolver, reuse it instead of adding `resolveNpmExecutable` or changing unrelated command infrastructure.
+
   Add a CLI dependency test showing `vs005-deploy-plan.ts` no longer supplies literal `generatedConfigValid: false` or `webBuildReady: false` and uses the helper result independently of provider observations.
 
 - [ ] **Step 2: Run RED and record the constant-readiness defect**
@@ -813,15 +822,15 @@ export async function inspectVs005LocalDeploymentReadiness(input: {
 
 - [ ] **Step 3: Implement the minimum local checks and planner wiring**
 
-  Build and compare the deployment object in memory, then execute only local argv-array commands:
+  Define command resolution in `vs005-local-deployment-readiness.ts` at the boundary that assembles argv, using injected `io.platform` (or the exact existing repository resolver proven during Step 1). Build and compare the deployment object in memory, resolve `const npm = resolveNpmExecutable(io.platform)`, then execute only local argv-array commands through the existing `spawn(command, args, { shell: false, ... })` convention:
 
   ```ts
   ["node", "--import", "tsx", "scripts/vs005-generate-web-config.ts", "--config", configPath, "--out", publicConfigPath]
-  ["npm.cmd", "--prefix", "../web", "exec", "--", "tsc", "-b"]
-  ["npm.cmd", "--prefix", "../web", "exec", "--", "vite", "build", "--mode", "beta"]
+  [npm, "--prefix", "../web", "exec", "--", "tsc", "-b"]
+  [npm, "--prefix", "../web", "exec", "--", "vite", "build", "--mode", "beta"]
   ```
 
-  Validate generated public config and the built HTML/assets after successful commands. Return two bounded booleans; do not throw raw command errors into plan evidence. In `runCli`, call local readiness separately from `provider.inspect`, then copy the two values into `Vs005PlanInspection`. Provider observations cannot alter them.
+  Implement `resolveNpmExecutable` as `platform === "win32" ? "npm.cmd" : "npm"` only if no existing helper provides that behavior. Keep production execution shell-free and inject platform in tests; PowerShell verification commands may continue to invoke `npm.cmd` explicitly. Validate generated public config and the built HTML/assets after successful commands. Return two bounded booleans; do not throw raw command errors into plan evidence. In `runCli`, call local readiness separately from `provider.inspect`, then copy the two values into `Vs005PlanInspection`. Provider observations cannot alter them.
 
 - [ ] **Step 4: Run focused GREEN**
 
@@ -908,7 +917,9 @@ Keep plan format version 2 because it is the current pre-host reviewed plan auth
 
   Planning tests: complete correlated first-deployment inspection produces PASS; target/fingerprint/profile mismatch blocks; completed-operation mismatch or missing required operation blocks; required unavailable blocks; absent Worker profile is accepted only with its exact completed-operation set and mutation envelope; local readiness stays independent; plan serialization rejects canaries and raw response fields.
 
-  Apply tests: plan without correlation fails before inspection; current config/policy/fingerprint/release are revalidated; fresh `provider.inspect` receives a newly built first-deployment structured request; account, Worker, fingerprint, profile, operation-set, observation, Cron, secret, current deployment, or release drift fails with deploy call count zero; missing credential/required operation fails with mutationAttempted false; reviewed exact state reaches deploy once. Add an injected parent environment containing `CLOUDFLARE_INSPECTION_API_TOKEN` and a separate Wrangler deployment credential, capture the environment passed to the fake Wrangler/deployment spawn, and assert the inspection variable is absent while unrelated deployment authentication is unchanged. Test both deploy and rollback mutation paths plus apply's local `wrangler deploy --dry-run` child.
+  Apply tests: plan without correlation fails before inspection; current config/policy/fingerprint/release are revalidated; local artifacts and dry-run complete before fresh `provider.inspect` receives a newly built first-deployment structured request; account, Worker, fingerprint, profile, operation-set, observation, Cron, secret, current deployment, or release drift fails with deploy call count zero; missing credential/required operation fails with mutationAttempted false; reviewed exact state reaches deploy once. Add an injected event recorder and assert the success order is exactly `artifactPrepare`, `dryRun`, `freshInspection`, `finalGate`, `deploy`. For every fresh-inspection failure or drift case, assert `deploy` is absent and no artifact generation, build, dry-run, filesystem preparation, other network operation, or provider-independent lengthy work occurs after `freshInspection`.
+
+  Add an injected parent environment containing `CLOUDFLARE_INSPECTION_API_TOKEN` and a separate Wrangler deployment credential, capture the environment passed to the fake Wrangler/deployment spawn, and assert the inspection variable is absent while unrelated deployment authentication is unchanged. Test both deploy and rollback mutation paths plus apply's local `wrangler deploy --dry-run` child.
 
 - [ ] **Step 2: Run RED and record missing correlation and child-env firewall**
 
@@ -921,7 +932,22 @@ Keep plan format version 2 because it is the current pre-host reviewed plan auth
 
 - [ ] **Step 3: Implement minimum plan/apply correlation and child-environment sanitization**
 
-  Store required correlation in v2 plans and compare it to intended target/fingerprint/profile before readiness PASS. At apply, reconstruct generated deployment identity from the revalidated current config/release, call structured inspection immediately before artifact preparation, require correlation equality and relevant observation equality with the reviewed plan, and retain existing database/destructive/mutation-envelope gates.
+  Store required correlation in v2 plans and compare it to intended target/fingerprint/profile before readiness PASS. At apply, enforce this exact order:
+
+  1. reload and revalidate current canonical config;
+  2. rerun target policy;
+  3. revalidate release and fingerprint;
+  4. prepare local artifacts;
+  5. run deterministic local artifact validation and Wrangler dry-run with `CLOUDFLARE_INSPECTION_API_TOKEN` removed from the child environment;
+  6. complete every other non-provider deterministic precondition;
+  7. obtain a fresh inspection credential;
+  8. perform fresh structured provider inspection;
+  9. compare account, Worker, fingerprint, profile, completed operation set, and relevant provider state with the reviewed plan;
+  10. enforce the exact mutation envelope plus existing database/destructive gates;
+  11. construct and reconfirm the sanitized mutation child environment; and
+  12. invoke Wrangler mutation immediately after those bounded in-memory gates.
+
+  After fresh inspection, permit only bounded in-memory comparison, envelope enforcement, and mutation-spawn preparation. Do not generate artifacts, build, dry-run, prepare files, perform another network operation, or perform provider-independent lengthy work. Record `finalGate` immediately before the one injected deployment call so the event-order test proves the inspection-to-mutation adjacency contract.
 
   For a proven absent Worker, calculate planner `hostnameReady` only from the correlated account-subdomain observation, canonical public hostname, canonical Worker, and generated `workers_dev` setting. Keep `observations.hostname` absent because no deployed Worker hostname was observed. For an existing Worker, require the observed Worker hostname value to match. This permits reviewed first creation without converting canonical values into provider evidence.
 
@@ -956,7 +982,7 @@ Keep plan format version 2 because it is the current pre-host reviewed plan auth
   git diff -- apps/api/scripts/vs005-deployment-artifacts.ts apps/api/scripts/vs005-deployment-artifacts.test.ts apps/api/scripts/vs005-deploy-plan.ts apps/api/scripts/vs005-deploy-plan.test.ts apps/api/scripts/vs005-deploy-apply.ts apps/api/scripts/vs005-deploy-apply.test.ts apps/api/scripts/vs005-cloudflare-deployment-provider.ts apps/api/scripts/vs005-cloudflare-deployment-provider.test.ts
   ```
 
-  Confirm manual/plan-time evidence cannot substitute for fresh apply inspection, no mutation occurs before all gates, child env lacks the inspection token, and no plan/evidence contains credentials or raw provider material.
+  Confirm manual/plan-time evidence cannot substitute for fresh apply inspection, artifacts/dry-run precede the fresh inspection, only bounded final gates and sanitized spawn preparation intervene before mutation, no mutation occurs when inspection fails or drifts, child env lacks the inspection token, and no plan/evidence contains credentials or raw provider material.
 
 - [ ] **Step 7: Commit Task 9**
 
@@ -987,7 +1013,7 @@ Keep plan format version 2 because it is the current pre-host reviewed plan auth
 
   Verification: exact reviewed plan/apply correlation plus fresh post-deployment profile, Worker present, deployment ID, active provider version, account/Worker, release, fingerprint, Cron, secret name, and hostname yields PASS with `pilotActivation=NOT_AUTHORISED`; missing/mismatched correlation, operation set, deployment ID, provider version, account, Worker, release, fingerprint, Cron, secret, workers.dev, account subdomain, or required unavailable yields FAIL. Prove runtime/browser/health readers remain injected and no provider response can satisfy canonical policy.
 
-  Rollback: explicit version A appears in complete `deployable=true` IDs and exact version detail matches request/evidence; absent ID, unavailable list, missing detail, ID/release/fingerprint mismatch, incomplete operation set, or current deployment mismatch fails before rollback call. Provide two eligible versions and prove no automatic selection; only request `expectedPriorVersionA.providerVersionId` is inspected and sent to rollback. Preserve database NONE and post-rollback structured verification.
+  Rollback: the composition/readiness layer receives the governed `expectedPriorVersionA`, requires its exact ID to appear in the complete `OBSERVED_VALUE([...ids])` from `deployable=true`, and requires exact version detail to match request/evidence. A successful `OBSERVED_VALUE([])`, a non-empty list missing that ID, an unavailable list, missing detail, ID/release/fingerprint mismatch, incomplete operation set, or current deployment mismatch fails before rollback call. Provide two eligible versions and prove no automatic selection; only request `expectedPriorVersionA.providerVersionId` is inspected and sent to rollback. Preserve database NONE and post-rollback structured verification.
 
   Serialize provider observations, errors, deployment plans/results, verification, and rollback evidence with canaries in headers/messages/authors/annotations/bindings/runtime JSON/secrets/exceptions and assert none survive except four validated identity values.
 
@@ -1002,7 +1028,7 @@ Keep plan format version 2 because it is the current pre-host reviewed plan auth
 
 - [ ] **Step 3: Implement minimum verification and rollback integration**
 
-  Require deployment correlation to match intended target and fresh verification correlation. Match `deployment.deploymentId` and `deployment.providerVersionId` to the current-deployment observation's bounded IDs/traffic before PASS. Use structured settings/Cron/hostname facts for existing checks. For rollback, construct the rollback profile with the exact prior version from governed request/evidence, require it in deployable IDs, require exact detail equality, then invoke the unchanged application rollback mutation boundary. Never derive version A from provider ordering.
+  Require deployment correlation to match intended target and fresh verification correlation. Match `deployment.deploymentId` and `deployment.providerVersionId` to the current-deployment observation's bounded IDs/traffic before PASS. Use structured settings/Cron/hostname facts for existing checks. For rollback, construct the rollback profile with the exact prior version from governed request/evidence, interpret the generic deployable-list value only at this expected-ID-aware composition/readiness boundary, require the ID in that list, require exact detail equality, then invoke the unchanged application rollback mutation boundary. A complete empty list proves the expected ID is absent but remains `OBSERVED_VALUE([])` at the provider-operation boundary. Never derive version A from provider ordering.
 
 - [ ] **Step 4: Run focused GREEN**
 
@@ -1047,7 +1073,7 @@ Keep plan format version 2 because it is the current pre-host reviewed plan auth
 - Generate locally, keep ignored: `.cadence/vs005/t15a-local-readiness.json`
 - Test: all structured inspection, VS005 deployment, VS003, VS004, API, web, and runtime-cloudflare suites listed below.
 
-**Interfaces consumed:** all Task 1-10 interfaces, approved structured-inspection design and plan hashes, current source commit, canonical Beta config/fingerprint, existing T15-A hashes, focused/full test evidence, and governance counts.
+**Interfaces consumed:** all Task 1-10 interfaces, exact approved structured-inspection design hash `b81b5db797fc3e9e82d2c826c1690f7f666021cc3b8b155da5095e5368077119`, the frozen amended-plan SHA-256 published by the plan-amendment checkpoint and repeated in the separately authorized Task 11 execution checkpoint, current source commit, canonical Beta config/fingerprint, existing T15-A hashes, focused/full test evidence, and structurally reconciled governance records.
 
 **Interfaces produced:** extend `Vs005LocalReadinessArtifact` with:
 
@@ -1163,14 +1189,45 @@ This remains ignored local evidence. It cannot contain credentials, provider res
   git grep -n "POST\|PUT\|PATCH\|DELETE\|/secrets" -- apps/api/scripts/vs005-cloudflare-readonly-transport.ts apps/api/scripts/vs005-cloudflare-structured-inspection.ts
   git grep -n "CLOUDFLARE_INSPECTION_API_TOKEN" -- apps/api/scripts
   git grep -n "SUPABASE_SECRET_KEY=" -- apps/api apps/web apps/runtime-cloudflare config
-  git grep -n "44" -- docs/governance/CADENCE_PROJECT_SCOPE_BASELINE.md docs/governance/CADENCE_REQUIREMENT_TRACEABILITY.md
-  git grep -n "178" -- docs/governance/CADENCE_REQUIREMENT_TRACEABILITY.md
   git diff --name-only -- supabase/migrations config/cadence.runtime.beta.json docs/superpowers/specs/2026-09-08-vs005-cloudflare-structured-readonly-inspection-design.md docs/2026-09-04-vs005-portable-deployment-runtime-implementation-plan.docx
   git diff --check
   git status -sb
   ```
 
-  Inspect every match. Require no public generic client, mutation verb/secret endpoint in the inspection route set, all token references confined to credential intake/removal/tests, no secret assignment value, no migration/config/design/DOCX change, and exact 44/178 governance counts. Review the complete diff and map Sections 1-30 plus all 18 acceptance criteria using the matrices below. Any P0/P1 defect, database change, secret leak, remote operation, or unmapped criterion blocks the checkpoint.
+  Run the same local structural reconciliation used to validate the current authoritative governance register, strengthened with an unchanged-since-plan-freeze check. This is the authoritative 44/178 guard; textual grep is not a substitute:
+
+  ```powershell
+  $ErrorActionPreference = "Stop"
+  $traceabilityPath = "docs/governance/CADENCE_REQUIREMENT_TRACEABILITY.md"
+  $baselinePath = "docs/governance/CADENCE_PROJECT_SCOPE_BASELINE.md"
+  $traceability = Get-Content $traceabilityPath
+
+  function Get-GovernanceSection([string]$start, [string]$end) {
+    $startLine = ($traceability | Select-String -SimpleMatch $start).LineNumber
+    $endLine = ($traceability | Select-String -SimpleMatch $end).LineNumber
+    if (-not $startLine -or -not $endLine -or $endLine -le $startLine) {
+      throw "GOVERNANCE_SECTION_INVALID"
+    }
+    $traceability[$startLine..($endLine - 2)]
+  }
+
+  $productParents = @(Get-GovernanceSection "## Product parent register" "## Foundational parent register" | Where-Object { $_ -match '^\| C\d{2} \|' })
+  $foundationParents = @(Get-GovernanceSection "## Foundational parent register" "## Original initiation acceptance-criterion register" | Where-Object { $_ -match '^\| F\d{2} \|' })
+  $acceptanceChildren = @(Get-GovernanceSection "## Original initiation acceptance-criterion register" "## Hierarchical product child register" | Where-Object { $_ -match '^\| INIT-AC-\d{2} \|' })
+  $productChildren = @(Get-GovernanceSection "## Hierarchical product child register" "## Hierarchical foundational child register" | Where-Object { $_ -match '^\| C\d{2}\.\d+ \|' })
+  $foundationChildren = @(Get-GovernanceSection "## Hierarchical foundational child register" "## Coverage controls" | Where-Object { $_ -match '^\| F\d{2}\.\d+ \|' })
+
+  $parentCount = $productParents.Count + $foundationParents.Count
+  $childCount = $acceptanceChildren.Count + $productChildren.Count + $foundationChildren.Count
+  if ($productParents.Count -ne 25 -or $foundationParents.Count -ne 19 -or $parentCount -ne 44) { throw "GOVERNANCE_PARENT_COUNT_MISMATCH" }
+  if ($acceptanceChildren.Count -ne 20 -or $productChildren.Count -ne 99 -or $foundationChildren.Count -ne 59 -or $childCount -ne 178) { throw "GOVERNANCE_CHILD_COUNT_MISMATCH" }
+
+  git diff --exit-code 62f11c8ac3bf72714ae07538911cc85f36ad9a81..HEAD -- $baselinePath $traceabilityPath
+  if ($LASTEXITCODE -ne 0) { throw "GOVERNANCE_BASELINE_CHANGED" }
+  Write-Output "PASS parents=44 children=178 removed=0 unapproved-remapping-or-movement=0"
+  ```
+
+  The structural counts prove 25 product plus 19 foundation parents and 20 acceptance plus 99 product plus 59 foundation child records. The exact committed-baseline diff proves the authoritative scope and traceability files were not removed, remapped, or moved during implementation. Inspect every security match. Require no public generic client, mutation verb/secret endpoint in the inspection route set, all token references confined to credential intake/removal/tests, no secret assignment value, and no migration/config/design/DOCX change. Review the complete diff and map Sections 1-30 plus all 18 acceptance criteria using the matrices below. Any P0/P1 defect, database change, governance change, secret leak, remote operation, or unmapped criterion blocks the checkpoint.
 
 - [ ] **Step 8: Commit Task 11, refresh ignored evidence, and verify final state**
 
@@ -1181,12 +1238,19 @@ This remains ignored local evidence. It cannot contain credentials, provider res
   git diff --cached
   git commit -m "chore(vs005): verify structured inspection extension"
   $providerExtensionCommit = git rev-parse HEAD
+  $expectedStructuredDesignHash = "b81b5db797fc3e9e82d2c826c1690f7f666021cc3b8b155da5095e5368077119"
+  $expectedStructuredPlanHash = $env:CADENCE_STRUCTURED_INSPECTION_PLAN_SHA256
   $structuredDesignHash = (Get-FileHash docs/superpowers/specs/2026-09-08-vs005-cloudflare-structured-readonly-inspection-design.md -Algorithm SHA256).Hash.ToLowerInvariant()
   $structuredPlanHash = (Get-FileHash docs/superpowers/plans/2026-09-08-vs005-cloudflare-structured-readonly-inspection.md -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($structuredDesignHash -ne $expectedStructuredDesignHash) { throw "STRUCTURED_INSPECTION_DESIGN_FREEZE_MISMATCH" }
+  if ($expectedStructuredPlanHash -notmatch '^[0-9a-f]{64}$') { throw "STRUCTURED_INSPECTION_PLAN_FREEZE_NOT_AUTHORIZED" }
+  if ($structuredPlanHash -ne $expectedStructuredPlanHash) { throw "STRUCTURED_INSPECTION_PLAN_FREEZE_MISMATCH" }
   node --import tsx apps/api/scripts/vs005-t15a-readiness.ts --config config/cadence.runtime.beta.json --source-commit $providerExtensionCommit --t15a-design-sha256 0ac81c0fbd0fe3490d3181a80961517a49dfa99bcf03bf91e11125d667c6ddb8 --frozen-design-sha256 5b39d77044f3264a4181642b7e3081ee7eedcdc63ffd7f3c0e65d26dc91ff2a8 --frozen-plan-sha256 f1fb71197756ddc45606b062068c53703cffdf6f2dad69c00120178aa27949e1 --structured-inspection-design-sha256 $structuredDesignHash --structured-inspection-plan-sha256 $structuredPlanHash --release-version 0.0.0-structured-inspection --release-commit-sha $providerExtensionCommit --release-build-id 2026-09-08T00:00:00Z --test "structured inspection focused suite" --test "VS003 and VS004 regressions" --test "full API, web, and runtime-cloudflare quality" --out .cadence/vs005/t15a-local-readiness.json
   git status -sb
   git log -1 --oneline
   ```
+
+  The separately authorized Task 11 execution checkpoint must set `CADENCE_STRUCTURED_INSPECTION_PLAN_SHA256` to the exact final amended-plan SHA-256 published in this amendment's commit report. Keeping that trusted expected value outside the file avoids a self-referential file-hash assertion. Missing, malformed, or unequal design/plan hashes block before the readiness generator runs; the generator may record hashes only after both exact comparisons pass.
 
   Expected final verdict: `LOCAL_PROVIDER_INSPECTION_EXTENSION_VERIFIED` and `READY_FOR_HOST_READ_ONLY_PROVIDER_INSPECTION_REVIEW`. The evidence remains ignored, the DOCX remains the only Git-visible untracked file, no staged change remains, and host inspection, deployment, remote mutation, clean-room work, and Pilot Activation remain unauthorized.
 
@@ -1194,10 +1258,10 @@ This remains ignored local evidence. It cannot contain credentials, provider res
 
 | Named operation | Fixed route | Task | RED/GREEN proof |
 |---|---|---:|---|
-| `inspectCurrentDeployment` | `/accounts/{accountId}/workers/scripts/{workerName}/deployments` | 2 | Worker present/latest/empty plus strict all-error not-found matrix |
+| `inspectCurrentDeployment` | `/accounts/{accountId}/workers/scripts/{workerName}/deployments` | 2 | Successful `result` array, index-zero current/empty, strict all-error not-found matrix |
 | `inspectWorkerSettings` | `/accounts/{accountId}/workers/scripts/{workerName}/settings` | 3 | Binding completeness, required secret type, four identity values, all value exclusions |
 | `inspectCronSchedules` | `/accounts/{accountId}/workers/scripts/{workerName}/schedules` | 4 | Bounded schedules, successful empty, malformed/incomplete/failure |
-| `inspectDeployableVersions` | `/accounts/{accountId}/workers/scripts/{workerName}/versions?deployable=true` | 5 | Fixed query, complete IDs, retained version present/absent, no pagination |
+| `inspectDeployableVersions` | `/accounts/{accountId}/workers/scripts/{workerName}/versions?deployable=true` | 5 | Fixed query; complete IDs or complete empty value; malformed/incomplete unavailable; no pagination or version-A knowledge |
 | `inspectVersion` | `/accounts/{accountId}/workers/scripts/{workerName}/versions/{versionId}` | 5 | Exact ID, bounded identity/fingerprint, mismatch/unavailable |
 | `inspectWorkersDevState` | `/accounts/{accountId}/workers/scripts/{workerName}/subdomain` | 6 | Enabled, disabled, malformed/missing |
 | `inspectAccountWorkersDevSubdomain` | `/accounts/{accountId}/workers/subdomain` | 6 | Complete target argument, bounded label, Worker/fingerprint correlation |
@@ -1224,15 +1288,15 @@ This remains ignored local evidence. It cannot contain credentials, provider res
 | 16. Observation mapping | 2-7 | Value/absent/unavailable matrix plus phase completeness |
 | 17. Target/evidence correlation | 1, 7, 9, 10 | Correlation envelope in plan/apply/result/verify/rollback |
 | 18. `inspectReadOnly` integration | 7, 8 | Structured default delegation and real local readiness |
-| 19. Apply reinspection | 9 | Fresh call/order/drift/mutationAttempted=false tests |
+| 19. Apply reinspection | 9 | Artifact/dry-run-first event order, fresh call adjacent to bounded final gate/mutation, drift and mutationAttempted=false tests |
 | 20. Post-deploy verification | 10 | Fresh verification profile and deployment/version correlation |
-| 21. Rollback readiness | 5, 7, 10 | Explicit version A list/detail and no auto-selection |
+| 21. Rollback readiness | 5, 7, 10 | Generic list value plus expected-ID-aware composition, exact version A detail, and no auto-selection |
 | 22. Offline TDD | All | Every code task has focused RED, minimum GREEN, and offline regressions |
 | 23. Secret leakage | 1-3, 7, 9-11 | Credential/binding/raw-response/child-env/evidence canaries |
 | 24. Portability | 1-7, 9-10 | Non-Beta target fixtures and injected policy boundaries |
 | 25. Cost/dependency | 1, 11 | Built-in fetch; package diff confirms no dependency or paid component |
 | 26. Certificate pinning | 1, 11 | Normal Node fetch only; no custom TLS agent/pinning controls |
-| 27. Database/governance | All, 11 | No migration diff; database NONE; 44/178 grep and full regressions |
+| 27. Database/governance | All, 11 | No migration diff; database NONE; structural 44/178 reconciliation plus unchanged authoritative governance files since plan freeze |
 | 28. Migration path | 1-11 | Ordered commits from transport through final local evidence |
 | 29. Acceptance criteria | 1-11 | Eighteen-row matrix below and final gate |
 | 30. Decomposition | 1-11 | Eleven independently testable commits in approved order |
@@ -1251,9 +1315,9 @@ This remains ignored local evidence. It cannot contain credentials, provider res
 | 8 | 1 MiB bound before JSON parsing | 1 | Length/stream/exact-limit/parser-order tests |
 | 9 | Secret presence from exact settings binding; no secret-list operation | 3, 11 | Secret matrix and route audit |
 | 10 | Four plaintext identity values only | 3, 5 | Identity allowlist and runtime-JSON/arbitrary-value exclusion |
-| 11 | Fixed `deployable=true`; no generic pagination | 5 | Exact URL and no pagination input tests |
+| 11 | Fixed `deployable=true`; no generic pagination | 5, 7, 10 | Exact URL, complete/empty list values, no pagination input, and expected version-A membership checked only in composition/rollback tests |
 | 12 | Existing plan/apply/verify/rollback authority/fingerprint chain reused | 9, 10 | Artifact and chain regressions |
-| 13 | Task 6 fresh structured reinspection | 9 | Call ordering and stale-state failures before mutation |
+| 13 | Task 6 fresh structured reinspection | 9 | `artifactPrepare`, `dryRun`, `freshInspection`, `finalGate`, `deploy` event order and stale-state failures before mutation |
 | 14 | Inspection token removed from every mutation child | 9 | Injected spawn environments for dry-run/deploy/rollback |
 | 15 | Real local `generatedConfigValid` and `webBuildReady` | 8 | Tamper/build/artifact tests and local Beta build |
 | 16 | Adversarial credential/secret/plaintext/raw-output non-leakage | 1-3, 7, 9-11 | Serialized observations/plans/apply/verify/readiness/logger canaries |
