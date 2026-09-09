@@ -3,6 +3,8 @@ import test from "node:test";
 import type { CadenceReleaseIdentity } from "../src/bootstrap/cadence-release";
 import {
   validateVs005ObservationCompleteness,
+  type Vs005CorrelatedProviderInspection,
+  type Vs005StructuredProviderObservationSnapshot,
   type Vs005MutationEnvelope,
   type Vs005Observation,
   type Vs005ProviderObservationSnapshot,
@@ -261,4 +263,35 @@ test("secret values cannot enter bounded observation structures or blockers", ()
 
   assert.doesNotMatch(JSON.stringify(observations), /server-secret|secret-value/);
   assert.doesNotMatch(JSON.stringify(blockers), /server-secret|secret-value/);
+});
+
+test("structured correlation extends observations without changing tri-state semantics", () => {
+  const observations: Vs005StructuredProviderObservationSnapshot = {
+    ...firstDeploymentObservations(),
+    currentDeployment: observed({
+      deploymentId: "deployment-1",
+      versions: [{ providerVersionId: "version-1", percentage: 100 }],
+    }),
+    workersDevEnabled: observed(false),
+    accountWorkersDevSubdomain: absent(),
+  };
+  const inspection: Vs005CorrelatedProviderInspection = {
+    correlation: {
+      accountId: "account-123",
+      workerName: "worker-test",
+      configFingerprint: "config-fingerprint",
+      providerOrigin: "api.cloudflare.com",
+      profile: "FIRST_DEPLOYMENT_READINESS",
+      completedOperations: ["CURRENT_DEPLOYMENT"],
+      observedAt: "2026-09-08T00:00:00.000Z",
+    },
+    observations,
+  };
+  assert.equal(inspection.observations.workerExists.state, "OBSERVED_VALUE");
+  assert.equal(inspection.observations.accountWorkersDevSubdomain.state, "OBSERVED_ABSENT");
+  assert.deepEqual(validateVs005ObservationCompleteness({
+    phase: "FIRST_DEPLOYMENT_READINESS",
+    observations,
+    mutationEnvelope: firstDeploymentEnvelope(),
+  }), []);
 });

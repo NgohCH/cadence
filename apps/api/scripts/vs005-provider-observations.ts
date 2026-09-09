@@ -7,7 +7,29 @@ export type Vs005Observation<T> =
 
 export type Vs005ObservationPhase =
   | "FIRST_DEPLOYMENT_READINESS"
+  | "POST_DEPLOYMENT_VERIFICATION"
   | "ROLLBACK_READINESS";
+
+export type Vs005ProviderInspectionProfile = Vs005ObservationPhase;
+
+export type Vs005CloudflareOperationName =
+  | "CURRENT_DEPLOYMENT"
+  | "WORKER_SETTINGS"
+  | "CRON_SCHEDULES"
+  | "DEPLOYABLE_VERSIONS"
+  | "VERSION"
+  | "WORKER_SUBDOMAIN"
+  | "ACCOUNT_SUBDOMAIN";
+
+export interface Vs005ProviderObservationCorrelation {
+  accountId: string;
+  workerName: string;
+  configFingerprint: string;
+  providerOrigin: "api.cloudflare.com";
+  profile: Vs005ProviderInspectionProfile;
+  completedOperations: readonly Vs005CloudflareOperationName[];
+  observedAt: string;
+}
 
 export interface Vs005ProviderObservationSnapshot {
   accountId: Vs005Observation<string>;
@@ -24,6 +46,23 @@ export interface Vs005ProviderObservationSnapshot {
     configFingerprint: string;
   }>;
   hostname: Vs005Observation<string>;
+}
+
+export interface Vs005CurrentDeploymentIdentity {
+  deploymentId: string;
+  versions: readonly { providerVersionId: string; percentage: number }[];
+}
+
+export interface Vs005StructuredProviderObservationSnapshot
+  extends Vs005ProviderObservationSnapshot {
+  currentDeployment: Vs005Observation<Vs005CurrentDeploymentIdentity>;
+  workersDevEnabled: Vs005Observation<boolean>;
+  accountWorkersDevSubdomain: Vs005Observation<string>;
+}
+
+export interface Vs005CorrelatedProviderInspection {
+  correlation: Vs005ProviderObservationCorrelation;
+  observations: Vs005StructuredProviderObservationSnapshot;
 }
 
 export interface Vs005MutationEnvelope {
