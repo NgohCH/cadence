@@ -11,10 +11,23 @@ import {
 } from "./vs005-deploy-apply";
 import {
   type Vs005Observation,
+  type Vs005CorrelatedProviderInspection,
   type Vs005ProviderObservationSnapshot,
+  type Vs005StructuredProviderObservationSnapshot,
 } from "./vs005-provider-observations";
 import type { GeneratedCloudflareDeployment } from "./vs005-generate-deployment";
 import type { Vs005RollbackProvider } from "./vs005-rollback";
+import {
+  createCloudflareStructuredReadOnlyProvider,
+  inspectCloudflareReadOnly,
+  type CloudflareStructuredInspectionRequest,
+} from "./vs005-cloudflare-structured-inspection";
+import {
+  createCloudflareReadOnlyTransport,
+  createEnvironmentCloudflareCredentialProvider,
+  createCloudflareWorkerInspectionTarget,
+  type CloudflareCredentialProvider,
+} from "./vs005-cloudflare-readonly-transport";
 
 export interface CloudflareReadOnlyProviderFacts extends Vs005ProviderObservationSnapshot {}
 
@@ -22,7 +35,8 @@ export interface CloudflareDeploymentProviderIo {
   createTemporarySecretFile(content: string, mode: number): Promise<string>;
   deleteFile(path: string): Promise<void>;
   runWrangler(args: readonly string[]): Promise<{ exitCode: number; stdout: string }>;
-  inspectReadOnly(input: {
+  inspectReadOnly(input: CloudflareStructuredInspectionRequest): Promise<Vs005CorrelatedProviderInspection>;
+  inspectLegacyReadOnly?(input: {
     accountId: string;
     workerName: string;
   }): Promise<CloudflareReadOnlyProviderFacts>;
@@ -150,6 +164,114 @@ function sanitizeReadOnlyFacts(value: unknown): CloudflareReadOnlyProviderFacts 
       parseSafeText,
       "CLOUDFLARE_HOSTNAME_UNAVAILABLE",
     ),
+  };
+}
+
+const STRUCTURED_OPERATION_ORDER = [
+  "CURRENT_DEPLOYMENT",
+  "WORKER_SETTINGS",
+  "CRON_SCHEDULES",
+  "DEPLOYABLE_VERSIONS",
+  "VERSION",
+  "WORKER_SUBDOMAIN",
+  "ACCOUNT_SUBDOMAIN",
+] as const;
+
+function parseCurrentDeployment(value: unknown) {
+  if (!isRecord(value)) return undefined;
+  const deploymentId = parseSafeIdentifier(value.deploymentId);
+  if (!deploymentId || !Array.isArray(value.versions) || value.versions.length > 128) return undefined;
+  const versions: Array<{ providerVersionId: string; percentage: number }> = [];
+  const ids = new Set<string>();
+  for (const entry of value.versions) {
+    if (!isRecord(entry)) return undefined;
+    const providerVersionId = parseSafeIdentifier(entry.providerVersionId);
+    if (!providerVersionId || ids.has(providerVersionId) || typeof entry.percentage !== "number"
+      || !Number.isFinite(entry.percentage) || entry.percentage < 0 || entry.percentage > 100) return undefined;
+    ids.add(providerVersionId);
+    versions.push({ providerVersionId, percentage: entry.percentage });
+  }
+  return { deploymentId, versions };
+}
+
+function sanitizeStructuredObservations(
+  value: unknown,
+  expectedTarget: ReturnType<typeof createCloudflareWorkerInspectionTarget>,
+): Vs005StructuredProviderObservationSnapshot {
+  const facts = isRecord(value) ? value : {};
+  const base = sanitizeReadOnlyFacts(facts);
+  return {
+    ...base,
+    accountId: base.accountId.state === "OBSERVED_VALUE" && base.accountId.value !== expectedTarget.accountId
+      ? unavailable("CLOUDFLARE_ACCOUNT_UNAVAILABLE")
+      : base.accountId,
+    workerName: base.workerName.state === "OBSERVED_VALUE" && base.workerName.value !== expectedTarget.workerName
+      ? unavailable("CLOUDFLARE_WORKER_UNAVAILABLE")
+      : base.workerName,
+    currentDeployment: sanitizeObservation(
+      facts.currentDeployment,
+      parseCurrentDeployment,
+      "CLOUDFLARE_CURRENT_DEPLOYMENT_UNAVAILABLE",
+    ),
+    workersDevEnabled: sanitizeObservation(
+      facts.workersDevEnabled,
+      parseSafeBoolean,
+      "CLOUDFLARE_WORKERS_DEV_UNAVAILABLE",
+    ),
+    accountWorkersDevSubdomain: sanitizeObservation(
+      facts.accountWorkersDevSubdomain,
+      (item) => typeof item === "string" && /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(item)
+        && item.length <= 63 ? item : undefined,
+      "CLOUDFLARE_ACCOUNT_SUBDOMAIN_UNAVAILABLE",
+    ),
+  };
+}
+
+function sanitizeStructuredInspection(
+  value: unknown,
+  request: CloudflareStructuredInspectionRequest,
+): Vs005CorrelatedProviderInspection {
+  if (!isRecord(value) || !isRecord(value.correlation)) {
+    throw new Error("CLOUDFLARE_STRUCTURED_INSPECTION_UNAVAILABLE");
+  }
+  const expectedTarget = createCloudflareWorkerInspectionTarget({
+    config: request.config,
+    generatedConfig: { wrangler: request.generatedConfig },
+    profile: request.profile,
+  });
+  const correlation = value.correlation;
+  const rawCompletedOperations = correlation.completedOperations;
+  if (correlation.accountId !== expectedTarget.accountId
+    || correlation.workerName !== expectedTarget.workerName
+    || correlation.configFingerprint !== expectedTarget.configFingerprint
+    || correlation.providerOrigin !== "api.cloudflare.com"
+    || correlation.profile !== request.profile
+    || !Array.isArray(rawCompletedOperations)
+    || rawCompletedOperations.length > STRUCTURED_OPERATION_ORDER.length
+    || !rawCompletedOperations.every((operation) => STRUCTURED_OPERATION_ORDER.includes(operation as never))) {
+    throw new Error("CLOUDFLARE_STRUCTURED_CORRELATION_UNAVAILABLE");
+  }
+  const completedOperations = STRUCTURED_OPERATION_ORDER.filter((operation) => rawCompletedOperations.includes(operation));
+  if (completedOperations.length !== rawCompletedOperations.length
+    || completedOperations.some((operation, index) => operation !== rawCompletedOperations[index])) {
+    throw new Error("CLOUDFLARE_STRUCTURED_CORRELATION_UNAVAILABLE");
+  }
+  if (typeof correlation.observedAt !== "string") throw new Error("CLOUDFLARE_STRUCTURED_CORRELATION_UNAVAILABLE");
+  const observedAt = new Date(correlation.observedAt);
+  if (!Number.isFinite(observedAt.getTime()) || observedAt.toISOString() !== correlation.observedAt) {
+    throw new Error("CLOUDFLARE_STRUCTURED_CORRELATION_UNAVAILABLE");
+  }
+  return {
+    correlation: {
+      accountId: expectedTarget.accountId,
+      workerName: expectedTarget.workerName,
+      configFingerprint: expectedTarget.configFingerprint,
+      providerOrigin: "api.cloudflare.com",
+      profile: request.profile,
+      completedOperations,
+      observedAt: correlation.observedAt,
+    },
+    observations: sanitizeStructuredObservations(value.observations, expectedTarget),
   };
 }
 
@@ -343,15 +465,20 @@ function parseRollbackIdentifiers(stdout: string): {
 export function createCloudflareDeploymentProvider(
   io: CloudflareDeploymentProviderIo,
   rollbackTarget?: { workerName?: string },
-): Vs005DeploymentProvider & Vs005RollbackProvider {
+): Vs005DeploymentProvider & Vs005RollbackProvider & {
+  inspectStructured(input: CloudflareStructuredInspectionRequest): Promise<Vs005CorrelatedProviderInspection>;
+} {
   return {
     async inspect(config: CadenceRuntimeConfig): Promise<Vs005DeploymentProviderInspection> {
       if (!config.cloudflare) {
         return legacyInspectionProjection(unavailableReadOnlyFacts("CLOUDFLARE_TARGET_UNAVAILABLE"));
       }
 
+      if (!io.inspectLegacyReadOnly) {
+        return legacyInspectionProjection(unavailableReadOnlyFacts("CLOUDFLARE_STRUCTURED_INSPECTION_REQUIRED"));
+      }
       try {
-        const facts = await io.inspectReadOnly({
+        const facts = await io.inspectLegacyReadOnly({
           accountId: config.cloudflare.accountId,
           workerName: config.cloudflare.workerName,
         });
@@ -362,15 +489,23 @@ export function createCloudflareDeploymentProvider(
     },
 
     async inspectTarget(input?: { accountId: string; workerName: string }) {
-      if (input) {
+      if (input && io.inspectLegacyReadOnly) {
         try {
-          const facts = await io.inspectReadOnly(input);
+          const facts = await io.inspectLegacyReadOnly(input);
           return { observations: sanitizeReadOnlyFacts(facts) };
         } catch {
           return { observations: unavailableReadOnlyFacts("CLOUDFLARE_INSPECTION_UNAVAILABLE") };
         }
       }
       throw new Error("CLOUDFLARE_TARGET_UNAVAILABLE");
+    },
+
+    async inspectStructured(input) {
+      try {
+        return sanitizeStructuredInspection(await io.inspectReadOnly(input), input);
+      } catch {
+        throw new Error("CLOUDFLARE_STRUCTURED_INSPECTION_UNAVAILABLE");
+      }
     },
 
     async deploy(input) {
@@ -421,7 +556,18 @@ function runWrangler(args: readonly string[]): Promise<{ exitCode: number; stdou
   });
 }
 
-export function createDefaultCloudflareProviderIo(): CloudflareDeploymentProviderIo {
+export function createDefaultCloudflareProviderIo(input: {
+  credentialProvider?: CloudflareCredentialProvider;
+  fetchImpl?: typeof fetch;
+  clock?: () => Date;
+  runWrangler?: CloudflareDeploymentProviderIo["runWrangler"];
+} = {}): CloudflareDeploymentProviderIo {
+  const transport = createCloudflareReadOnlyTransport({
+    credentialProvider: input.credentialProvider
+      ?? createEnvironmentCloudflareCredentialProvider(process.env),
+    fetchImpl: input.fetchImpl,
+  });
+  const structuredProvider = createCloudflareStructuredReadOnlyProvider(transport);
   return {
     async createTemporarySecretFile(content, mode) {
       const directory = join(tmpdir(), "cadence-vs005-secret");
@@ -439,28 +585,11 @@ export function createDefaultCloudflareProviderIo(): CloudflareDeploymentProvide
     deleteFile: async (path) => {
       await rm(path, { force: true });
     },
-    runWrangler,
-    async inspectReadOnly(input) {
-      try {
-        const accountId = await inspectCloudflareAccountMembership({
-          expectedAccountId: input.accountId,
-          runWrangler,
-        });
-        return sanitizeReadOnlyFacts({
-          accountId,
-          workerName: { state: "UNAVAILABLE" },
-          workerExists: { state: "UNAVAILABLE" },
-          workerConfigFingerprint: { state: "UNAVAILABLE" },
-          cronSchedules: { state: "UNAVAILABLE" },
-          nonSecretBindingNames: { state: "UNAVAILABLE" },
-          secretNames: { state: "UNAVAILABLE" },
-          currentRelease: { state: "UNAVAILABLE" },
-          priorVersion: { state: "UNAVAILABLE" },
-          hostname: { state: "UNAVAILABLE" },
-        });
-      } catch {
-        return unavailableReadOnlyFacts("CLOUDFLARE_AUTH_UNAVAILABLE");
-      }
-    },
+    runWrangler: input.runWrangler ?? runWrangler,
+    inspectReadOnly: (request) => inspectCloudflareReadOnly(
+      structuredProvider,
+      request,
+      input.clock ?? (() => new Date()),
+    ),
   };
 }

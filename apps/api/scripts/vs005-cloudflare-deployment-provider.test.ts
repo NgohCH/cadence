@@ -4,17 +4,20 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import {
+  fingerprintCadenceRuntimeConfig,
   validateCadenceRuntimeConfig,
   type CadenceRuntimeConfig,
 } from "../src/bootstrap/cadence-config";
 import {
   buildCloudflareWorkerStatusInspectionRequest,
   createCloudflareDeploymentProvider,
+  createDefaultCloudflareProviderIo,
   inspectCloudflareAccountMembership,
   type CloudflareReadOnlyProviderFacts,
   type CloudflareDeploymentProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
-import type { Vs005Observation } from "./vs005-provider-observations";
+import { buildCloudflareDeployment } from "./vs005-generate-deployment";
+import type { Vs005CorrelatedProviderInspection, Vs005Observation } from "./vs005-provider-observations";
 
 interface RollbackProvider {
   inspectTarget(): Promise<{ accountId: string; workerName: string }>;
@@ -77,7 +80,8 @@ function fakeProviderIo(overrides: Partial<CloudflareDeploymentProviderIo> = {})
         stdout: JSON.stringify({ deployment_id: "deployment-1", version_id: "version-1" }),
       };
     },
-    inspectReadOnly: async () => readOnlyFacts,
+    inspectReadOnly: async () => { throw new Error("structured inspection not configured"); },
+    inspectLegacyReadOnly: async () => readOnlyFacts,
     ...overrides,
   };
   return { io, calls, deleted };
@@ -412,7 +416,7 @@ test("provider returns bounded deployment identifiers", async () => {
 test("inspection returns account and Worker identity", async () => {
   let requested: { accountId: string; workerName: string } | undefined;
   const fake = fakeProviderIo({
-    inspectReadOnly: async (input) => {
+    inspectLegacyReadOnly: async (input) => {
       requested = input;
       return readOnlyFacts;
     },
@@ -429,7 +433,7 @@ test("inspection returns account and Worker identity", async () => {
 
 test("inspection distinguishes absent Worker", async () => {
   const fake = fakeProviderIo({
-    inspectReadOnly: async () => ({
+    inspectLegacyReadOnly: async () => ({
       ...readOnlyFacts,
       workerExists: absent(),
     }),
@@ -444,7 +448,7 @@ test("inspection distinguishes absent Worker", async () => {
 
 test("inspection preserves absent Cron and secret states", async () => {
   const fake = fakeProviderIo({
-    inspectReadOnly: async () => ({
+    inspectLegacyReadOnly: async () => ({
       ...readOnlyFacts,
       cronSchedules: absent(),
       secretNames: absent(),
@@ -478,7 +482,7 @@ test("inspection never returns secret values", async () => {
     secretNames: observed(["SUPABASE_SECRET_KEY"]),
     secretValue: "server-secret-must-not-escape",
   } as CloudflareReadOnlyProviderFacts & { secretValue: string };
-  const fake = fakeProviderIo({ inspectReadOnly: async () => maliciousFacts });
+  const fake = fakeProviderIo({ inspectLegacyReadOnly: async () => maliciousFacts });
   const provider = createCloudflareDeploymentProvider(fake.io);
 
   const result = await provider.inspect(config);
@@ -500,7 +504,7 @@ test("inspection has no deploy or rollback capability", async () => {
 
 test("provider failure maps to UNAVAILABLE", async () => {
   const fake = fakeProviderIo({
-    inspectReadOnly: async () => {
+    inspectLegacyReadOnly: async () => {
       throw new Error("provider failed token=do-not-copy");
     },
   });
@@ -515,7 +519,7 @@ test("provider failure maps to UNAVAILABLE", async () => {
 
 test("malformed provider facts fail closed without propagating raw values", async () => {
   const fake = fakeProviderIo({
-    inspectReadOnly: async () => ({
+    inspectLegacyReadOnly: async () => ({
       ...readOnlyFacts,
       accountId: { state: "OBSERVED_VALUE", value: "token=must-not-escape" },
       cronSchedules: { state: "OBSERVED_VALUE", value: ["unexpected\noutput"] },
@@ -583,4 +587,127 @@ test("rollback failure returns no raw provider error text", async () => {
   if (!isRollbackProvider(provider)) return;
 
   await assert.rejects(() => provider.rollback("version-previous"), /CLOUDFLARE_ROLLBACK_FAILED/);
+});
+
+test("default inspectReadOnly uses injected structured REST without Wrangler whoami", async () => {
+  let wranglerCalls = 0;
+  const fetchUrls: string[] = [];
+  const release = {
+    version: "1.2.3",
+    commitSha: "0123456789abcdef0123456789abcdef01234567",
+    buildId: "2026-09-09T00:00:00Z",
+  };
+  const io = createDefaultCloudflareProviderIo({
+    credentialProvider: { getCredential: async () => "inspection-token-canary" },
+    fetchImpl: async (url) => {
+      fetchUrls.push(String(url));
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/deployments")) return new Response(JSON.stringify({ success: true, result: [] }));
+      if (path.endsWith("/settings")) return new Response(JSON.stringify({ success: true, result: { bindings: [] } }));
+      if (path.endsWith("/schedules")) return new Response(JSON.stringify({ success: true, result: [] }));
+      if (path.endsWith("/scripts/worker-ci/subdomain")) return new Response(JSON.stringify({ success: true, result: { enabled: false } }));
+      return new Response(JSON.stringify({ success: true, result: { subdomain: "portable-team" } }));
+    },
+    runWrangler: async () => {
+      wranglerCalls += 1;
+      return { exitCode: 0, stdout: "wrangler-authority-canary" };
+    },
+    clock: () => new Date("2026-09-09T01:02:03Z"),
+  });
+
+  const result = await io.inspectReadOnly({
+    config,
+    release,
+    generatedConfig: buildCloudflareDeployment({ config, release }).wrangler,
+    profile: "FIRST_DEPLOYMENT_READINESS",
+  });
+
+  assert.equal(result.correlation.providerOrigin, "api.cloudflare.com");
+  assert.deepEqual(result.correlation.completedOperations, [
+    "CURRENT_DEPLOYMENT",
+    "WORKER_SETTINGS",
+    "CRON_SCHEDULES",
+    "WORKER_SUBDOMAIN",
+    "ACCOUNT_SUBDOMAIN",
+  ]);
+  assert.equal(wranglerCalls, 0);
+  assert.equal(fetchUrls.length, 5);
+  assert.doesNotMatch(JSON.stringify(result), /inspection-token-canary|wrangler-authority-canary/);
+});
+
+test("correlated facade inspection preserves Wrangler deployment and rollback mutation methods", async () => {
+  const release = {
+    version: "1.2.3",
+    commitSha: "0123456789abcdef0123456789abcdef01234567",
+    buildId: "2026-09-09T00:00:00Z",
+  };
+  const structured: Vs005CorrelatedProviderInspection = {
+    correlation: {
+      accountId: "account-ci",
+      workerName: "worker-ci",
+      configFingerprint: fingerprintCadenceRuntimeConfig(config),
+      providerOrigin: "api.cloudflare.com" as const,
+      profile: "FIRST_DEPLOYMENT_READINESS" as const,
+      completedOperations: ["CURRENT_DEPLOYMENT"] as const,
+      observedAt: "2026-09-09T01:02:03.000Z",
+    },
+    observations: {
+      ...readOnlyFacts,
+      accountId: observed("account-ci"),
+      workerName: observed("worker-ci"),
+      currentDeployment: absent(),
+      workersDevEnabled: absent(),
+      accountWorkersDevSubdomain: absent(),
+    },
+  };
+  const fake = fakeProviderIo({ inspectReadOnly: async () => structured });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+  const result = await provider.inspectStructured({
+    config,
+    release,
+    generatedConfig: buildCloudflareDeployment({ config, release }).wrangler,
+    profile: "FIRST_DEPLOYMENT_READINESS",
+  });
+
+  assert.deepEqual(result, structured);
+  assert.equal(typeof provider.deploy, "function");
+  assert.equal(typeof provider.rollback, "function");
+});
+
+test("correlated facade does not expose a provider-selected account", async () => {
+  const release = {
+    version: "1.2.3",
+    commitSha: "0123456789abcdef0123456789abcdef01234567",
+    buildId: "2026-09-09T00:00:00Z",
+  };
+  const fake = fakeProviderIo({
+    inspectReadOnly: async () => ({
+      correlation: {
+        accountId: "account-ci",
+        workerName: "worker-ci",
+        configFingerprint: fingerprintCadenceRuntimeConfig(config),
+        providerOrigin: "api.cloudflare.com",
+        profile: "FIRST_DEPLOYMENT_READINESS",
+        completedOperations: ["CURRENT_DEPLOYMENT"],
+        observedAt: "2026-09-09T01:02:03.000Z",
+      },
+      observations: {
+        ...readOnlyFacts,
+        accountId: observed("provider-selected-account"),
+        workerName: observed("worker-ci"),
+        currentDeployment: absent(),
+        workersDevEnabled: absent(),
+        accountWorkersDevSubdomain: absent(),
+      },
+    }),
+  });
+  const result = await createCloudflareDeploymentProvider(fake.io).inspectStructured({
+    config,
+    release,
+    generatedConfig: buildCloudflareDeployment({ config, release }).wrangler,
+    profile: "FIRST_DEPLOYMENT_READINESS",
+  });
+
+  assert.equal(result.observations.accountId.state, "UNAVAILABLE");
+  assert.doesNotMatch(JSON.stringify(result), /provider-selected-account/);
 });
