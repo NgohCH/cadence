@@ -169,6 +169,41 @@ authorization and execution remain separate later gates. The governance
 baseline remains 44 parent commitments and 178 child traceability records;
 no commitment was removed or moved beyond M3.
 
+## VS005 Structured Inspection Extension Checkpoint
+
+The original structured-inspection baseline descends from design commits
+`d9cd51d`, `8321b78`, and `9db8c29`. Tasks 1-8 were completed locally as:
+
+```text
+Task 1: caea55a
+Task 2: ff960a1
+Task 3: 0836faf
+Task 4: a81e59e
+Task 5: 7f3a637
+Task 6: aa7633c
+Task 7: edec1ca
+Task 8: d50dc39
+```
+
+The Task 9 reconciliation design is commit `64e5928` and the transition
+amendment commits are `64ee280` and `1c2521b`. Amended Task 9 is
+`bcd6226a361db80e284bb8c327747fedfe704c35`; amended Task 10 is
+`5cc4655693aeebccd8a283f30f956fbf67240864`.
+
+The reconciliation design SHA256 is
+`7b8e866bc30423bad64e9ca7b652485a486127c10a1bfa9b8e67ac798d18a826` and
+the transition amendment SHA256 is
+`8128af2f8d472cbc96603152cfa0a913aa6958af848b00612fc45c97112ff546`.
+The temporary compatibility bridge is closed: plan, apply, verify, and
+rollback use structured correlated authority, with no deployment-workflow
+legacy inspection authority remaining.
+
+This checkpoint is local-only evidence. Provider state is **NOT OBSERVED**;
+host inspection, remote mutation, clean-room activity, and Pilot Activation
+remain **NOT AUTHORIZED**. Database action is **NONE**. VS004 recovery is
+**VERIFIED / CLOSED**. Governance remains 44 parent commitments and 178
+child records.
+
 ## VS004 Closure Record
 
 VS004 — Controlled Pilot Bootstrap and Access is closed and merged via PR #7.

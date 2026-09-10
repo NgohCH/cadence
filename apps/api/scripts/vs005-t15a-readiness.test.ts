@@ -27,10 +27,17 @@ const input: Vs005LocalReadinessInput = {
   focusedTests: [
     { command: "node --import tsx --test scripts/vs005-beta-config.test.ts", outcome: "PASS" },
   ],
+  structuredInspectionDesignSha256: "b81b5db797fc3e9e82d2c826c1690f7f666021cc3b8b155da5095e5368077119",
+  structuredInspectionPlanSha256: "9a3de2582618c6aae41a986e76c131d020d724072b8e78cb733393f09f3d828f",
+};
+const structuredInput = {
+  ...input,
+  structuredInspectionDesignSha256: "b81b5db797fc3e9e82d2c826c1690f7f666021cc3b8b155da5095e5368077119",
+  structuredInspectionPlanSha256: "9a3de2582618c6aae41a986e76c131d020d724072b8e78cb733393f09f3d828f",
 };
 
 test("readiness records source and frozen hashes", () => {
-  const artifact = buildVs005LocalReadinessArtifact(input);
+  const artifact = buildVs005LocalReadinessArtifact(structuredInput);
   assert.equal(artifact.sourceCommit, input.sourceCommit);
   assert.equal(artifact.designSha256, input.t15aDesignSha256);
   assert.equal(artifact.frozenDesignSha256, input.frozenDesignSha256);
@@ -38,7 +45,7 @@ test("readiness records source and frozen hashes", () => {
 });
 
 test("readiness records exact intended Beta tuple", () => {
-  const artifact = buildVs005LocalReadinessArtifact(input);
+  const artifact = buildVs005LocalReadinessArtifact(structuredInput);
   assert.deepEqual(artifact.intendedTarget, {
     environment: "beta",
     safeTargetMarker: "cadence-beta",
@@ -53,37 +60,50 @@ test("readiness records exact intended Beta tuple", () => {
 });
 
 test("readiness records config fingerprint and release", () => {
-  const artifact = buildVs005LocalReadinessArtifact(input);
+  const artifact = buildVs005LocalReadinessArtifact(structuredInput);
   assert.equal(artifact.configFingerprint, input.configFingerprint);
   assert.deepEqual(artifact.release, input.release);
   assert.equal(artifact.configPath, input.configPath);
 });
 
 test("readiness declares database NONE and no destructive actions", () => {
-  const artifact = buildVs005LocalReadinessArtifact(input);
+  const artifact = buildVs005LocalReadinessArtifact(structuredInput);
   assert.deepEqual(artifact.database, { migrationAction: "NONE" });
   assert.deepEqual(artifact.destructiveActions, []);
 });
 
 test("readiness records Beta-config provenance", () => {
-  const artifact = buildVs005LocalReadinessArtifact(input);
+  const artifact = buildVs005LocalReadinessArtifact(structuredInput);
   assert.equal(artifact.betaConfigProvenance, "EARLY_NARROW_BOOTSTRAP_AUTHORIZATION_RECONCILED");
 });
 
 test("readiness records remote and Pilot Activation firewalls", () => {
-  const artifact = buildVs005LocalReadinessArtifact(input);
+  const artifact = buildVs005LocalReadinessArtifact(structuredInput);
   assert.equal(artifact.task15RemoteMutation, "NOT_AUTHORIZED");
   assert.equal(artifact.pilotActivation, "NOT_AUTHORISED");
 });
 
 test("readiness excludes secret values and raw provider output", () => {
-  const artifact = buildVs005LocalReadinessArtifact(input);
+  const artifact = buildVs005LocalReadinessArtifact(structuredInput);
   assert.doesNotMatch(JSON.stringify(artifact), /SUPABASE_SECRET_KEY=|server-secret|raw-provider|token=/i);
   assert.throws(
     () => buildVs005LocalReadinessArtifact({
-      ...input,
+      ...structuredInput,
       focusedTests: [{ command: "provider-output=server-secret", outcome: "PASS" }],
     }),
     /SENSITIVE_READINESS_CONTENT/,
   );
+});
+
+test("readiness records structured inspection extension status and firewalls", () => {
+  const artifact = buildVs005LocalReadinessArtifact(structuredInput);
+  assert.deepEqual(artifact.structuredInspection, {
+    designSha256: structuredInput.structuredInspectionDesignSha256,
+    planSha256: structuredInput.structuredInspectionPlanSha256,
+    status: "LOCAL_PROVIDER_INSPECTION_EXTENSION_VERIFIED",
+    providerState: "NOT_OBSERVED",
+    hostInspection: "NOT_AUTHORIZED",
+    nextGate: "READY_FOR_HOST_READ_ONLY_PROVIDER_INSPECTION_REVIEW",
+  });
+  assert.doesNotMatch(JSON.stringify(artifact), /provider-response|secret-value|observed Worker|observed Cron|observed hostname/i);
 });

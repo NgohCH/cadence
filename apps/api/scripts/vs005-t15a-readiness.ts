@@ -27,6 +27,8 @@ export interface Vs005LocalReadinessInput {
   configFingerprint: string;
   release: CadenceReleaseIdentity;
   focusedTests: readonly { command: string; outcome: "PASS" }[];
+  structuredInspectionDesignSha256: string;
+  structuredInspectionPlanSha256: string;
 }
 
 export interface Vs005LocalReadinessArtifact {
@@ -43,6 +45,14 @@ export interface Vs005LocalReadinessArtifact {
   database: { migrationAction: "NONE" };
   destructiveActions: readonly [];
   focusedTests: readonly { command: string; outcome: "PASS" }[];
+  structuredInspection: {
+    designSha256: string;
+    planSha256: string;
+    status: "LOCAL_PROVIDER_INSPECTION_EXTENSION_VERIFIED";
+    providerState: "NOT_OBSERVED";
+    hostInspection: "NOT_AUTHORIZED";
+    nextGate: "READY_FOR_HOST_READ_ONLY_PROVIDER_INSPECTION_REVIEW";
+  };
   betaConfigProvenance: "EARLY_NARROW_BOOTSTRAP_AUTHORIZATION_RECONCILED";
   task15RemoteMutation: "NOT_AUTHORIZED";
   pilotActivation: "NOT_AUTHORISED";
@@ -101,6 +111,8 @@ export function buildVs005LocalReadinessArtifact(
   assertHash(input.t15aDesignSha256, "t15aDesignSha256");
   assertHash(input.frozenDesignSha256, "frozenDesignSha256");
   assertHash(input.frozenPlanSha256, "frozenPlanSha256");
+  assertHash(input.structuredInspectionDesignSha256, "structuredInspectionDesignSha256");
+  assertHash(input.structuredInspectionPlanSha256, "structuredInspectionPlanSha256");
   assertSafeConfigPath(input.configPath);
   assertFocusedTests(input.focusedTests);
 
@@ -138,6 +150,14 @@ export function buildVs005LocalReadinessArtifact(
     database: { migrationAction: "NONE" },
     destructiveActions: [],
     focusedTests: input.focusedTests.map((item) => ({ command: item.command, outcome: "PASS" })),
+    structuredInspection: {
+      designSha256: input.structuredInspectionDesignSha256,
+      planSha256: input.structuredInspectionPlanSha256,
+      status: "LOCAL_PROVIDER_INSPECTION_EXTENSION_VERIFIED",
+      providerState: "NOT_OBSERVED",
+      hostInspection: "NOT_AUTHORIZED",
+      nextGate: "READY_FOR_HOST_READ_ONLY_PROVIDER_INSPECTION_REVIEW",
+    },
     betaConfigProvenance: "EARLY_NARROW_BOOTSTRAP_AUTHORIZATION_RECONCILED",
     task15RemoteMutation: "NOT_AUTHORIZED",
     pilotActivation: "NOT_AUTHORISED",
@@ -174,6 +194,8 @@ function parseCliArguments(args: readonly string[]): {
   t15aDesignSha256: string;
   frozenDesignSha256: string;
   frozenPlanSha256: string;
+  structuredInspectionDesignSha256: string;
+  structuredInspectionPlanSha256: string;
   release: CadenceReleaseIdentity;
   tests: readonly { command: string; outcome: "PASS" }[];
   outputPath: string;
@@ -183,6 +205,8 @@ function parseCliArguments(args: readonly string[]): {
   let t15aDesignSha256: string | undefined;
   let frozenDesignSha256: string | undefined;
   let frozenPlanSha256: string | undefined;
+  let structuredInspectionDesignSha256: string | undefined;
+  let structuredInspectionPlanSha256: string | undefined;
   let releaseVersion: string | undefined;
   let releaseCommitSha: string | undefined;
   let releaseBuildId: string | undefined;
@@ -196,6 +220,8 @@ function parseCliArguments(args: readonly string[]): {
       case "--t15a-design-sha256": t15aDesignSha256 = requireArgument(args, "t15a-design-sha256", index); index += 1; break;
       case "--frozen-design-sha256": frozenDesignSha256 = requireArgument(args, "frozen-design-sha256", index); index += 1; break;
       case "--frozen-plan-sha256": frozenPlanSha256 = requireArgument(args, "frozen-plan-sha256", index); index += 1; break;
+      case "--structured-inspection-design-sha256": structuredInspectionDesignSha256 = requireArgument(args, "structured-inspection-design-sha256", index); index += 1; break;
+      case "--structured-inspection-plan-sha256": structuredInspectionPlanSha256 = requireArgument(args, "structured-inspection-plan-sha256", index); index += 1; break;
       case "--release-version": releaseVersion = requireArgument(args, "release-version", index); index += 1; break;
       case "--release-commit-sha": releaseCommitSha = requireArgument(args, "release-commit-sha", index); index += 1; break;
       case "--release-build-id": releaseBuildId = requireArgument(args, "release-build-id", index); index += 1; break;
@@ -206,6 +232,7 @@ function parseCliArguments(args: readonly string[]): {
   }
 
   if (!configPath || !sourceCommit || !t15aDesignSha256 || !frozenDesignSha256 || !frozenPlanSha256
+    || !structuredInspectionDesignSha256 || !structuredInspectionPlanSha256
     || !releaseVersion || !releaseCommitSha || !releaseBuildId || !outputPath || tests.length === 0) {
     throw new Error("INVALID_READINESS_ARGUMENTS");
   }
@@ -215,6 +242,8 @@ function parseCliArguments(args: readonly string[]): {
     t15aDesignSha256,
     frozenDesignSha256,
     frozenPlanSha256,
+    structuredInspectionDesignSha256,
+    structuredInspectionPlanSha256,
     release: { version: releaseVersion, commitSha: releaseCommitSha, buildId: releaseBuildId },
     tests,
     outputPath,
@@ -248,6 +277,8 @@ export function runVs005LocalReadinessCli(args: readonly string[]): void {
     configFingerprint: fingerprintCadenceRuntimeConfig(config),
     release: parsed.release,
     focusedTests: parsed.tests,
+    structuredInspectionDesignSha256: parsed.structuredInspectionDesignSha256,
+    structuredInspectionPlanSha256: parsed.structuredInspectionPlanSha256,
   });
   writeJson(outputPath, artifact);
 }
