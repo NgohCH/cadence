@@ -14,7 +14,11 @@ import {
   loadCadenceReleaseIdentity,
   type CadenceReleaseIdentity,
 } from "../src/bootstrap/cadence-release";
-import type { Vs005DeploymentResult } from "./vs005-deploy-apply";
+import {
+  isVs005CorrelatedDeploymentResult,
+  type Vs005CorrelatedDeploymentResult,
+  type Vs005DeploymentResult,
+} from "./vs005-deploy-apply";
 import {
   verifyVs005Deployment,
   type Vs005DeploymentVerification,
@@ -25,10 +29,10 @@ import {
   createDefaultCloudflareProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
 import {
-  validateVs005ObservationCompleteness,
-  type Vs005MutationEnvelope,
-  type Vs005ProviderInspection,
+  type Vs005CorrelatedProviderInspection,
 } from "./vs005-provider-observations";
+import type { CloudflareStructuredInspectionRequest } from "./vs005-cloudflare-structured-inspection";
+import { buildCloudflareDeployment } from "./vs005-generate-deployment";
 
 export interface Vs005RollbackRequest {
   providerVersionId: string;
@@ -50,10 +54,7 @@ export interface Vs005RollbackRequest {
 }
 
 export interface Vs005RollbackProvider {
-  inspectTarget(input?: { accountId: string; workerName: string }): Promise<Vs005ProviderInspection | {
-    accountId: string;
-    workerName: string;
-  }>;
+  inspectStructured(request: CloudflareStructuredInspectionRequest): Promise<Vs005CorrelatedProviderInspection>;
 
   rollback(providerVersionId: string): Promise<{
     deploymentId: string;
@@ -170,83 +171,15 @@ export function validateVs005RollbackRequest(value: unknown): Vs005RollbackReque
   };
 }
 
-export function validateVs005DeploymentEvidence(value: unknown): Vs005DeploymentResult {
-  if (!isRecord(value)
-    || value.artifactType !== "cadence.vs005.deployment-result"
-    || value.formatVersion !== 1
-    || !isSafeIdentifier(value.planId)
-    || !isSafeIdentifier(value.deploymentId)
-    || !isSafeIdentifier(value.providerVersionId)
-    || typeof value.deployedAt !== "string"
-    || !isEnvironment(value.environment)
-    || value.provider !== "cloudflare"
-    || !isRecord(value.providerTarget)
-    || !isSafeIdentifier(value.providerTarget.accountId)
-    || !isSafeIdentifier(value.providerTarget.workerName)
-    || typeof value.providerTarget.workerExists !== "boolean"
-    || !isPublicOrigin(value.publicUrl)
-    || value.configVersion !== 1
-    || !isSha256(value.configFingerprint)
-    || value.databaseAction !== "NONE"
-    || !Array.isArray(value.destructiveActions)
-    || value.destructiveActions.length !== 0) {
+export function validateVs005DeploymentEvidence(value: unknown): Vs005CorrelatedDeploymentResult {
+  if (!isVs005CorrelatedDeploymentResult(value)) {
     throw new Vs005RollbackError("INVALID_DEPLOYMENT_EVIDENCE");
   }
-
-  let release: CadenceReleaseIdentity;
-  try {
-    release = loadCadenceReleaseIdentity(value.release);
-  } catch {
-    throw new Vs005RollbackError("INVALID_DEPLOYMENT_EVIDENCE");
-  }
-
-  const result: Vs005DeploymentResult = {
-    artifactType: "cadence.vs005.deployment-result",
-    formatVersion: 1,
-    planId: value.planId,
-    deploymentId: value.deploymentId,
-    providerVersionId: value.providerVersionId,
-    deployedAt: value.deployedAt,
-    environment: value.environment,
-    provider: "cloudflare",
-    providerTarget: {
-      accountId: value.providerTarget.accountId,
-      workerName: value.providerTarget.workerName,
-      workerExists: value.providerTarget.workerExists,
-    },
-    publicUrl: value.publicUrl,
-    configVersion: 1,
-    release,
-    configFingerprint: value.configFingerprint,
-    databaseAction: "NONE",
-    destructiveActions: [],
-  };
-  if (value.intendedTarget !== undefined) result.intendedTarget = value.intendedTarget as Vs005DeploymentResult["intendedTarget"];
-  if (value.observedProvider !== undefined) result.observedProvider = value.observedProvider as Vs005DeploymentResult["observedProvider"];
-  return result;
+  return value;
 }
 
 function requireMatch(condition: boolean, code: string): asserts condition {
   if (!condition) throw new Vs005RollbackError(code);
-}
-
-function normalizeRollbackTarget(
-  value: Awaited<ReturnType<Vs005RollbackProvider["inspectTarget"]>>,
-): Vs005ProviderInspection {
-  if (!("observations" in value)) {
-    throw new Vs005RollbackError("ROLLBACK PROVIDER INSPECTION UNAVAILABLE");
-  }
-  if (value.observations.accountId.state !== "OBSERVED_VALUE"
-    || value.observations.workerName.state !== "OBSERVED_VALUE"
-    || value.observations.workerExists.state !== "OBSERVED_VALUE"
-    || value.observations.workerExists.value !== true
-    || value.observations.currentRelease.state !== "OBSERVED_VALUE"
-    || value.observations.priorVersion.state !== "OBSERVED_VALUE"
-    || value.observations.workerConfigFingerprint.state !== "OBSERVED_VALUE"
-    || value.observations.hostname.state !== "OBSERVED_VALUE") {
-    throw new Vs005RollbackError("ROLLBACK PROVIDER INSPECTION UNAVAILABLE");
-  }
-  return value;
 }
 
 export async function rollbackVs005Application(input: {
@@ -257,7 +190,7 @@ export async function rollbackVs005Application(input: {
   targetPolicy: CadenceTargetPolicy;
   provider: Vs005RollbackProvider;
   verify: (
-    deployment: Vs005DeploymentResult,
+    deployment: Vs005CorrelatedDeploymentResult,
     expectedConfig: CadenceRuntimeConfig
   ) => Promise<Vs005DeploymentVerification>;
   clock?: () => Date;
@@ -307,26 +240,29 @@ export async function rollbackVs005Application(input: {
   requireMatch(currentEvidence.databaseAction === "NONE" && targetEvidence.databaseAction === "NONE", "ROLLBACK DATABASE ACTION INVALID");
   requireMatch(currentEvidence.destructiveActions.length === 0 && targetEvidence.destructiveActions.length === 0, "ROLLBACK DESTRUCTIVE ACTION INVALID");
 
-  let liveInspection: Vs005ProviderInspection;
+  let liveInspection: Vs005CorrelatedProviderInspection;
   try {
-    liveInspection = normalizeRollbackTarget(await input.provider.inspectTarget({
-      accountId: targetEvidence.providerTarget.accountId,
-      workerName: targetEvidence.providerTarget.workerName,
-    }));
+    liveInspection = await input.provider.inspectStructured({
+      config: currentConfig,
+      release: currentEvidence.release,
+      generatedConfig: buildCloudflareDeployment({ config: currentConfig, release: currentEvidence.release }).wrangler,
+      profile: "ROLLBACK_READINESS",
+      expectedPriorVersion: request.expectedPriorVersionA,
+    });
   } catch {
     throw new Vs005RollbackError("ROLLBACK PROVIDER INSPECTION FAILED");
   }
   const liveTarget = liveInspection.observations;
-  const rollbackObservationBlockers = validateVs005ObservationCompleteness({
-    phase: "ROLLBACK_READINESS",
-    observations: liveTarget,
-    mutationEnvelope: {
-      workerAction: "CREATE_OR_UPDATE",
-      cronAction: "NO_CHANGE",
-      secretNamesToSet: [],
-    } satisfies Vs005MutationEnvelope,
-  });
-  requireMatch(rollbackObservationBlockers.length === 0, "ROLLBACK PROVIDER INSPECTION FAILED");
+  const expectedOperations = ["CURRENT_DEPLOYMENT", "WORKER_SETTINGS", "CRON_SCHEDULES", "DEPLOYABLE_VERSIONS", "VERSION", "WORKER_SUBDOMAIN", "ACCOUNT_SUBDOMAIN"];
+  requireMatch(
+    liveInspection.correlation.accountId === targetEvidence.providerTarget.accountId
+      && liveInspection.correlation.workerName === targetEvidence.providerTarget.workerName
+      && liveInspection.correlation.configFingerprint === currentFingerprint
+      && liveInspection.correlation.providerOrigin === "api.cloudflare.com"
+      && liveInspection.correlation.profile === "ROLLBACK_READINESS"
+      && equalJson(liveInspection.correlation.completedOperations, expectedOperations),
+    "ROLLBACK PROVIDER INSPECTION FAILED",
+  );
   requireMatch(
     liveTarget.accountId.state === "OBSERVED_VALUE"
       && liveTarget.accountId.value === targetEvidence.providerTarget.accountId
@@ -335,9 +271,31 @@ export async function rollbackVs005Application(input: {
     "ROLLBACK PROVIDER TARGET MISMATCH",
   );
   requireMatch(
+    liveTarget.currentDeployment.state === "OBSERVED_VALUE"
+      && liveTarget.currentDeployment.value.deploymentId === currentEvidence.deploymentId
+      && liveTarget.currentDeployment.value.versions.some(
+        (version) => version.providerVersionId === currentEvidence.providerVersionId,
+      ),
+    "ROLLBACK CURRENT DEPLOYMENT MISMATCH",
+  );
+  requireMatch(
     liveTarget.currentRelease.state === "OBSERVED_VALUE"
       && equalJson(liveTarget.currentRelease.value, currentEvidence.release),
     "ROLLBACK RELEASE MISMATCH",
+  );
+  requireMatch(
+    liveTarget.workerExists.state === "OBSERVED_VALUE"
+      && liveTarget.workerExists.value === true
+      && liveTarget.cronSchedules.state === "OBSERVED_VALUE"
+      && liveTarget.cronSchedules.value.includes(currentConfig.worker.schedule)
+      && liveTarget.secretNames.state === "OBSERVED_VALUE"
+      && liveTarget.secretNames.value.includes(currentConfig.supabase.secretKeySecretRef)
+      && liveTarget.workersDevEnabled.state === "OBSERVED_VALUE"
+      && liveTarget.workersDevEnabled.value === true
+      && liveTarget.accountWorkersDevSubdomain.state === "OBSERVED_VALUE"
+      && `${targetEvidence.providerTarget.workerName}.${liveTarget.accountWorkersDevSubdomain.value}.workers.dev`
+        === new URL(request.expectedPublicUrl).hostname,
+    "ROLLBACK PROVIDER INSPECTION FAILED",
   );
   requireMatch(
     liveTarget.workerConfigFingerprint.state === "OBSERVED_VALUE"
@@ -366,7 +324,7 @@ export async function rollbackVs005Application(input: {
     "ROLLBACK ACTIVE VERSION MISMATCH",
   );
 
-  const reconstructed: Vs005DeploymentResult = {
+  const reconstructed: Vs005CorrelatedDeploymentResult = {
     ...targetEvidence,
     deploymentId: rollbackResult.deploymentId,
     providerVersionId: rollbackResult.activeProviderVersionId,
@@ -447,7 +405,7 @@ function createVerificationReaders(
       };
     },
     probeApi: async () => ({ status: (await response("/api/v1")).status }),
-    inspectProvider: async () => (await provider.inspect(config)).observations,
+    inspectProvider: async (request: CloudflareStructuredInspectionRequest) => provider.inspectStructured(request),
     inspectRuntimeTarget: async () => ({ environment: "", safeTargetMarker: "", supabaseProjectRef: null, pilotProjectId: null }),
     probeControlledProject: async () => ({ status: 0, projectId: null }),
   };

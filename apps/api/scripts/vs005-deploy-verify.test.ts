@@ -18,8 +18,13 @@ import {
   type Vs005DeploymentVerification,
   type Vs005VerificationReaders,
 } from "./vs005-deploy-verify";
-import type { Vs005DeploymentResult } from "./vs005-deploy-apply";
-import type { Vs005Observation, Vs005ProviderObservationSnapshot } from "./vs005-provider-observations";
+import type { CloudflareStructuredInspectionRequest } from "./vs005-cloudflare-structured-inspection";
+import type { Vs005CorrelatedDeploymentResult, Vs005DeploymentResult } from "./vs005-deploy-apply";
+import type {
+  Vs005CorrelatedProviderInspection,
+  Vs005Observation,
+  Vs005StructuredProviderObservationSnapshot,
+} from "./vs005-provider-observations";
 
 function makeBetaConfig(): CadenceRuntimeConfig {
   const value = JSON.parse(readFileSync(resolve(process.cwd(), "../../config/cadence.runtime.ci.json"), "utf8"));
@@ -44,7 +49,7 @@ const observed = <T>(value: T): Vs005Observation<T> => ({ state: "OBSERVED_VALUE
 const unavailable = <T>(code = "NOT_AVAILABLE"): Vs005Observation<T> => ({ state: "UNAVAILABLE", code });
 const absent = <T>(): Vs005Observation<T> => ({ state: "OBSERVED_ABSENT" });
 
-const providerSnapshot: Vs005ProviderObservationSnapshot = {
+const providerSnapshot: Vs005StructuredProviderObservationSnapshot = {
   accountId: observed(target.cloudflare.accountId),
   workerName: observed(target.cloudflare.workerName),
   workerExists: observed(true),
@@ -55,9 +60,15 @@ const providerSnapshot: Vs005ProviderObservationSnapshot = {
   currentRelease: observed(release),
   priorVersion: absent(),
   hostname: observed(new URL(target.publicUrl).hostname),
+  currentDeployment: observed({
+    deploymentId: "deployment-1",
+    versions: [{ providerVersionId: "version-1", percentage: 100 }],
+  }),
+  workersDevEnabled: observed(true),
+  accountWorkersDevSubdomain: observed("ngohch-3d6"),
 };
 
-const deployment: Vs005DeploymentResult = {
+const deployment: Vs005CorrelatedDeploymentResult = {
   artifactType: "cadence.vs005.deployment-result",
   formatVersion: 1,
   planId: "plan-1",
@@ -75,7 +86,35 @@ const deployment: Vs005DeploymentResult = {
   destructiveActions: [],
   intendedTarget: target,
   observedProvider: providerSnapshot,
+  providerCorrelation: {
+    accountId: target.cloudflare.accountId,
+    workerName: target.cloudflare.workerName,
+    configFingerprint,
+    providerOrigin: "api.cloudflare.com",
+    profile: "FIRST_DEPLOYMENT_READINESS",
+    completedOperations: ["CURRENT_DEPLOYMENT", "WORKER_SETTINGS", "CRON_SCHEDULES", "WORKER_SUBDOMAIN", "ACCOUNT_SUBDOMAIN"],
+    observedAt: "2026-09-04T12:33:00.000Z",
+  },
 };
+
+function structuredInspection(
+  observations: Vs005StructuredProviderObservationSnapshot = providerSnapshot,
+  correlationOverrides: Partial<Vs005CorrelatedProviderInspection["correlation"]> = {},
+): Vs005CorrelatedProviderInspection {
+  return {
+    correlation: {
+      accountId: target.cloudflare.accountId,
+      workerName: target.cloudflare.workerName,
+      configFingerprint,
+      providerOrigin: "api.cloudflare.com",
+      profile: "POST_DEPLOYMENT_VERIFICATION",
+      completedOperations: ["CURRENT_DEPLOYMENT", "WORKER_SETTINGS", "CRON_SCHEDULES", "WORKER_SUBDOMAIN", "ACCOUNT_SUBDOMAIN"],
+      observedAt: "2026-09-04T12:35:00.000Z",
+      ...correlationOverrides,
+    },
+    observations,
+  };
+}
 
 function passReaders(overrides: Partial<Vs005VerificationReaders> = {}): Vs005VerificationReaders {
   return {
@@ -95,7 +134,7 @@ function passReaders(overrides: Partial<Vs005VerificationReaders> = {}): Vs005Ve
       },
     }),
     probeApi: async () => ({ status: 401 }),
-    inspectProvider: async () => providerSnapshot,
+    inspectProvider: async () => structuredInspection(),
     inspectRuntimeTarget: async () => ({
       environment: target.environment,
       safeTargetMarker: target.safeTargetMarker,
@@ -109,7 +148,7 @@ function passReaders(overrides: Partial<Vs005VerificationReaders> = {}): Vs005Ve
 
 async function verify(
   readers: Vs005VerificationReaders,
-  currentDeployment: Vs005DeploymentResult = deployment,
+  currentDeployment: Vs005CorrelatedDeploymentResult = deployment,
   expectedConfig: CadenceRuntimeConfig = config,
 ): Promise<Vs005DeploymentVerification> {
   return verifyVs005Deployment({
@@ -120,16 +159,33 @@ async function verify(
   });
 }
 
-test("verification checks exact account and Worker", async () => {
+test("verification uses a fresh complete structured post-deployment inspection", async () => {
+  const requests: CloudflareStructuredInspectionRequest[] = [];
   const result = await verify(passReaders());
-  assert.equal(result.checks.find((item) => item.name === "provider-target")?.outcome, "PASS");
+  const captured = await verify(passReaders({
+    inspectProvider: async (request) => {
+      requests.push(request);
+      return structuredInspection();
+    },
+  }));
+  assert.equal(result.outcome, "PASS");
+  assert.equal(captured.outcome, "PASS");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.profile, "POST_DEPLOYMENT_VERIFICATION");
+  assert.deepEqual(requests[0]?.config, config);
+  assert.deepEqual(requests[0]?.release, deployment.release);
+  assert.equal(requests[0]?.generatedConfig.name, target.cloudflare.workerName);
+  assert.equal(result.pilotActivation, "NOT_AUTHORISED");
+});
+
+test("verification checks exact fresh correlation account and Worker", async () => {
   const drift = await verify(passReaders({
-    inspectProvider: async () => ({ ...providerSnapshot, accountId: observed("other-account") }),
+    inspectProvider: async () => structuredInspection(providerSnapshot, { accountId: "other-account" }),
   }));
   assert.ok(drift.checks.some((item) => item.code === "PROVIDER_ACCOUNT_DRIFT" && item.outcome === "FAIL"));
 
   const workerDrift = await verify(passReaders({
-    inspectProvider: async () => ({ ...providerSnapshot, workerName: observed("other-worker") }),
+    inspectProvider: async () => structuredInspection(providerSnapshot, { workerName: "other-worker" }),
   }));
   assert.ok(workerDrift.checks.some((item) => item.code === "PROVIDER_WORKER_DRIFT" && item.outcome === "FAIL"));
 });
@@ -170,7 +226,7 @@ test("verification checks release and fingerprint", async () => {
 
 test("verification checks Cron and named secret", async () => {
   const result = await verify(passReaders({
-    inspectProvider: async () => ({ ...providerSnapshot, cronSchedules: observed([]), secretNames: observed([]) }),
+    inspectProvider: async () => structuredInspection({ ...providerSnapshot, cronSchedules: observed([]), secretNames: observed([]) }),
   }));
   assert.ok(result.checks.some((item) => item.code === "SCHEDULE_DRIFT" && item.outcome === "FAIL"));
   assert.ok(result.checks.some((item) => item.code === "SECRET_BINDING_DRIFT" && item.outcome === "FAIL"));
@@ -178,7 +234,7 @@ test("verification checks Cron and named secret", async () => {
 
 test("verification rejects unavailable provider fact", async () => {
   const result = await verify(passReaders({
-    inspectProvider: async () => ({ ...providerSnapshot, workerConfigFingerprint: unavailable("CONFIG_UNAVAILABLE") }),
+    inspectProvider: async () => structuredInspection({ ...providerSnapshot, workerConfigFingerprint: unavailable("CONFIG_UNAVAILABLE") }),
   }));
   assert.equal(result.outcome, "FAIL");
   assert.ok(result.checks.some((item) => item.code === "PROVIDER_OBSERVATION_UNAVAILABLE" && item.outcome === "FAIL"));
@@ -186,7 +242,7 @@ test("verification rejects unavailable provider fact", async () => {
 
 test("verification rejects an absent Worker after deployment", async () => {
   const result = await verify(passReaders({
-    inspectProvider: async () => ({ ...providerSnapshot, workerExists: absent() }),
+    inspectProvider: async () => structuredInspection({ ...providerSnapshot, workerExists: absent() }),
   }));
   assert.ok(result.checks.some((item) => item.code === "WORKER_ABSENT" && item.outcome === "FAIL"));
 });
@@ -204,13 +260,44 @@ test("verification always records NOT_AUTHORISED", async () => {
 });
 
 test("legacy evidence without v2 target/provider provenance cannot become PASS", async () => {
-  const legacy = { ...deployment };
+  const legacy: Record<string, unknown> = { ...deployment };
   delete legacy.intendedTarget;
   delete legacy.observedProvider;
-  const result = await verify(passReaders(), legacy);
+  const result = await verify(passReaders(), legacy as unknown as Vs005CorrelatedDeploymentResult);
   assert.equal(result.outcome, "FAIL");
   assert.ok(result.checks.some((item) => item.code === "INSUFFICIENT_DEPLOYMENT_PROVENANCE"));
   assert.equal(result.pilotActivation, "NOT_AUTHORISED");
+});
+
+test("verification rejects base or malformed correlated deployment evidence before inspection", async () => {
+  for (const candidate of [
+    { ...deployment, providerCorrelation: undefined },
+    { ...deployment, observedProvider: undefined },
+    { ...deployment, providerCorrelation: { ...deployment.providerCorrelation, providerOrigin: "example.test" } },
+  ]) {
+    let calls = 0;
+    const result = await verify(passReaders({ inspectProvider: async () => { calls += 1; return structuredInspection(); } }), candidate as unknown as Vs005CorrelatedDeploymentResult);
+    assert.equal(result.outcome, "FAIL");
+    assert.equal(calls, 0);
+    assert.ok(result.checks.some((item) => item.code === "INSUFFICIENT_DEPLOYMENT_PROVENANCE"));
+  }
+});
+
+test("verification fails closed on fresh correlation, operation, deployment, version, and hostname drift", async () => {
+  const cases: Vs005CorrelatedProviderInspection[] = [
+    structuredInspection(providerSnapshot, { configFingerprint: "a".repeat(64) }),
+    structuredInspection(providerSnapshot, { providerOrigin: "api.cloudflare.com", profile: "ROLLBACK_READINESS" }),
+    structuredInspection(providerSnapshot, { completedOperations: ["CURRENT_DEPLOYMENT"] }),
+    structuredInspection({ ...providerSnapshot, currentDeployment: observed({ deploymentId: "other-deployment", versions: [{ providerVersionId: "version-1", percentage: 100 }] }) }),
+    structuredInspection({ ...providerSnapshot, currentDeployment: observed({ deploymentId: "deployment-1", versions: [{ providerVersionId: "other-version", percentage: 100 }] }) }),
+    structuredInspection({ ...providerSnapshot, workersDevEnabled: absent() }),
+    structuredInspection({ ...providerSnapshot, accountWorkersDevSubdomain: unavailable("SUBDOMAIN_UNAVAILABLE") }),
+    structuredInspection({ ...providerSnapshot, hostname: observed("other.example.test") }),
+  ];
+  for (const inspection of cases) {
+    const result = await verify(passReaders({ inspectProvider: async () => inspection }));
+    assert.equal(result.outcome, "FAIL");
+  }
 });
 
 test("verification rejects runtime secret-looking provider output without retaining it", async () => {

@@ -477,41 +477,10 @@ function parseRollbackIdentifiers(stdout: string): {
 export function createCloudflareDeploymentProvider(
   io: CloudflareDeploymentProviderIo,
   rollbackTarget?: { workerName?: string },
-): Vs005DeploymentProvider & Vs005RollbackProvider & {
+): Omit<Vs005DeploymentProvider, "inspect"> & Vs005RollbackProvider & {
   inspectStructured(input: CloudflareStructuredInspectionRequest): Promise<Vs005CorrelatedProviderInspection>;
 } {
   return {
-    async inspect(config: CadenceRuntimeConfig): Promise<Vs005DeploymentProviderInspection> {
-      if (!config.cloudflare) {
-        return legacyInspectionProjection(unavailableReadOnlyFacts("CLOUDFLARE_TARGET_UNAVAILABLE"));
-      }
-
-      if (!io.inspectLegacyReadOnly) {
-        return legacyInspectionProjection(unavailableReadOnlyFacts("CLOUDFLARE_STRUCTURED_INSPECTION_REQUIRED"));
-      }
-      try {
-        const facts = await io.inspectLegacyReadOnly({
-          accountId: config.cloudflare.accountId,
-          workerName: config.cloudflare.workerName,
-        });
-        return legacyInspectionProjection(sanitizeReadOnlyFacts(facts));
-      } catch {
-        return legacyInspectionProjection(unavailableReadOnlyFacts("CLOUDFLARE_INSPECTION_UNAVAILABLE"));
-      }
-    },
-
-    async inspectTarget(input?: { accountId: string; workerName: string }) {
-      if (input && io.inspectLegacyReadOnly) {
-        try {
-          const facts = await io.inspectLegacyReadOnly(input);
-          return { observations: sanitizeReadOnlyFacts(facts) };
-        } catch {
-          return { observations: unavailableReadOnlyFacts("CLOUDFLARE_INSPECTION_UNAVAILABLE") };
-        }
-      }
-      throw new Error("CLOUDFLARE_TARGET_UNAVAILABLE");
-    },
-
     async inspectStructured(input) {
       try {
         return sanitizeStructuredInspection(await io.inspectReadOnly(input), input);
@@ -559,6 +528,27 @@ export function createCloudflareDeploymentProvider(
       return parseRollbackIdentifiers(result.stdout);
     },
   };
+}
+
+export async function inspectCloudflareLegacyReadOnlyNonAuthoritative(
+  io: CloudflareDeploymentProviderIo,
+  config: CadenceRuntimeConfig,
+): Promise<Vs005DeploymentProviderInspection> {
+  if (!config.cloudflare) {
+    return legacyInspectionProjection(unavailableReadOnlyFacts("CLOUDFLARE_TARGET_UNAVAILABLE"));
+  }
+  if (!io.inspectLegacyReadOnly) {
+    return legacyInspectionProjection(unavailableReadOnlyFacts("CLOUDFLARE_STRUCTURED_INSPECTION_REQUIRED"));
+  }
+  try {
+    const facts = await io.inspectLegacyReadOnly({
+      accountId: config.cloudflare.accountId,
+      workerName: config.cloudflare.workerName,
+    });
+    return legacyInspectionProjection(sanitizeReadOnlyFacts(facts));
+  } catch {
+    return legacyInspectionProjection(unavailableReadOnlyFacts("CLOUDFLARE_INSPECTION_UNAVAILABLE"));
+  }
 }
 
 function runWrangler(

@@ -14,15 +14,24 @@ import {
   type CadenceTargetFacts,
   type CadenceTargetPolicy,
 } from "../src/bootstrap/cadence-target-policy";
-import type { Vs005DeploymentResult } from "./vs005-deploy-apply";
+import {
+  isVs005CorrelatedDeploymentResult,
+  type Vs005CorrelatedDeploymentResult,
+  type Vs005DeploymentResult,
+} from "./vs005-deploy-apply";
 import { makeVs005OperatorFailure } from "./vs005-deployment-artifacts";
 import {
   createCloudflareDeploymentProvider,
   createDefaultCloudflareProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
+import {
+  buildCloudflareDeployment,
+} from "./vs005-generate-deployment";
+import type { CloudflareStructuredInspectionRequest } from "./vs005-cloudflare-structured-inspection";
 import type {
+  Vs005CorrelatedProviderInspection,
   Vs005Observation,
-  Vs005ProviderObservationSnapshot,
+  Vs005StructuredProviderObservationSnapshot,
 } from "./vs005-provider-observations";
 
 export interface Vs005VerificationReaders {
@@ -30,7 +39,7 @@ export interface Vs005VerificationReaders {
   inspectBrowserBundle(): Promise<{ status: number; forbiddenServerMarkersFound: boolean }>;
   getHealth(): Promise<{ status: number; json: unknown }>;
   probeApi(): Promise<{ status: number }>;
-  inspectProvider(): Promise<Vs005ProviderObservationSnapshot>;
+  inspectProvider(request: CloudflareStructuredInspectionRequest): Promise<Vs005CorrelatedProviderInspection>;
   inspectRuntimeTarget(): Promise<{
     environment: string;
     safeTargetMarker: string;
@@ -77,21 +86,6 @@ export interface Vs005DeploymentVerification {
 
 function unavailable<T>(code: string): Vs005Observation<T> {
   return { state: "UNAVAILABLE", code };
-}
-
-function unavailableProviderSnapshot(): Vs005ProviderObservationSnapshot {
-  return {
-    accountId: unavailable("PROVIDER_INSPECTION_UNAVAILABLE"),
-    workerName: unavailable("PROVIDER_INSPECTION_UNAVAILABLE"),
-    workerExists: unavailable("PROVIDER_INSPECTION_UNAVAILABLE"),
-    workerConfigFingerprint: unavailable("PROVIDER_INSPECTION_UNAVAILABLE"),
-    cronSchedules: unavailable("PROVIDER_INSPECTION_UNAVAILABLE"),
-    nonSecretBindingNames: unavailable("PROVIDER_INSPECTION_UNAVAILABLE"),
-    secretNames: unavailable("PROVIDER_INSPECTION_UNAVAILABLE"),
-    currentRelease: unavailable("PROVIDER_INSPECTION_UNAVAILABLE"),
-    priorVersion: unavailable("PROVIDER_INSPECTION_UNAVAILABLE"),
-    hostname: unavailable("PROVIDER_INSPECTION_UNAVAILABLE"),
-  };
 }
 
 function healthMatches(value: unknown, deployment: Vs005DeploymentResult): boolean {
@@ -146,8 +140,8 @@ function targetFromDeployment(deployment: Vs005DeploymentResult): CadenceTargetF
 }
 
 function providerObservationMatches(
-  observations: Vs005ProviderObservationSnapshot,
-  deployment: Vs005DeploymentResult,
+  observations: Vs005StructuredProviderObservationSnapshot,
+  deployment: Vs005CorrelatedDeploymentResult,
   expectedConfig: CadenceRuntimeConfig,
   target: CadenceTargetFacts,
 ): { checks: Vs005DeploymentVerificationCheck[]; complete: boolean } {
@@ -161,12 +155,42 @@ function providerObservationMatches(
   const secretNames = observedValue(observations.secretNames);
   const currentRelease = observedValue(observations.currentRelease);
   const hostname = observedValue(observations.hostname);
+  const currentDeployment = observedValue(observations.currentDeployment);
+  const workersDevEnabled = observedValue(observations.workersDevEnabled);
+  const accountSubdomain = observedValue(observations.accountWorkersDevSubdomain);
 
   checks.push(check(
     "provider-target",
     observations.accountId.state === "OBSERVED_VALUE" && accountId === target.cloudflare.accountId,
     "PROVIDER_ACCOUNT_MATCH",
     observations.accountId.state === "UNAVAILABLE" ? "PROVIDER_OBSERVATION_UNAVAILABLE" : "PROVIDER_ACCOUNT_DRIFT",
+  ));
+  checks.push(check(
+    "deployment-provenance",
+    observations.currentDeployment.state === "OBSERVED_VALUE"
+      && currentDeployment?.deploymentId === deployment.deploymentId,
+    "CURRENT_DEPLOYMENT_MATCH",
+    "CURRENT_DEPLOYMENT_DRIFT",
+  ));
+  checks.push(check(
+    "deployment-provenance",
+    observations.currentDeployment.state === "OBSERVED_VALUE"
+      && currentDeployment?.versions.some((version) => version.providerVersionId === deployment.providerVersionId) === true,
+    "ACTIVE_PROVIDER_VERSION_MATCH",
+    "ACTIVE_PROVIDER_VERSION_DRIFT",
+  ));
+  checks.push(check(
+    "provider-observation",
+    observations.workersDevEnabled.state === "OBSERVED_VALUE" && workersDevEnabled === true,
+    "WORKERS_DEV_ENABLED",
+    "WORKERS_DEV_STATE_DRIFT",
+  ));
+  checks.push(check(
+    "provider-observation",
+    observations.accountWorkersDevSubdomain.state === "OBSERVED_VALUE"
+      && `${target.cloudflare.workerName}.${accountSubdomain}.workers.dev` === new URL(target.publicUrl).hostname,
+    "ACCOUNT_SUBDOMAIN_MATCH",
+    "ACCOUNT_SUBDOMAIN_DRIFT",
   ));
   checks.push(check(
     "provider-target",
@@ -224,7 +248,7 @@ function providerObservationMatches(
 }
 
 export async function verifyVs005Deployment(input: {
-  deployment: Vs005DeploymentResult;
+  deployment: Vs005CorrelatedDeploymentResult;
   expectedConfig: CadenceRuntimeConfig;
   targetPolicy: CadenceTargetPolicy;
   readers: Vs005VerificationReaders;
@@ -236,6 +260,12 @@ export async function verifyVs005Deployment(input: {
   const expectedConfig = validateCadenceRuntimeConfig(input.expectedConfig);
   const expectedTarget = getCadenceTargetFacts(expectedConfig);
   const checks: Vs005DeploymentVerificationCheck[] = [];
+
+  if (!isVs005CorrelatedDeploymentResult(input.deployment)) {
+    return resultFor(input.deployment, [
+      check("deployment-provenance", false, "DEPLOYMENT_PROVENANCE_COMPLETE", "INSUFFICIENT_DEPLOYMENT_PROVENANCE"),
+    ]);
+  }
 
   try {
     assertCadenceTargetPolicy(expectedConfig, input.targetPolicy);
@@ -289,12 +319,18 @@ export async function verifyVs005Deployment(input: {
     "PUBLIC_URL_DRIFT",
   ));
 
-  const [web, browser, health, api, provider, runtimeTarget, controlledProject] = await Promise.all([
+  const inspectionRequest: CloudflareStructuredInspectionRequest = {
+    config: expectedConfig,
+    release: input.deployment.release,
+    generatedConfig: buildCloudflareDeployment({ config: expectedConfig, release: input.deployment.release }).wrangler,
+    profile: "POST_DEPLOYMENT_VERIFICATION",
+  };
+  const [web, browser, health, api, providerInspection, runtimeTarget, controlledProject] = await Promise.all([
     input.readers.getWeb().catch(() => ({ status: 0 })),
     input.readers.inspectBrowserBundle().catch(() => ({ status: 0, forbiddenServerMarkersFound: false })),
     input.readers.getHealth().catch(() => ({ status: 0, json: null })),
     input.readers.probeApi().catch(() => ({ status: 0 })),
-    input.readers.inspectProvider().catch(() => unavailableProviderSnapshot()),
+    input.readers.inspectProvider(inspectionRequest).catch(() => undefined),
     input.readers.inspectRuntimeTarget().catch(() => ({
       environment: "",
       safeTargetMarker: "",
@@ -303,6 +339,34 @@ export async function verifyVs005Deployment(input: {
     })),
     input.readers.probeControlledProject().catch(() => ({ status: 0, projectId: null })),
   ]);
+
+  if (!providerInspection) {
+    checks.push(check("provider-observation", false, "PROVIDER_INSPECTION_COMPLETE", "PROVIDER_OBSERVATION_UNAVAILABLE"));
+    return resultFor(input.deployment, checks);
+  }
+  const provider = providerInspection.observations;
+  const expectedOperations = ["CURRENT_DEPLOYMENT", "WORKER_SETTINGS", "CRON_SCHEDULES", "WORKER_SUBDOMAIN", "ACCOUNT_SUBDOMAIN"];
+  checks.push(check(
+    "provider-target",
+    providerInspection.correlation.accountId === expectedTarget.cloudflare.accountId,
+    "PROVIDER_ACCOUNT_MATCH",
+    "PROVIDER_ACCOUNT_DRIFT",
+  ));
+  checks.push(check(
+    "provider-target",
+    providerInspection.correlation.workerName === expectedTarget.cloudflare.workerName,
+    "PROVIDER_WORKER_MATCH",
+    "PROVIDER_WORKER_DRIFT",
+  ));
+  checks.push(check(
+    "provider-observation",
+    providerInspection.correlation.configFingerprint === input.deployment.configFingerprint
+      && providerInspection.correlation.providerOrigin === "api.cloudflare.com"
+      && providerInspection.correlation.profile === "POST_DEPLOYMENT_VERIFICATION"
+      && equalJson(providerInspection.correlation.completedOperations, expectedOperations),
+    "PROVIDER_CORRELATION_MATCH",
+    "PROVIDER_CORRELATION_DRIFT",
+  ));
 
   checks.push(check("web", web.status === 200, "WEB_REACHABLE", "WEB_UNAVAILABLE"));
   checks.push(check(
@@ -397,7 +461,8 @@ async function runVerifyCli(args: readonly string[]): Promise<void> {
     configPath = parsed.configPath;
     outputPath = parsed.outputPath;
     const config = loadCadenceRuntimeConfig(parsed.configPath);
-    const deployment = JSON.parse(readFileSync(parsed.deploymentPath, "utf8")) as Vs005DeploymentResult;
+    const deployment = JSON.parse(readFileSync(parsed.deploymentPath, "utf8"));
+    if (!isVs005CorrelatedDeploymentResult(deployment)) throw new Error("INVALID_DEPLOYMENT_EVIDENCE");
     const provider = createCloudflareDeploymentProvider(createDefaultCloudflareProviderIo());
     const origin = new URL(config.application.publicUrl);
     const response = async (path: string): Promise<Response> => fetch(new URL(path, origin));
@@ -417,7 +482,7 @@ async function runVerifyCli(args: readonly string[]): Promise<void> {
           return { status: healthResponse.status, json: healthResponse.status === 200 ? await healthResponse.json() : null };
         },
         probeApi: async () => ({ status: (await response("/api/v1")).status }),
-        inspectProvider: async () => (await provider.inspect(config)).observations,
+        inspectProvider: async (request) => provider.inspectStructured(request),
         inspectRuntimeTarget: async () => ({ environment: "", safeTargetMarker: "", supabaseProjectRef: null, pilotProjectId: null }),
         probeControlledProject: async () => ({ status: 0, projectId: null }),
       },

@@ -13,15 +13,19 @@ import {
   createCloudflareDeploymentProvider,
   createDefaultCloudflareProviderIo,
   inspectCloudflareAccountMembership,
+  inspectCloudflareLegacyReadOnlyNonAuthoritative,
   withoutCloudflareInspectionCredential,
   type CloudflareReadOnlyProviderFacts,
   type CloudflareDeploymentProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
 import { buildCloudflareDeployment } from "./vs005-generate-deployment";
-import type { Vs005CorrelatedProviderInspection, Vs005Observation } from "./vs005-provider-observations";
+import type {
+  Vs005CorrelatedProviderInspection,
+  Vs005Observation,
+  Vs005ProviderObservationSnapshot,
+} from "./vs005-provider-observations";
 
 interface RollbackProvider {
-  inspectTarget(): Promise<{ accountId: string; workerName: string }>;
   rollback(providerVersionId: string): Promise<{
     deploymentId: string;
     activeProviderVersionId: string;
@@ -29,9 +33,7 @@ interface RollbackProvider {
 }
 
 function isRollbackProvider(value: object): value is RollbackProvider {
-  return "inspectTarget" in value
-    && typeof value.inspectTarget === "function"
-    && "rollback" in value
+  return "rollback" in value
     && typeof value.rollback === "function";
 }
 
@@ -88,7 +90,7 @@ function fakeProviderIo(overrides: Partial<CloudflareDeploymentProviderIo> = {})
   return { io, calls, deleted };
 }
 
-function observationsOf(result: Awaited<ReturnType<ReturnType<typeof createCloudflareDeploymentProvider>["inspect"]>>) {
+function observationsOf(result: { observations: Vs005ProviderObservationSnapshot }) {
   assert.ok(result.observations);
   return result.observations;
 }
@@ -464,9 +466,7 @@ test("inspection returns account and Worker identity", async () => {
       return readOnlyFacts;
     },
   });
-  const provider = createCloudflareDeploymentProvider(fake.io);
-
-  const result = await provider.inspect(config);
+  const result = await inspectCloudflareLegacyReadOnlyNonAuthoritative(fake.io, config);
   const observations = observationsOf(result);
 
   assert.deepEqual(requested, { accountId: "account-ci", workerName: "worker-ci" });
@@ -481,9 +481,7 @@ test("inspection distinguishes absent Worker", async () => {
       workerExists: absent(),
     }),
   });
-  const provider = createCloudflareDeploymentProvider(fake.io);
-
-  const result = await provider.inspect(config);
+  const result = await inspectCloudflareLegacyReadOnlyNonAuthoritative(fake.io, config);
   const observations = observationsOf(result);
 
   assert.deepEqual(observations.workerExists, { state: "OBSERVED_ABSENT" });
@@ -497,9 +495,7 @@ test("inspection preserves absent Cron and secret states", async () => {
       secretNames: absent(),
     }),
   });
-  const provider = createCloudflareDeploymentProvider(fake.io);
-
-  const result = await provider.inspect(config);
+  const result = await inspectCloudflareLegacyReadOnlyNonAuthoritative(fake.io, config);
   const observations = observationsOf(result);
 
   assert.deepEqual(observations.cronSchedules, { state: "OBSERVED_ABSENT" });
@@ -508,9 +504,7 @@ test("inspection preserves absent Cron and secret states", async () => {
 
 test("inspection returns release and fingerprint facts without raw output", async () => {
   const fake = fakeProviderIo();
-  const provider = createCloudflareDeploymentProvider(fake.io);
-
-  const result = await provider.inspect(config);
+  const result = await inspectCloudflareLegacyReadOnlyNonAuthoritative(fake.io, config);
   const observations = observationsOf(result);
 
   assert.deepEqual(observations.currentRelease, readOnlyFacts.currentRelease);
@@ -526,9 +520,7 @@ test("inspection never returns secret values", async () => {
     secretValue: "server-secret-must-not-escape",
   } as CloudflareReadOnlyProviderFacts & { secretValue: string };
   const fake = fakeProviderIo({ inspectLegacyReadOnly: async () => maliciousFacts });
-  const provider = createCloudflareDeploymentProvider(fake.io);
-
-  const result = await provider.inspect(config);
+  const result = await inspectCloudflareLegacyReadOnlyNonAuthoritative(fake.io, config);
   const observations = observationsOf(result);
 
   assert.equal(JSON.stringify(result).includes("server-secret-must-not-escape"), false);
@@ -537,9 +529,7 @@ test("inspection never returns secret values", async () => {
 
 test("inspection has no deploy or rollback capability", async () => {
   const fake = fakeProviderIo();
-  const provider = createCloudflareDeploymentProvider(fake.io);
-
-  const result = await provider.inspect(config);
+  const result = await inspectCloudflareLegacyReadOnlyNonAuthoritative(fake.io, config);
 
   assert.equal("deploy" in result, false);
   assert.equal("rollback" in result, false);
@@ -551,9 +541,7 @@ test("provider failure maps to UNAVAILABLE", async () => {
       throw new Error("provider failed token=do-not-copy");
     },
   });
-  const provider = createCloudflareDeploymentProvider(fake.io);
-
-  const result = await provider.inspect(config);
+  const result = await inspectCloudflareLegacyReadOnlyNonAuthoritative(fake.io, config);
   const observations = observationsOf(result);
 
   assert.equal(observations.accountId.state, "UNAVAILABLE");
@@ -568,9 +556,7 @@ test("malformed provider facts fail closed without propagating raw values", asyn
       cronSchedules: { state: "OBSERVED_VALUE", value: ["unexpected\noutput"] },
     } as unknown as CloudflareReadOnlyProviderFacts),
   });
-  const provider = createCloudflareDeploymentProvider(fake.io);
-
-  const result = await provider.inspect(config);
+  const result = await inspectCloudflareLegacyReadOnlyNonAuthoritative(fake.io, config);
   const observations = observationsOf(result);
 
   assert.equal(observations.accountId.state, "UNAVAILABLE");
@@ -579,7 +565,7 @@ test("malformed provider facts fail closed without propagating raw values", asyn
   assert.equal(JSON.stringify(result).includes("unexpected"), false);
 });
 
-test("inspectTarget fails closed without a canonical account target", async () => {
+test("workflow facade exposes no target-detached legacy inspection", () => {
   const fake = fakeProviderIo({
     runWrangler: async () => ({
       exitCode: 0,
@@ -587,13 +573,7 @@ test("inspectTarget fails closed without a canonical account target", async () =
     }),
   });
   const provider = createCloudflareDeploymentProvider(fake.io);
-  assert.equal(isRollbackProvider(provider), true);
-  if (!isRollbackProvider(provider)) return;
-
-  await assert.rejects(
-    () => provider.inspectTarget(),
-    /CLOUDFLARE_TARGET_UNAVAILABLE/,
-  );
+  assert.equal("inspectTarget" in provider, false);
   assert.equal(fake.calls.length, 0);
 });
 
@@ -753,4 +733,13 @@ test("correlated facade does not expose a provider-selected account", async () =
 
   assert.equal(result.observations.accountId.state, "UNAVAILABLE");
   assert.doesNotMatch(JSON.stringify(result), /provider-selected-account/);
+});
+
+test("deployment workflow provider facade exposes no legacy inspection authority", () => {
+  const provider = createCloudflareDeploymentProvider(fakeProviderIo().io);
+  assert.equal("inspect" in provider, false);
+  assert.equal("inspectTarget" in provider, false);
+  assert.equal(typeof provider.inspectStructured, "function");
+  assert.equal(typeof provider.deploy, "function");
+  assert.equal(typeof provider.rollback, "function");
 });
