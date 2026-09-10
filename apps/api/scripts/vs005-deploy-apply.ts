@@ -22,20 +22,28 @@ import {
   type CadenceReleaseIdentity,
 } from "../src/bootstrap/cadence-release";
 import {
+  isVs005ProviderObservationCorrelation,
+  isVs005StructuredProviderObservationSnapshot,
   isVs005DeploymentPlanV2,
   makeVs005OperatorFailure,
   type Vs005DeploymentPlanV2,
 } from "./vs005-deployment-artifacts";
 import {
+  type Vs005CorrelatedProviderInspection,
   type Vs005MutationEnvelope,
   type Vs005Observation,
   type Vs005ProviderObservationSnapshot,
+  type Vs005ProviderObservationCorrelation,
+  type Vs005StructuredProviderObservationSnapshot,
   validateVs005ObservationCompleteness,
 } from "./vs005-provider-observations";
 import {
   createCloudflareDeploymentProvider,
   createDefaultCloudflareProviderIo,
+  withoutCloudflareInspectionCredential,
 } from "./vs005-cloudflare-deployment-provider";
+import type { CloudflareStructuredInspectionRequest } from "./vs005-cloudflare-structured-inspection";
+import { buildCloudflareDeployment, type GeneratedCloudflareDeployment } from "./vs005-generate-deployment";
 
 export interface Vs005DeploymentProviderInspection {
   accountId: string;
@@ -51,6 +59,19 @@ export interface Vs005DeploymentProvider {
   deploy(input: {
     config: CadenceRuntimeConfig;
     generatedWranglerPath: string;
+    childEnvironment?: NodeJS.ProcessEnv;
+    bootstrapSecrets?: CadenceResolvedSecrets;
+  }): Promise<{ deploymentId: string; providerVersionId: string }>;
+}
+
+export interface Vs005StructuredDeploymentProvider {
+  inspectStructured(
+    input: CloudflareStructuredInspectionRequest,
+  ): Promise<Vs005CorrelatedProviderInspection>;
+  deploy(input: {
+    config: CadenceRuntimeConfig;
+    generatedWranglerPath: string;
+    childEnvironment: NodeJS.ProcessEnv;
     bootstrapSecrets?: CadenceResolvedSecrets;
   }): Promise<{ deploymentId: string; providerVersionId: string }>;
 }
@@ -79,6 +100,11 @@ export interface Vs005DeploymentResult {
   observedProvider?: Vs005ProviderObservationSnapshot;
 }
 
+export interface Vs005CorrelatedDeploymentResult extends Vs005DeploymentResult {
+  providerCorrelation: Vs005ProviderObservationCorrelation;
+  observedProvider: Vs005StructuredProviderObservationSnapshot;
+}
+
 export class Vs005ApplyError extends Error {
   readonly mutationAttempted: boolean;
   readonly safeCode: string;
@@ -93,6 +119,56 @@ export class Vs005ApplyError extends Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isVs005DeploymentResult(value: unknown): value is Vs005DeploymentResult {
+  return isRecord(value)
+    && value.artifactType === "cadence.vs005.deployment-result"
+    && value.formatVersion === 1
+    && safeIdentifier(value.planId) !== undefined
+    && safeIdentifier(value.deploymentId) !== undefined
+    && safeIdentifier(value.providerVersionId) !== undefined
+    && typeof value.deployedAt === "string"
+    && ["local", "qa", "beta"].includes(value.environment as string)
+    && value.provider === "cloudflare"
+    && isRecord(value.providerTarget)
+    && safeIdentifier(value.providerTarget.accountId) !== undefined
+    && safeIdentifier(value.providerTarget.workerName) !== undefined
+    && typeof value.providerTarget.workerExists === "boolean"
+    && isPublicOrigin(value.publicUrl)
+    && value.configVersion === 1
+    && safeRelease(value.release) !== undefined
+    && typeof value.configFingerprint === "string"
+    && /^[0-9a-f]{64}$/.test(value.configFingerprint)
+    && value.databaseAction === "NONE"
+    && Array.isArray(value.destructiveActions)
+    && value.destructiveActions.length === 0;
+}
+
+function isPublicOrigin(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.username === "" && url.password === ""
+      && url.search === "" && url.hash === "" && url.pathname === "/";
+  } catch {
+    return false;
+  }
+}
+
+export function isVs005CorrelatedDeploymentResult(
+  value: unknown,
+): value is Vs005CorrelatedDeploymentResult {
+  if (!isVs005DeploymentResult(value) || !isRecord(value)) return false;
+  const providerCorrelation = value.providerCorrelation;
+  const observedProvider = value.observedProvider;
+  if (!isVs005ProviderObservationCorrelation(providerCorrelation)
+    || providerCorrelation.profile !== "FIRST_DEPLOYMENT_READINESS"
+    || !isVs005StructuredProviderObservationSnapshot(observedProvider)) return false;
+  return equalJson(
+    providerCorrelation.completedOperations,
+    expectedOperations(observedProvider),
+  );
 }
 
 function assertPlan(value: unknown): Vs005DeploymentPlanV2 {
@@ -213,6 +289,71 @@ function normalizeProviderInspection(value: unknown): Vs005ProviderObservationSn
   };
 }
 
+function safeCurrentDeployment(value: unknown) {
+  if (!isRecord(value) || safeIdentifier(value.deploymentId) === undefined
+    || !Array.isArray(value.versions) || value.versions.length > 128) return undefined;
+  const seen = new Set<string>();
+  const versions: Array<{ providerVersionId: string; percentage: number }> = [];
+  for (const version of value.versions) {
+    if (!isRecord(version)) return undefined;
+    const providerVersionId = safeIdentifier(version.providerVersionId);
+    if (!providerVersionId || seen.has(providerVersionId) || typeof version.percentage !== "number"
+      || !Number.isFinite(version.percentage) || version.percentage < 0 || version.percentage > 100) return undefined;
+    seen.add(providerVersionId);
+    versions.push({ providerVersionId, percentage: version.percentage });
+  }
+  return { deploymentId: value.deploymentId as string, versions };
+}
+
+function normalizeStructuredInspection(value: unknown): Vs005CorrelatedProviderInspection {
+  if (!isRecord(value) || !isVs005ProviderObservationCorrelation(value.correlation)
+    || !isRecord(value.observations)) throw new Vs005ApplyError("PROVIDER_INSPECTION_FAILED");
+  const base = normalizeProviderInspection({ observations: value.observations });
+  const observations: Vs005StructuredProviderObservationSnapshot = {
+    ...base,
+    currentDeployment: copyObservation(
+      value.observations.currentDeployment,
+      safeCurrentDeployment,
+      "CURRENT_DEPLOYMENT_UNAVAILABLE",
+    ),
+    workersDevEnabled: copyObservation(
+      value.observations.workersDevEnabled,
+      (item) => typeof item === "boolean" ? item : undefined,
+      "WORKERS_DEV_STATE_UNAVAILABLE",
+    ),
+    accountWorkersDevSubdomain: copyObservation(
+      value.observations.accountWorkersDevSubdomain,
+      safeIdentifier,
+      "ACCOUNT_SUBDOMAIN_UNAVAILABLE",
+    ),
+  };
+  return {
+    correlation: {
+      accountId: value.correlation.accountId,
+      workerName: value.correlation.workerName,
+      configFingerprint: value.correlation.configFingerprint,
+      providerOrigin: "api.cloudflare.com",
+      profile: value.correlation.profile,
+      completedOperations: [...value.correlation.completedOperations],
+      observedAt: value.correlation.observedAt,
+    },
+    observations,
+  };
+}
+
+const PRESENT_OPERATIONS = [
+  "CURRENT_DEPLOYMENT",
+  "WORKER_SETTINGS",
+  "CRON_SCHEDULES",
+  "WORKER_SUBDOMAIN",
+  "ACCOUNT_SUBDOMAIN",
+] as const;
+const ABSENT_OPERATIONS = ["CURRENT_DEPLOYMENT", "ACCOUNT_SUBDOMAIN"] as const;
+
+function expectedOperations(observations: Vs005StructuredProviderObservationSnapshot) {
+  return observations.workerExists.state === "OBSERVED_ABSENT" ? ABSENT_OPERATIONS : PRESENT_OPERATIONS;
+}
+
 function expectedMutationEnvelope(
   config: CadenceRuntimeConfig,
   observations: Vs005ProviderObservationSnapshot,
@@ -268,13 +409,22 @@ export async function applyVs005Deployment(input: {
   targetPolicy: CadenceTargetPolicy;
   currentRelease: unknown;
   currentSecrets?: CadenceResolvedSecrets;
-  provider: Vs005DeploymentProvider;
+  provider: Vs005StructuredDeploymentProvider;
   prepareArtifacts: (input: {
     config: CadenceRuntimeConfig;
     release: CadenceReleaseIdentity;
-  }) => Promise<{ generatedWranglerPath: string }>;
+  }) => Promise<{
+    generatedWranglerPath: string;
+    generatedConfig: GeneratedCloudflareDeployment["wrangler"];
+  }>;
+  dryRun: (input: {
+    generatedWranglerPath: string;
+    childEnvironment: NodeJS.ProcessEnv;
+  }) => Promise<void>;
+  environment?: Readonly<Record<string, string | undefined>>;
+  recordEvent?: (event: "finalGate") => void;
   clock?: () => Date;
-}): Promise<Vs005DeploymentResult> {
+}): Promise<Vs005CorrelatedDeploymentResult> {
   const plan = assertPlan(input.plan);
   requireMatch(plan.readiness === "PASS", "DEPLOYMENT_PLAN_BLOCKED");
   requireMatch(plan.database.migrationAction === "NONE", "DATABASE_ACTION_NOT_ALLOWED");
@@ -304,6 +454,7 @@ export async function applyVs005Deployment(input: {
   requireMatch(plan.providerTarget.accountId === target.cloudflare.accountId, "ACCOUNT_TARGET_MISMATCH");
   requireMatch(plan.providerTarget.workerName === target.cloudflare.workerName, "WORKER_TARGET_MISMATCH");
   requireMatch(plan.observationPhase === "FIRST_DEPLOYMENT_READINESS", "OBSERVATION_PHASE_UNSUPPORTED");
+  requireMatch(plan.providerCorrelation.profile === "FIRST_DEPLOYMENT_READINESS", "PROVIDER_PROFILE_MISMATCH");
   requireMatch(
     equalJson(plan.mutationEnvelope, expectedMutationEnvelope(config, plan.observedProvider)),
     "MUTATION_ENVELOPE_MISMATCH",
@@ -319,67 +470,76 @@ export async function applyVs005Deployment(input: {
   );
   requireMatch(plan.secrets.length === 1 && requiredSecret !== undefined, "SECRET_PLAN_MISMATCH");
 
-  let observed: Vs005ProviderObservationSnapshot;
-  try {
-    observed = normalizeProviderInspection(await input.provider.inspect(config));
-  } catch {
-    throw new Vs005ApplyError("PROVIDER_INSPECTION_FAILED");
-  }
-
-  assertObservationCompleteness(
-    observed,
-    plan.mutationEnvelope,
-    "PROVIDER_INSPECTION_UNAVAILABLE",
-  );
-  const observedWorkerExists = observed.workerExists.state === "OBSERVED_VALUE"
-    ? observed.workerExists.value
-    : false;
-  requireMatch(observedWorkerExists === plan.providerTarget.workerExists, "WORKER_STATE_DRIFT");
-  if (observedWorkerExists) {
-    requireMatch(
-      observed.workerConfigFingerprint.state === "OBSERVED_VALUE"
-        && observed.workerConfigFingerprint.value === plan.configFingerprint,
-      "CONFIG_DRIFT",
-    );
-    requireMatch(
-      observed.currentRelease.state === "OBSERVED_VALUE"
-        && equalJson(observed.currentRelease.value, plan.release),
-      "RELEASE_DRIFT",
-    );
-  }
-  assertObservationEquality(plan.observedProvider, observed);
-  const observedAccountId = observed.accountId.state === "OBSERVED_VALUE"
-    ? observed.accountId.value
-    : undefined;
-  const observedWorkerName = observed.workerName.state === "OBSERVED_VALUE"
-    ? observed.workerName.value
-    : undefined;
-  requireMatch(observedAccountId !== undefined, "PROVIDER_ACCOUNT_UNAVAILABLE");
-  requireMatch(observedWorkerName !== undefined, "PROVIDER_WORKER_UNAVAILABLE");
-
-  const remoteSecretPresent = observed.secretNames.state === "OBSERVED_VALUE"
-    && observed.secretNames.value.includes(config.supabase.secretKeySecretRef);
-  requireMatch(requiredSecret.providerPresent === remoteSecretPresent, "SECRET_STATE_DRIFT");
-  if (remoteSecretPresent) {
-    requireMatch(!plan.mutationEnvelope.secretNamesToSet.includes(config.supabase.secretKeySecretRef), "MUTATION_ENVELOPE_MISMATCH");
-  } else {
+  if (!requiredSecret.providerPresent) {
     requireMatch(plan.mutationEnvelope.secretNamesToSet.includes(config.supabase.secretKeySecretRef), "SECRET_MUTATION_REQUIRED");
     requireMatch(requiredSecret.bootstrapInputAvailable, "BOOTSTRAP_SECRET_NOT_AUTHORIZED");
     requireMatch(Boolean(input.currentSecrets?.supabaseSecretKey), "BOOTSTRAP_SECRET_MISSING");
   }
 
-  let prepared: { generatedWranglerPath: string };
+  let prepared: { generatedWranglerPath: string; generatedConfig: GeneratedCloudflareDeployment["wrangler"] };
   try {
     prepared = await input.prepareArtifacts({ config, release });
   } catch {
     throw new Vs005ApplyError("ARTIFACT_PREPARATION_FAILED");
   }
 
+  const expectedGeneratedConfig = buildCloudflareDeployment({ config, release }).wrangler;
+  requireMatch(equalJson(prepared.generatedConfig, expectedGeneratedConfig), "GENERATED_CONFIG_MISMATCH");
+  const childEnvironment = withoutCloudflareInspectionCredential(input.environment ?? process.env);
+  try {
+    await input.dryRun({ generatedWranglerPath: prepared.generatedWranglerPath, childEnvironment });
+  } catch {
+    throw new Vs005ApplyError("WRANGLER_DRY_RUN_FAILED");
+  }
+
+  let fresh: Vs005CorrelatedProviderInspection;
+  try {
+    fresh = normalizeStructuredInspection(await input.provider.inspectStructured({
+      config,
+      release,
+      generatedConfig: prepared.generatedConfig,
+      profile: "FIRST_DEPLOYMENT_READINESS",
+    }));
+  } catch {
+    throw new Vs005ApplyError("PROVIDER_INSPECTION_FAILED");
+  }
+  const observed = fresh.observations;
+  requireMatch(fresh.correlation.accountId === target.cloudflare.accountId, "PROVIDER_ACCOUNT_DRIFT");
+  requireMatch(fresh.correlation.workerName === target.cloudflare.workerName, "PROVIDER_WORKER_DRIFT");
+  requireMatch(fresh.correlation.configFingerprint === fingerprint, "CONFIG_DRIFT");
+  requireMatch(fresh.correlation.providerOrigin === "api.cloudflare.com", "PROVIDER_ORIGIN_DRIFT");
+  requireMatch(fresh.correlation.profile === "FIRST_DEPLOYMENT_READINESS", "PROVIDER_PROFILE_MISMATCH");
+  requireMatch(equalJson(fresh.correlation.completedOperations, expectedOperations(observed)), "COMPLETED_OPERATIONS_DRIFT");
+  requireMatch(plan.providerCorrelation.accountId === fresh.correlation.accountId, "PROVIDER_ACCOUNT_DRIFT");
+  requireMatch(plan.providerCorrelation.workerName === fresh.correlation.workerName, "PROVIDER_WORKER_DRIFT");
+  requireMatch(plan.providerCorrelation.configFingerprint === fresh.correlation.configFingerprint, "CONFIG_DRIFT");
+  requireMatch(plan.providerCorrelation.providerOrigin === fresh.correlation.providerOrigin, "PROVIDER_ORIGIN_DRIFT");
+  requireMatch(plan.providerCorrelation.profile === fresh.correlation.profile, "PROVIDER_PROFILE_MISMATCH");
+  requireMatch(
+    equalJson(plan.providerCorrelation.completedOperations, fresh.correlation.completedOperations),
+    "COMPLETED_OPERATIONS_DRIFT",
+  );
+  assertObservationCompleteness(observed, plan.mutationEnvelope, "PROVIDER_INSPECTION_UNAVAILABLE");
+  assertObservationEquality(plan.observedProvider, observed);
+  requireMatch(equalJson(plan.mutationEnvelope, expectedMutationEnvelope(config, observed)), "MUTATION_ENVELOPE_MISMATCH");
+
+  const observedWorkerExists = observed.workerExists.state === "OBSERVED_VALUE" ? observed.workerExists.value : false;
+  requireMatch(observedWorkerExists === plan.providerTarget.workerExists, "WORKER_STATE_DRIFT");
+  const observedAccountId = observed.accountId.state === "OBSERVED_VALUE" ? observed.accountId.value : undefined;
+  const observedWorkerName = observed.workerName.state === "OBSERVED_VALUE" ? observed.workerName.value : undefined;
+  requireMatch(observedAccountId !== undefined, "PROVIDER_ACCOUNT_UNAVAILABLE");
+  requireMatch(observedWorkerName !== undefined, "PROVIDER_WORKER_UNAVAILABLE");
+  const remoteSecretPresent = observed.secretNames.state === "OBSERVED_VALUE"
+    && observed.secretNames.value.includes(config.supabase.secretKeySecretRef);
+  requireMatch(requiredSecret.providerPresent === remoteSecretPresent, "SECRET_STATE_DRIFT");
+  input.recordEvent?.("finalGate");
+
   let deployed: { deploymentId: string; providerVersionId: string };
   try {
     deployed = await input.provider.deploy({
       config,
       generatedWranglerPath: prepared.generatedWranglerPath,
+      childEnvironment,
       ...(requiredSecret.providerPresent
         ? {}
         : { bootstrapSecrets: input.currentSecrets }),
@@ -410,13 +570,18 @@ export async function applyVs005Deployment(input: {
     destructiveActions: [],
     intendedTarget: target,
     observedProvider: observed,
+    providerCorrelation: fresh.correlation,
   };
 }
 
-function runLocalCommand(args: readonly string[]): Promise<void> {
+function runLocalCommand(args: readonly string[], childEnvironment?: NodeJS.ProcessEnv): Promise<void> {
   return new Promise((resolveCommand, rejectCommand) => {
     const [command, ...commandArgs] = args;
-    const child = spawn(command, commandArgs, { shell: false, windowsHide: true });
+    const child = spawn(command, commandArgs, {
+      shell: false,
+      windowsHide: true,
+      ...(childEnvironment ? { env: childEnvironment } : {}),
+    });
     child.on("close", (exitCode) => {
       if (exitCode === 0) resolveCommand();
       else rejectCommand(new Vs005ApplyError("LOCAL_ARTIFACT_COMMAND_FAILED"));
@@ -521,9 +686,15 @@ async function runApplyCli(args: readonly string[]): Promise<void> {
           "--build-id",
           currentRelease.buildId,
         ]);
-        await runLocalCommand(["wrangler", "deploy", "--config", wranglerPath, "--dry-run"]);
-        return { generatedWranglerPath: wranglerPath };
+        return {
+          generatedWranglerPath: wranglerPath,
+          generatedConfig: buildCloudflareDeployment({ config: currentConfig, release: currentRelease }).wrangler,
+        };
       },
+      dryRun: ({ generatedWranglerPath, childEnvironment }) => runLocalCommand(
+        ["wrangler", "deploy", "--config", generatedWranglerPath, "--dry-run"],
+        childEnvironment,
+      ),
     });
     mutationAttempted = true;
     writeJson(parsed.outputPath, result);

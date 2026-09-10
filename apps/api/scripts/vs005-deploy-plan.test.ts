@@ -8,15 +8,17 @@ import {
 } from "../src/bootstrap/cadence-config";
 import { VS005_BETA_TARGET_POLICY } from "../src/bootstrap/cadence-target-policy";
 import type { CadenceReleaseIdentity } from "../src/bootstrap/cadence-release";
+import { buildCloudflareDeployment } from "./vs005-generate-deployment";
 import {
   inspectVs005PlanInputs,
   runVs005DeployPlan,
   type Vs005DeployPlanDependencies,
-  type Vs005PlanInspection,
 } from "./vs005-deploy-plan";
 import type { Vs005LocalDeploymentReadiness } from "./vs005-local-deployment-readiness";
 import {
+  type Vs005CorrelatedProviderInspection,
   type Vs005ProviderObservationSnapshot,
+  type Vs005StructuredProviderObservationSnapshot,
   validateVs005ObservationCompleteness,
 } from "./vs005-provider-observations";
 
@@ -68,8 +70,8 @@ function betaConfig(): CadenceRuntimeConfig {
 
 function observations(
   config: CadenceRuntimeConfig,
-  overrides: Partial<Vs005ProviderObservationSnapshot> = {},
-): Vs005ProviderObservationSnapshot {
+  overrides: Partial<Vs005StructuredProviderObservationSnapshot> = {},
+): Vs005StructuredProviderObservationSnapshot {
   return {
     accountId: observed(config.cloudflare!.accountId),
     workerName: observed(config.cloudflare!.workerName),
@@ -81,19 +83,35 @@ function observations(
     currentRelease: observed(release),
     priorVersion: absent(),
     hostname: observed(new URL(config.application.publicUrl).hostname),
+    currentDeployment: observed({
+      deploymentId: "deployment-current",
+      versions: [{ providerVersionId: "version-current", percentage: 100 }],
+    }),
+    workersDevEnabled: observed(true),
+    accountWorkersDevSubdomain: observed("ngohch-3d6"),
     ...overrides,
   };
 }
 
 function inspection(
   config: CadenceRuntimeConfig,
-  overrides: Partial<Vs005PlanInspection> = {},
-): Vs005PlanInspection {
+  overrides: Partial<Vs005CorrelatedProviderInspection> = {},
+): Vs005CorrelatedProviderInspection {
+  const providerObservations = overrides.observations ?? observations(config);
+  const workerAbsent = providerObservations.workerExists.state === "OBSERVED_ABSENT";
   return {
-    observations: observations(config),
-    hostnameReady: true,
-    generatedConfigValid: true,
-    webBuildReady: true,
+    correlation: {
+      accountId: config.cloudflare!.accountId,
+      workerName: config.cloudflare!.workerName,
+      configFingerprint: fingerprintCadenceRuntimeConfig(config),
+      providerOrigin: "api.cloudflare.com",
+      profile: "FIRST_DEPLOYMENT_READINESS",
+      completedOperations: workerAbsent
+        ? ["CURRENT_DEPLOYMENT", "ACCOUNT_SUBDOMAIN"]
+        : ["CURRENT_DEPLOYMENT", "WORKER_SETTINGS", "CRON_SCHEDULES", "WORKER_SUBDOMAIN", "ACCOUNT_SUBDOMAIN"],
+      observedAt: "2026-09-10T00:00:00.000Z",
+    },
+    observations: providerObservations,
     ...overrides,
   };
 }
@@ -106,7 +124,8 @@ function makeDependencies(
     targetPolicy: VS005_BETA_TARGET_POLICY,
     loadConfig: () => config,
     loadRelease: () => release,
-    inspect: async () => inspection(config),
+    inspectStructured: async () => inspection(config),
+    inspectLocalReadiness: async () => ({ generatedConfigValid: true, webBuildReady: true }),
     generatePlanId: () => "plan-1",
     writePlan: async () => undefined,
     ...overrides,
@@ -118,13 +137,10 @@ test("planner inputs derive local readiness independently from provider facts", 
   let localCalls = 0;
   const result = await inspectVs005PlanInputs({
     config,
-    inspectProvider: async () => ({
-      accountId: config.cloudflare!.accountId,
-      workerName: config.cloudflare!.workerName,
-      workerExists: true,
-      configuredSecrets: [config.supabase.secretKeySecretRef],
-      configFingerprint: fingerprintCadenceRuntimeConfig(config),
-      observations: observations(config),
+    release,
+    generatedConfig: buildCloudflareDeployment({ config, release }).wrangler,
+    inspectStructured: async () => ({
+      ...inspection(config),
       generatedConfigValid: false,
       webBuildReady: false,
     } as never),
@@ -141,9 +157,15 @@ test("planner inputs derive local readiness independently from provider facts", 
 
 test("exact Beta tuple produces a PASS plan", async () => {
   const config = betaConfig();
+  let structuredCalls = 0;
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
-    makeDependencies(config),
+    makeDependencies(config, {
+      inspectStructured: async () => {
+        structuredCalls += 1;
+        return inspection(config);
+      },
+    }),
   );
 
   assert.equal(plan.formatVersion, 2);
@@ -160,6 +182,35 @@ test("exact Beta tuple produces a PASS plan", async () => {
   assert.equal(plan.database.migrationAction, "NONE");
   assert.deepEqual(plan.destructiveActions, []);
   assert.doesNotMatch(JSON.stringify(plan), /server-secret|secret-value|token=/i);
+  assert.equal(structuredCalls, 1);
+});
+
+test("structured correlation mismatch blocks planning without legacy authority", async () => {
+  const config = betaConfig();
+  const cases: Array<Partial<Vs005CorrelatedProviderInspection["correlation"]>> = [
+    { accountId: "other-account" },
+    { workerName: "other-worker" },
+    { configFingerprint: "b".repeat(64) },
+    { providerOrigin: "other.example" as "api.cloudflare.com" },
+    { profile: "POST_DEPLOYMENT_VERIFICATION" },
+    { completedOperations: ["CURRENT_DEPLOYMENT", "ACCOUNT_SUBDOMAIN"] },
+  ];
+  for (const correlationOverride of cases) {
+    let structuredCalls = 0;
+    const plan = await runVs005DeployPlan(
+      { configPath: "beta.json", outputPath: "plan.json" },
+      makeDependencies(config, {
+        inspectStructured: async () => {
+          structuredCalls += 1;
+          return inspection(config, {
+            correlation: { ...inspection(config).correlation, ...correlationOverride },
+          });
+        },
+      }),
+    );
+    assert.equal(plan.readiness, "BLOCKED");
+    assert.equal(structuredCalls, 1);
+  }
 });
 
 test("Beta policy rejects alternate generic target", async () => {
@@ -181,7 +232,7 @@ test("Beta policy rejects alternate generic target", async () => {
     () => runVs005DeployPlan(
       { configPath: "alternate.json", outputPath: "plan.json" },
       makeDependencies(alternate, {
-        inspect: async () => {
+        inspectStructured: async () => {
           inspectCalls += 1;
           return inspection(alternate);
         },
@@ -197,7 +248,7 @@ test("missing required observation blocks", async () => {
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
     makeDependencies(config, {
-      inspect: async () => inspection(config, {
+      inspectStructured: async () => inspection(config, {
         observations: observations(config, {
           accountId: unavailable("ACCOUNT_ID_UNAVAILABLE"),
         }),
@@ -214,7 +265,7 @@ test("expected absent Worker is represented", async () => {
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
     makeDependencies(config, {
-      inspect: async () => inspection(config, {
+      inspectStructured: async () => inspection(config, {
         observations: observations(config, {
           workerExists: absent(),
           currentRelease: absent(),
@@ -222,6 +273,9 @@ test("expected absent Worker is represented", async () => {
           workerConfigFingerprint: absent(),
           nonSecretBindingNames: absent(),
           priorVersion: absent(),
+          currentDeployment: absent(),
+          workersDevEnabled: absent(),
+          hostname: absent(),
         }),
       }),
     }),
@@ -229,6 +283,7 @@ test("expected absent Worker is represented", async () => {
 
   assert.equal(plan.readiness, "PASS");
   assert.deepEqual(plan.observedProvider.workerExists, { state: "OBSERVED_ABSENT" });
+  assert.deepEqual(plan.observedProvider.hostname, { state: "OBSERVED_ABSENT" });
   assert.equal(plan.providerTarget.workerExists, false);
   assert.equal(plan.rollback.application, "UNAVAILABLE");
 });
@@ -254,7 +309,7 @@ test("unexpected absence outside mutation envelope blocks", async () => {
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
     makeDependencies(config, {
-      inspect: async () => inspection(config, { observations: providerFacts }),
+      inspectStructured: async () => inspection(config, { observations: providerFacts }),
     }),
   );
 
@@ -271,7 +326,7 @@ test("first deployment does not require prior version", async () => {
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
     makeDependencies(config, {
-      inspect: async () => inspection(config, {
+      inspectStructured: async () => inspection(config, {
         observations: observations(config, {
           workerExists: absent(),
           workerConfigFingerprint: absent(),
@@ -279,6 +334,9 @@ test("first deployment does not require prior version", async () => {
           nonSecretBindingNames: absent(),
           currentRelease: absent(),
           priorVersion: absent(),
+          currentDeployment: absent(),
+          workersDevEnabled: absent(),
+          hostname: absent(),
         }),
       }),
     }),
@@ -293,7 +351,7 @@ test("account and Worker observation mismatches block the plan", async () => {
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
     makeDependencies(config, {
-      inspect: async () => inspection(config, {
+      inspectStructured: async () => inspection(config, {
         observations: observations(config, {
           accountId: observed("other-account"),
           workerName: observed("other-worker"),
@@ -312,7 +370,7 @@ test("existing Worker missing configuration observation blocks", async () => {
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
     makeDependencies(config, {
-      inspect: async () => inspection(config, {
+      inspectStructured: async () => inspection(config, {
         observations: observations(config, {
           workerConfigFingerprint: unavailable("CONFIG_UNAVAILABLE"),
         }),
@@ -329,7 +387,7 @@ test("existing Worker release mismatch blocks the plan", async () => {
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
     makeDependencies(config, {
-      inspect: async () => inspection(config, {
+      inspectStructured: async () => inspection(config, {
         observations: observations(config, {
           currentRelease: observed({ ...release, version: "2.0.0" }),
         }),
@@ -346,7 +404,7 @@ test("existing Worker configuration fingerprint mismatch blocks the plan", async
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
     makeDependencies(config, {
-      inspect: async () => inspection(config, {
+      inspectStructured: async () => inspection(config, {
         observations: observations(config, {
           workerConfigFingerprint: observed("different-config-fingerprint"),
         }),
@@ -371,7 +429,9 @@ test("secret-looking provider fixture fields do not enter the serialized plan", 
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
     makeDependencies(config, {
-      inspect: async () => inspection(config, { observations: unsafeFacts }),
+      inspectStructured: async () => inspection(config, {
+        observations: unsafeFacts as Vs005StructuredProviderObservationSnapshot,
+      }),
     }),
   );
 

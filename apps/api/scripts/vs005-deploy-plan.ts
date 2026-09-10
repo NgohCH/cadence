@@ -27,19 +27,24 @@ import {
   type Vs005Observation,
   type Vs005ProviderObservationSnapshot,
   validateVs005ObservationCompleteness,
+  type Vs005CorrelatedProviderInspection,
+  type Vs005ProviderObservationCorrelation,
+  type Vs005StructuredProviderObservationSnapshot,
 } from "./vs005-provider-observations";
-import type { Vs005DeploymentProviderInspection } from "./vs005-deploy-apply";
 import {
   createCloudflareDeploymentProvider,
   createDefaultCloudflareProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
+import type { CloudflareStructuredInspectionRequest } from "./vs005-cloudflare-structured-inspection";
+import { buildCloudflareDeployment, type GeneratedCloudflareDeployment } from "./vs005-generate-deployment";
 import {
   inspectVs005LocalDeploymentReadiness,
   type Vs005LocalDeploymentReadiness,
 } from "./vs005-local-deployment-readiness";
 
 export interface Vs005PlanInspection {
-  observations: Vs005ProviderObservationSnapshot;
+  correlation: Vs005ProviderObservationCorrelation;
+  observations: Vs005StructuredProviderObservationSnapshot;
   hostnameReady: boolean;
   generatedConfigValid: boolean;
   webBuildReady: boolean;
@@ -49,7 +54,11 @@ export interface Vs005DeployPlanDependencies {
   targetPolicy: CadenceTargetPolicy;
   loadConfig(path: string): unknown;
   loadRelease(): CadenceReleaseIdentity;
-  inspect(config: CadenceRuntimeConfig): Promise<Vs005PlanInspection>;
+  inspectStructured(input: CloudflareStructuredInspectionRequest): Promise<Vs005CorrelatedProviderInspection>;
+  inspectLocalReadiness(
+    config: CadenceRuntimeConfig,
+    release: CadenceReleaseIdentity,
+  ): Promise<Vs005LocalDeploymentReadiness>;
   generatePlanId(): string;
   writePlan(path: string, plan: Vs005DeploymentPlanV2): Promise<void>;
 }
@@ -157,8 +166,8 @@ function copySafePriorVersion(value: unknown): SafePriorVersion | undefined {
 }
 
 function sanitizeProviderObservations(
-  input: Vs005ProviderObservationSnapshot,
-): Vs005ProviderObservationSnapshot {
+  input: Vs005StructuredProviderObservationSnapshot,
+): Vs005StructuredProviderObservationSnapshot {
   return {
     accountId: copyObservation(input.accountId, copySafeIdentifier, "ACCOUNT_ID_UNAVAILABLE"),
     workerName: copyObservation(input.workerName, copySafeIdentifier, "WORKER_NAME_UNAVAILABLE"),
@@ -182,6 +191,61 @@ function sanitizeProviderObservations(
     currentRelease: copyObservation(input.currentRelease, copySafeRelease, "RELEASE_UNAVAILABLE"),
     priorVersion: copyObservation(input.priorVersion, copySafePriorVersion, "PRIOR_VERSION_UNAVAILABLE"),
     hostname: copyObservation(input.hostname, copySafeString, "HOSTNAME_UNAVAILABLE"),
+    currentDeployment: copyObservation(
+      input.currentDeployment,
+      (value) => {
+        if (!isRecord(value)) return undefined;
+        const deploymentId = copySafeIdentifier(value.deploymentId);
+        if (!deploymentId || !Array.isArray(value.versions) || value.versions.length > 128) return undefined;
+        const seen = new Set<string>();
+        const versions: Array<{ providerVersionId: string; percentage: number }> = [];
+        for (const version of value.versions) {
+          if (!isRecord(version)) return undefined;
+          const providerVersionId = copySafeIdentifier(version.providerVersionId);
+          if (!providerVersionId || seen.has(providerVersionId) || typeof version.percentage !== "number"
+            || !Number.isFinite(version.percentage) || version.percentage < 0 || version.percentage > 100) return undefined;
+          seen.add(providerVersionId);
+          versions.push({ providerVersionId, percentage: version.percentage });
+        }
+        return { deploymentId, versions };
+      },
+      "CURRENT_DEPLOYMENT_UNAVAILABLE",
+    ),
+    workersDevEnabled: copyObservation(
+      input.workersDevEnabled,
+      (value) => typeof value === "boolean" ? value : undefined,
+      "WORKERS_DEV_STATE_UNAVAILABLE",
+    ),
+    accountWorkersDevSubdomain: copyObservation(
+      input.accountWorkersDevSubdomain,
+      copySafeIdentifier,
+      "ACCOUNT_SUBDOMAIN_UNAVAILABLE",
+    ),
+  };
+}
+
+const PRESENT_OPERATIONS = [
+  "CURRENT_DEPLOYMENT",
+  "WORKER_SETTINGS",
+  "CRON_SCHEDULES",
+  "WORKER_SUBDOMAIN",
+  "ACCOUNT_SUBDOMAIN",
+] as const;
+const ABSENT_OPERATIONS = ["CURRENT_DEPLOYMENT", "ACCOUNT_SUBDOMAIN"] as const;
+
+function expectedOperations(observations: Vs005StructuredProviderObservationSnapshot) {
+  return observations.workerExists.state === "OBSERVED_ABSENT" ? ABSENT_OPERATIONS : PRESENT_OPERATIONS;
+}
+
+function sanitizeCorrelation(value: Vs005ProviderObservationCorrelation): Vs005ProviderObservationCorrelation {
+  return {
+    accountId: value.accountId,
+    workerName: value.workerName,
+    configFingerprint: value.configFingerprint,
+    providerOrigin: value.providerOrigin,
+    profile: value.profile,
+    completedOperations: [...value.completedOperations],
+    observedAt: value.observedAt,
   };
 }
 
@@ -220,6 +284,26 @@ function makeBlockers(
   const workerExists = observationValue(inspection.observations.workerExists);
   const observedConfigFingerprint = observationValue(inspection.observations.workerConfigFingerprint);
   const observedRelease = observationValue(inspection.observations.currentRelease);
+  const expectedTarget = getCadenceTargetFacts(config);
+
+  if (inspection.correlation.accountId !== expectedTarget.cloudflare.accountId) {
+    blockers.push(blocker("PROVIDER_CORRELATION_ACCOUNT_MISMATCH", "Structured correlation account does not match the intended target."));
+  }
+  if (inspection.correlation.workerName !== expectedTarget.cloudflare.workerName) {
+    blockers.push(blocker("PROVIDER_CORRELATION_WORKER_MISMATCH", "Structured correlation Worker does not match the intended target."));
+  }
+  if (inspection.correlation.configFingerprint !== configFingerprint) {
+    blockers.push(blocker("PROVIDER_CORRELATION_FINGERPRINT_MISMATCH", "Structured correlation fingerprint does not match the intended configuration."));
+  }
+  if (inspection.correlation.providerOrigin !== "api.cloudflare.com") {
+    blockers.push(blocker("PROVIDER_CORRELATION_ORIGIN_MISMATCH", "Structured correlation provider origin is unavailable."));
+  }
+  if (inspection.correlation.profile !== "FIRST_DEPLOYMENT_READINESS") {
+    blockers.push(blocker("PROVIDER_CORRELATION_PROFILE_MISMATCH", "Structured correlation profile does not match planning."));
+  }
+  if (!equalJson(inspection.correlation.completedOperations, expectedOperations(inspection.observations))) {
+    blockers.push(blocker("PROVIDER_COMPLETED_OPERATIONS_MISMATCH", "Structured inspection operation set is incomplete or unexpected."));
+  }
 
   if (observedAccount !== undefined && observedAccount !== intendedTarget.cloudflare.accountId) {
     blockers.push(blocker(
@@ -280,56 +364,34 @@ function makeBlockers(
   return blockers;
 }
 
-function legacyUnavailableInspection(): Vs005ProviderObservationSnapshot {
-  const unavailable = <T>(code: string): Vs005Observation<T> => ({ state: "UNAVAILABLE", code });
-  return {
-    accountId: unavailable("CLOUDFLARE_INSPECTION_UNAVAILABLE"),
-    workerName: unavailable("CLOUDFLARE_INSPECTION_UNAVAILABLE"),
-    workerExists: unavailable("CLOUDFLARE_INSPECTION_UNAVAILABLE"),
-    workerConfigFingerprint: unavailable("CLOUDFLARE_INSPECTION_UNAVAILABLE"),
-    cronSchedules: unavailable("CLOUDFLARE_INSPECTION_UNAVAILABLE"),
-    nonSecretBindingNames: unavailable("CLOUDFLARE_INSPECTION_UNAVAILABLE"),
-    secretNames: unavailable("CLOUDFLARE_INSPECTION_UNAVAILABLE"),
-    currentRelease: unavailable("CLOUDFLARE_INSPECTION_UNAVAILABLE"),
-    priorVersion: unavailable("CLOUDFLARE_INSPECTION_UNAVAILABLE"),
-    hostname: unavailable("CLOUDFLARE_INSPECTION_UNAVAILABLE"),
-  };
-}
-
-function observationsFromProviderInspection(
-  inspection: Vs005DeploymentProviderInspection,
-): Vs005ProviderObservationSnapshot {
-  if (!inspection.observations) throw new Error("CLOUDFLARE_INSPECTION_UNAVAILABLE");
-  return inspection.observations;
-}
-
 export async function inspectVs005PlanInputs(input: {
   config: CadenceRuntimeConfig;
-  inspectProvider(): Promise<Vs005DeploymentProviderInspection>;
+  release: CadenceReleaseIdentity;
+  generatedConfig: GeneratedCloudflareDeployment["wrangler"];
+  inspectStructured(request: CloudflareStructuredInspectionRequest): Promise<Vs005CorrelatedProviderInspection>;
   inspectLocalReadiness(): Promise<Vs005LocalDeploymentReadiness>;
 }): Promise<Vs005PlanInspection> {
   const localReadiness = await input.inspectLocalReadiness();
-  let providerInspection: Vs005DeploymentProviderInspection;
-  try {
-    providerInspection = await input.inspectProvider();
-  } catch {
-    return {
-      observations: legacyUnavailableInspection(),
-      hostnameReady: false,
-      ...localReadiness,
-    };
-  }
-  if (!providerInspection.observations) {
-    return {
-      observations: legacyUnavailableInspection(),
-      hostnameReady: false,
-      ...localReadiness,
-    };
-  }
+  const providerInspection = await input.inspectStructured({
+    config: input.config,
+    release: input.release,
+    generatedConfig: input.generatedConfig,
+    profile: "FIRST_DEPLOYMENT_READINESS",
+  });
+  const providerObservations = sanitizeProviderObservations(providerInspection.observations);
+  const workerAbsent = providerObservations.workerExists.state === "OBSERVED_ABSENT";
+  const accountSubdomain = observationValue(providerObservations.accountWorkersDevSubdomain);
+  const expectedHostname = accountSubdomain
+    ? `${input.config.cloudflare!.workerName}.${accountSubdomain}.workers.dev`
+    : undefined;
   return {
-    observations: observationsFromProviderInspection(providerInspection),
-    hostnameReady: providerInspection.observations.hostname.state === "OBSERVED_VALUE"
-      && providerInspection.observations.hostname.value === new URL(input.config.application.publicUrl).hostname,
+    correlation: sanitizeCorrelation(providerInspection.correlation),
+    observations: providerObservations,
+    hostnameReady: workerAbsent
+      ? input.generatedConfig.workers_dev === true
+        && expectedHostname === new URL(input.config.application.publicUrl).hostname
+      : providerObservations.hostname.state === "OBSERVED_VALUE"
+        && providerObservations.hostname.value === new URL(input.config.application.publicUrl).hostname,
     ...localReadiness,
   };
 }
@@ -347,11 +409,28 @@ export async function runVs005DeployPlan(
   assertCadenceTargetPolicy(config, dependencies.targetPolicy);
   const release = loadCadenceReleaseIdentity(dependencies.loadRelease());
   const configFingerprint = fingerprintCadenceRuntimeConfig(config);
-  const rawInspection = await dependencies.inspect(config);
+  const generatedConfig = buildCloudflareDeployment({ config, release }).wrangler;
+  const rawProviderInspection = await dependencies.inspectStructured({
+    config,
+    release,
+    generatedConfig,
+    profile: "FIRST_DEPLOYMENT_READINESS",
+  });
+  const localReadiness = await dependencies.inspectLocalReadiness(config, release);
   const inspection: Vs005PlanInspection = {
-    ...rawInspection,
-    observations: sanitizeProviderObservations(rawInspection.observations),
+    correlation: sanitizeCorrelation(rawProviderInspection.correlation),
+    observations: sanitizeProviderObservations(rawProviderInspection.observations),
+    hostnameReady: false,
+    ...localReadiness,
   };
+  const workerAbsent = inspection.observations.workerExists.state === "OBSERVED_ABSENT";
+  const accountSubdomain = observationValue(inspection.observations.accountWorkersDevSubdomain);
+  const providerHostname = observationValue(inspection.observations.hostname);
+  inspection.hostnameReady = workerAbsent
+    ? generatedConfig.workers_dev === true
+      && accountSubdomain !== undefined
+      && `${config.cloudflare!.workerName}.${accountSubdomain}.workers.dev` === new URL(config.application.publicUrl).hostname
+    : providerHostname === new URL(config.application.publicUrl).hostname;
   const mutationEnvelope = buildMutationEnvelope(config, inspection.observations);
   const blockers = makeBlockers(config, release, configFingerprint, inspection, mutationEnvelope);
   const target = getCadenceTargetFacts(config);
@@ -368,6 +447,7 @@ export async function runVs005DeployPlan(
     planId: dependencies.generatePlanId(),
     intendedTarget: target,
     targetPolicy: { name: dependencies.targetPolicy.name },
+    providerCorrelation: inspection.correlation,
     observedProvider: inspection.observations,
     observationPhase: "FIRST_DEPLOYMENT_READINESS",
     mutationEnvelope,
@@ -478,13 +558,11 @@ async function runCli(args: readonly string[]): Promise<void> {
       targetPolicy: VS005_BETA_TARGET_POLICY,
       loadConfig: (path) => loadCadenceRuntimeConfig(path),
       loadRelease: () => release,
-      inspect: async (config) => inspectVs005PlanInputs({
-        config,
-        inspectProvider: () => provider.inspect(config),
-        inspectLocalReadiness: () => inspectVs005LocalDeploymentReadiness({
+      inspectStructured: (request) => provider.inspectStructured(request),
+      inspectLocalReadiness: (config, currentRelease) => inspectVs005LocalDeploymentReadiness({
           config,
           configPath,
-          release,
+          release: currentRelease,
           publicConfigPath,
           webDistPath,
           io: {
@@ -494,7 +572,6 @@ async function runCli(args: readonly string[]): Promise<void> {
             fileExists: existsSync,
           },
         }),
-      }),
       generatePlanId: () => `plan-${new Date().toISOString()}`,
       writePlan: async (path, plan) => writeJson(path, plan),
     };

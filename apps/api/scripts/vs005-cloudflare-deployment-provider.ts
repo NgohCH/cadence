@@ -34,7 +34,11 @@ export interface CloudflareReadOnlyProviderFacts extends Vs005ProviderObservatio
 export interface CloudflareDeploymentProviderIo {
   createTemporarySecretFile(content: string, mode: number): Promise<string>;
   deleteFile(path: string): Promise<void>;
-  runWrangler(args: readonly string[]): Promise<{ exitCode: number; stdout: string }>;
+  runWrangler(
+    args: readonly string[],
+    childEnvironment?: NodeJS.ProcessEnv,
+  ): Promise<{ exitCode: number; stdout: string }>;
+  environment?: Readonly<Record<string, string | undefined>>;
   inspectReadOnly(input: CloudflareStructuredInspectionRequest): Promise<Vs005CorrelatedProviderInspection>;
   inspectLegacyReadOnly?(input: {
     accountId: string;
@@ -44,6 +48,14 @@ export interface CloudflareDeploymentProviderIo {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function withoutCloudflareInspectionCredential(
+  parentEnvironment: Readonly<Record<string, string | undefined>>,
+): NodeJS.ProcessEnv {
+  const childEnvironment = { ...parentEnvironment };
+  delete childEnvironment.CLOUDFLARE_INSPECTION_API_TOKEN;
+  return childEnvironment;
 }
 
 function unavailable<T>(code: string): Vs005Observation<T> {
@@ -522,7 +534,10 @@ export function createCloudflareDeploymentProvider(
           args.push("--secrets-file", temporaryPath);
         }
 
-        const result = await io.runWrangler(args);
+        const result = await io.runWrangler(
+          args,
+          withoutCloudflareInspectionCredential(input.childEnvironment ?? io.environment ?? process.env),
+        );
         if (result.exitCode !== 0) throw new Error("CLOUDFLARE_DEPLOYMENT_FAILED");
         return parseDeploymentIdentifiers(result.stdout);
       } finally {
@@ -533,7 +548,10 @@ export function createCloudflareDeploymentProvider(
     async rollback(providerVersionId: string) {
       let result: { exitCode: number; stdout: string };
       try {
-        result = await io.runWrangler(["wrangler", "rollback", providerVersionId, "--yes"]);
+        result = await io.runWrangler(
+          ["wrangler", "rollback", providerVersionId, "--yes"],
+          withoutCloudflareInspectionCredential(io.environment ?? process.env),
+        );
       } catch {
         throw new Error("CLOUDFLARE_ROLLBACK_FAILED");
       }
@@ -543,10 +561,17 @@ export function createCloudflareDeploymentProvider(
   };
 }
 
-function runWrangler(args: readonly string[]): Promise<{ exitCode: number; stdout: string }> {
+function runWrangler(
+  args: readonly string[],
+  childEnvironment?: NodeJS.ProcessEnv,
+): Promise<{ exitCode: number; stdout: string }> {
   return new Promise((resolve) => {
     const [command, ...commandArgs] = args;
-    const child = spawn(command, commandArgs, { shell: false, windowsHide: true });
+    const child = spawn(command, commandArgs, {
+      shell: false,
+      windowsHide: true,
+      ...(childEnvironment ? { env: childEnvironment } : {}),
+    });
     let stdout = "";
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
@@ -569,6 +594,7 @@ export function createDefaultCloudflareProviderIo(input: {
   });
   const structuredProvider = createCloudflareStructuredReadOnlyProvider(transport);
   return {
+    environment: process.env,
     async createTemporarySecretFile(content, mode) {
       const directory = join(tmpdir(), "cadence-vs005-secret");
       await mkdir(directory, { recursive: true });

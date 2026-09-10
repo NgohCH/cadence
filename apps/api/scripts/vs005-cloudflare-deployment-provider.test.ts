@@ -13,6 +13,7 @@ import {
   createCloudflareDeploymentProvider,
   createDefaultCloudflareProviderIo,
   inspectCloudflareAccountMembership,
+  withoutCloudflareInspectionCredential,
   type CloudflareReadOnlyProviderFacts,
   type CloudflareDeploymentProviderIo,
 } from "./vs005-cloudflare-deployment-provider";
@@ -131,6 +132,48 @@ test("account inspection selects the expected account from Wrangler 4.127.1 memb
   assert.deepEqual(result.observation, observed("account-expected"));
   assert.deepEqual(result.calls, [["wrangler", "whoami", "--json"]]);
   assert.doesNotMatch(JSON.stringify(result.observation), /operator|OAuth|Workers Scripts|secret-looking/i);
+});
+
+test("Wrangler deploy and rollback children omit only the inspection credential", async () => {
+  const parentEnvironment = {
+    CLOUDFLARE_INSPECTION_API_TOKEN: "inspection-token-canary",
+    CLOUDFLARE_API_TOKEN: "deployment-auth-canary",
+    UNRELATED_SETTING: "preserved",
+  };
+  const captured: Array<NodeJS.ProcessEnv | undefined> = [];
+  const fake = fakeProviderIo({
+    environment: parentEnvironment,
+    runWrangler: async (_args, childEnvironment) => {
+      captured.push(childEnvironment);
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          deployment_id: "deployment-1",
+          version_id: "version-1",
+          active_provider_version_id: "version-1",
+        }),
+      };
+    },
+  });
+  const provider = createCloudflareDeploymentProvider(fake.io);
+
+  assert.deepEqual(withoutCloudflareInspectionCredential(parentEnvironment), {
+    CLOUDFLARE_API_TOKEN: "deployment-auth-canary",
+    UNRELATED_SETTING: "preserved",
+  });
+  await provider.deploy({
+    config,
+    generatedWranglerPath: "wrangler.generated.jsonc",
+    childEnvironment: parentEnvironment,
+  } as never);
+  await provider.rollback("version-1");
+
+  assert.equal(captured.length, 2);
+  for (const childEnvironment of captured) {
+    assert.equal(childEnvironment?.CLOUDFLARE_INSPECTION_API_TOKEN, undefined);
+    assert.equal(childEnvironment?.CLOUDFLARE_API_TOKEN, "deployment-auth-canary");
+    assert.equal(childEnvironment?.UNRELATED_SETTING, "preserved");
+  }
 });
 
 test("account inspection deterministically selects the expected account from multiple memberships", async () => {

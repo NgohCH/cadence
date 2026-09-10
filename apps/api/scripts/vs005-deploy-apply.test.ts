@@ -13,15 +13,18 @@ import {
 import type { CadenceReleaseIdentity } from "../src/bootstrap/cadence-release";
 import {
   applyVs005Deployment,
-  type Vs005DeploymentProvider,
-  type Vs005DeploymentProviderInspection,
+  isVs005CorrelatedDeploymentResult,
+  type Vs005StructuredDeploymentProvider,
   type Vs005DeploymentResult,
 } from "./vs005-deploy-apply";
+import { buildCloudflareDeployment } from "./vs005-generate-deployment";
+import type { Vs005CorrelatedProviderInspection } from "./vs005-provider-observations";
 import type { Vs005DeploymentPlanV2 } from "./vs005-deployment-artifacts";
 import type {
   Vs005MutationEnvelope,
   Vs005Observation,
   Vs005ProviderObservationSnapshot,
+  Vs005StructuredProviderObservationSnapshot,
 } from "./vs005-provider-observations";
 
 const observed = <T>(value: T): Vs005Observation<T> => ({
@@ -76,8 +79,8 @@ const release: CadenceReleaseIdentity = {
 
 function observations(
   currentConfig: CadenceRuntimeConfig = config,
-  overrides: Partial<Vs005ProviderObservationSnapshot> = {},
-): Vs005ProviderObservationSnapshot {
+  overrides: Partial<Vs005StructuredProviderObservationSnapshot> = {},
+): Vs005StructuredProviderObservationSnapshot {
   return {
     accountId: observed(currentConfig.cloudflare!.accountId),
     workerName: observed(currentConfig.cloudflare!.workerName),
@@ -89,30 +92,13 @@ function observations(
     currentRelease: observed(release),
     priorVersion: absent(),
     hostname: observed(new URL(currentConfig.application.publicUrl).hostname),
+    currentDeployment: observed({
+      deploymentId: "deployment-current",
+      versions: [{ providerVersionId: "version-current", percentage: 100 }],
+    }),
+    workersDevEnabled: observed(true),
+    accountWorkersDevSubdomain: observed("ngohch-3d6"),
     ...overrides,
-  };
-}
-
-function providerInspection(
-  providerObservations: Vs005ProviderObservationSnapshot,
-): Vs005DeploymentProviderInspection {
-  return {
-    accountId: providerObservations.accountId.state === "OBSERVED_VALUE"
-      ? providerObservations.accountId.value
-      : "",
-    workerName: providerObservations.workerName.state === "OBSERVED_VALUE"
-      ? providerObservations.workerName.value
-      : "",
-    workerExists: providerObservations.workerExists.state === "OBSERVED_VALUE"
-      ? providerObservations.workerExists.value
-      : false,
-    configuredSecrets: providerObservations.secretNames.state === "OBSERVED_VALUE"
-      ? providerObservations.secretNames.value
-      : [],
-    configFingerprint: providerObservations.workerConfigFingerprint.state === "OBSERVED_VALUE"
-      ? providerObservations.workerConfigFingerprint.value
-      : null,
-    observations: providerObservations,
   };
 }
 
@@ -125,11 +111,29 @@ const defaultEnvelope: Vs005MutationEnvelope = {
 function validPlan(
   overrides: Partial<Vs005DeploymentPlanV2> = {},
 ): Vs005DeploymentPlanV2 {
-  const providerObservations = observations();
+  const providerObservations = overrides.observedProvider ?? observations();
+  const workerAbsent = providerObservations.workerExists.state === "OBSERVED_ABSENT";
   const target = getCadenceTargetFacts(config);
   return {
     artifactType: "cadence.vs005.deployment-plan",
     formatVersion: 2,
+    providerCorrelation: {
+      accountId: target.cloudflare.accountId,
+      workerName: target.cloudflare.workerName,
+      configFingerprint: fingerprintCadenceRuntimeConfig(config),
+      providerOrigin: "api.cloudflare.com",
+      profile: "FIRST_DEPLOYMENT_READINESS",
+      completedOperations: workerAbsent
+        ? ["CURRENT_DEPLOYMENT", "ACCOUNT_SUBDOMAIN"]
+        : [
+            "CURRENT_DEPLOYMENT",
+            "WORKER_SETTINGS",
+            "CRON_SCHEDULES",
+            "WORKER_SUBDOMAIN",
+            "ACCOUNT_SUBDOMAIN",
+          ],
+      observedAt: "2026-09-10T00:00:00.000Z",
+    },
     planId: "plan-1",
     intendedTarget: target,
     targetPolicy: { name: VS005_BETA_TARGET_POLICY.name },
@@ -172,17 +176,33 @@ function validPlan(
 }
 
 function makeProvider(
-  providerObservations: Vs005ProviderObservationSnapshot = observations(),
-): Vs005DeploymentProvider & {
+  providerObservations: Vs005StructuredProviderObservationSnapshot = observations(),
+  correlationOverrides: Partial<Vs005CorrelatedProviderInspection["correlation"]> = {},
+): Vs005StructuredDeploymentProvider & {
   inspectCalls: number;
+  legacyCalls: number;
   deployCalls: Array<Record<string, unknown>>;
 } {
   const provider = {
     inspectCalls: 0,
+    legacyCalls: 0,
     deployCalls: [] as Array<Record<string, unknown>>,
-    async inspect() {
+    async inspectStructured() {
       provider.inspectCalls += 1;
-      return providerInspection(providerObservations);
+      return {
+        correlation: {
+          ...validPlan().providerCorrelation,
+          completedOperations: providerObservations.workerExists.state === "OBSERVED_ABSENT"
+            ? ["CURRENT_DEPLOYMENT", "ACCOUNT_SUBDOMAIN"] as const
+            : validPlan().providerCorrelation.completedOperations,
+          ...correlationOverrides,
+        },
+        observations: providerObservations,
+      };
+    },
+    async inspect() {
+      provider.legacyCalls += 1;
+      throw new Error("LEGACY_AUTHORITY_FORBIDDEN");
     },
     async deploy(input: Record<string, unknown>) {
       provider.deployCalls.push(input);
@@ -196,7 +216,10 @@ function makePreparation(order: string[], throws = false) {
   return async () => {
     order.push("prepare");
     if (throws) throw new Error("local artifact failure");
-    return { generatedWranglerPath: "wrangler.generated.jsonc" };
+    return {
+      generatedWranglerPath: "wrangler.generated.jsonc",
+      generatedConfig: buildCloudflareDeployment({ config, release }).wrangler,
+    };
   };
 }
 
@@ -212,6 +235,7 @@ function apply(
     currentSecrets: { supabaseSecretKey: "server-secret" },
     provider: makeProvider(),
     prepareArtifacts: makePreparation([]),
+    dryRun: async () => undefined,
     clock: () => new Date("2026-09-04T12:34:56.000Z"),
     ...overrides,
   });
@@ -235,6 +259,25 @@ test("legacy mutation plan is rejected before provider deployment", async () => 
     () => apply({ ...validPlan(), formatVersion: 1 }, { provider }),
     /plan|version|unsupported/i,
   );
+  assert.equal(provider.deployCalls.length, 0);
+});
+
+test("v2 plan without correlation fails before preparation inspection or deployment", async () => {
+  const provider = makeProvider();
+  let preparationCalls = 0;
+  await assert.rejects(
+    () => apply({ ...validPlan(), providerCorrelation: undefined }, {
+      provider,
+      prepareArtifacts: async () => {
+        preparationCalls += 1;
+        return makePreparation([])();
+      },
+    }),
+    /plan|invalid/i,
+  );
+  assert.equal(preparationCalls, 0);
+  assert.equal(provider.inspectCalls, 0);
+  assert.equal(provider.legacyCalls, 0);
   assert.equal(provider.deployCalls.length, 0);
 });
 
@@ -320,6 +363,9 @@ test("apply accepts absent Worker only for first deployment envelope", async () 
     secretNames: absent(),
     currentRelease: absent(),
     priorVersion: absent(),
+    currentDeployment: absent(),
+    workersDevEnabled: absent(),
+    hostname: absent(),
   });
   const provider = makeProvider(firstDeploymentObservations);
   const result = await apply(validPlan({
@@ -400,6 +446,23 @@ test("apply rejects provider account and Worker drift", async () => {
   }
 });
 
+test("fresh structured correlation drift blocks deployment", async () => {
+  const cases: Array<Partial<Vs005CorrelatedProviderInspection["correlation"]>> = [
+    { accountId: "other-account" },
+    { workerName: "other-worker" },
+    { configFingerprint: "b".repeat(64) },
+    { providerOrigin: "other.example" as "api.cloudflare.com" },
+    { profile: "POST_DEPLOYMENT_VERIFICATION" },
+    { completedOperations: ["CURRENT_DEPLOYMENT", "ACCOUNT_SUBDOMAIN"] },
+  ];
+  for (const correlationOverride of cases) {
+    const provider = makeProvider(observations(), correlationOverride);
+    await assert.rejects(() => apply(validPlan(), { provider }), /drift|profile|operation|inspection/i);
+    assert.equal(provider.deployCalls.length, 0);
+    assert.equal(provider.legacyCalls, 0);
+  }
+});
+
 test("apply rejects Cron precondition drift", async () => {
   const provider = makeProvider(observations(config, { cronSchedules: absent() }));
   await assert.rejects(() => apply(validPlan(), { provider }), /cron|drift|observation|unavailable/i);
@@ -471,6 +534,9 @@ test("missing bootstrap secret prevents provider deployment", async () => {
     secretNames: absent(),
     currentRelease: absent(),
     priorVersion: absent(),
+    currentDeployment: absent(),
+    workersDevEnabled: absent(),
+    hostname: absent(),
   });
   const provider = makeProvider(firstDeploymentObservations);
   await assert.rejects(
@@ -501,11 +567,11 @@ test("present remote secret does not receive unnecessary bootstrap input", async
   assert.equal("bootstrapSecrets" in (provider.deployCalls[0] ?? {}), false);
 });
 
-test("apply reinspection occurs before local artifact preparation", async () => {
+test("apply reinspection occurs after local artifact preparation and dry-run", async () => {
   const order: string[] = [];
   const provider = makeProvider();
-  const originalInspect = provider.inspect;
-  provider.inspect = async (...args) => {
+  const originalInspect = provider.inspectStructured;
+  provider.inspectStructured = async (...args) => {
     order.push("inspect");
     return originalInspect(...args);
   };
@@ -518,14 +584,100 @@ test("apply reinspection occurs before local artifact preparation", async () => 
   await apply(validPlan(), {
     provider,
     prepareArtifacts: makePreparation(order),
+    dryRun: async () => {
+      order.push("dryRun");
+    },
   });
-  assert.deepEqual(order, ["inspect", "prepare", "deploy"]);
+  assert.deepEqual(order, ["prepare", "dryRun", "inspect", "deploy"]);
+});
+
+test("apply prepares and dry-runs before one fresh structured inspection and deploys immediately", async () => {
+  const events: string[] = [];
+  let dryRunEnvironment: NodeJS.ProcessEnv | undefined;
+  const generatedConfig = buildCloudflareDeployment({ config, release }).wrangler;
+  const structuredInspection: Vs005CorrelatedProviderInspection = {
+    correlation: {
+      accountId: config.cloudflare!.accountId,
+      workerName: config.cloudflare!.workerName,
+      configFingerprint: fingerprintCadenceRuntimeConfig(config),
+      providerOrigin: "api.cloudflare.com",
+      profile: "FIRST_DEPLOYMENT_READINESS",
+      completedOperations: [
+        "CURRENT_DEPLOYMENT",
+        "WORKER_SETTINGS",
+        "CRON_SCHEDULES",
+        "WORKER_SUBDOMAIN",
+        "ACCOUNT_SUBDOMAIN",
+      ],
+      observedAt: "2026-09-10T00:00:00.000Z",
+    },
+    observations: {
+      ...observations(),
+      currentDeployment: {
+        state: "OBSERVED_VALUE",
+        value: { deploymentId: "deployment-current", versions: [{ providerVersionId: "version-current", percentage: 100 }] },
+      },
+      workersDevEnabled: observed(true),
+      accountWorkersDevSubdomain: observed("ngohch-3d6"),
+    },
+  };
+  const provider = {
+    structuredCalls: 0,
+    legacyCalls: 0,
+    deployCalls: 0,
+    async inspectStructured() {
+      events.push("freshInspection");
+      provider.structuredCalls += 1;
+      return structuredInspection;
+    },
+    async inspect() {
+      provider.legacyCalls += 1;
+      throw new Error("LEGACY_AUTHORITY_FORBIDDEN");
+    },
+    async deploy() {
+      events.push("deploy");
+      provider.deployCalls += 1;
+      return { deploymentId: "deployment-1", providerVersionId: "version-1" };
+    },
+  };
+  const result = await apply(validPlan({
+    providerCorrelation: {
+      ...structuredInspection.correlation,
+      observedAt: "2026-09-09T00:00:00.000Z",
+    },
+    observedProvider: structuredInspection.observations,
+  } as never), {
+    provider: provider as never,
+    prepareArtifacts: async () => {
+      events.push("artifactPrepare");
+      return { generatedWranglerPath: "wrangler.generated.jsonc", generatedConfig };
+    },
+    environment: {
+      CLOUDFLARE_INSPECTION_API_TOKEN: "inspection-token-canary",
+      CLOUDFLARE_API_TOKEN: "deployment-auth-canary",
+      UNRELATED_SETTING: "preserved",
+    },
+    dryRun: async (input: { childEnvironment: NodeJS.ProcessEnv }) => {
+      events.push("dryRun");
+      dryRunEnvironment = input.childEnvironment;
+    },
+    recordEvent: (event: string) => events.push(event),
+  } as never);
+
+  assert.deepEqual(events, ["artifactPrepare", "dryRun", "freshInspection", "finalGate", "deploy"]);
+  assert.equal(provider.structuredCalls, 1);
+  assert.equal(provider.legacyCalls, 0);
+  assert.equal(provider.deployCalls, 1);
+  assert.equal(isVs005CorrelatedDeploymentResult(result), true);
+  assert.equal(dryRunEnvironment?.CLOUDFLARE_INSPECTION_API_TOKEN, undefined);
+  assert.equal(dryRunEnvironment?.CLOUDFLARE_API_TOKEN, "deployment-auth-canary");
+  assert.equal(dryRunEnvironment?.UNRELATED_SETTING, "preserved");
 });
 
 test("secret-looking provider fields never enter apply evidence or errors", async () => {
   const unsafe = observations(config, {
     accountId: observed("token=secret-value"),
-  }) as Vs005ProviderObservationSnapshot & { secretValue: string };
+  }) as Vs005StructuredProviderObservationSnapshot & { secretValue?: string };
   unsafe.secretValue = "server-secret-must-not-escape";
   const provider = makeProvider(unsafe);
 
