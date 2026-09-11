@@ -49,17 +49,34 @@ calls. It does not silently migrate, delete, or rewrite historical evidence.
 ## Architecture and ownership
 
 The CLI/tooling boundary owns a small shared operator-path resolver. It accepts
-the parsed operator path, the established Cadence repository root, and the
-path's semantic kind (configuration, plan, deployment evidence, or canonical
-output). It returns a normalized absolute path or a bounded failure. It does
-not read provider state, load configuration contents, create directories, or
-change process state.
+only the parsed operator path and the established Cadence repository root. It
+returns a normalized absolute path or a bounded failure. It does not know
+whether a command will use that path for configuration, a plan, deployment
+evidence, output, or another command-specific purpose. It does not read
+provider state, load configuration contents, create directories, or change
+process state.
 
-The repository root is established by the CLI entry boundary using the
-repository layout and the entrypoint's known location. If that identity cannot
-be proven, resolution fails closed. `process.cwd()`, `INIT_CWD`, npm lifecycle
-cwd, package cwd, and shell cwd are observations only; none is an authority.
-The resolver never calls `process.chdir()`.
+The repository root is established by the CLI entry boundary from the shared
+module's stable source location. The module is owned by `apps/api/scripts`; its
+candidate root is exactly three parent directories above that directory
+(`scripts` → `api` → `apps` → repository root). The
+candidate is accepted only when all of these immutable-layout checks succeed:
+
+- `<candidate>/package.json` parses as an object whose exact `name` is
+  `cadence`;
+- `<candidate>/apps/api/package.json` parses as an object whose exact `name` is
+  `api`;
+- `<candidate>/apps/web/package.json` parses as an object whose exact `name` is
+  `web`;
+- the `apps/api` and `apps/web` package files are direct children of the
+  candidate's `apps` directory.
+
+These package names and relationships are the current repository identity
+markers. The strategy does not use package versions, mutable documentation,
+Git, upward searching, `process.cwd()`, `INIT_CWD`, npm lifecycle cwd, package
+cwd, or shell cwd. If any marker is absent, malformed, relocated, or mismatched,
+root establishment and path resolution fail closed. The resolver never calls
+`process.chdir()`.
 
 The downstream deploy-plan, deploy-apply, deploy-verify, rollback, and setup
 APIs receive already-resolved paths. Those APIs remain usable programmatically
@@ -69,10 +86,10 @@ policy.
 
 ## Operator-path interface
 
-The shared boundary has this semantic contract:
+The shared boundary has this narrow contract:
 
 ```text
-resolveOperatorPath({ repositoryRoot, inputPath, kind })
+resolveCadenceOperatorPath({ repositoryRoot, inputPath })
   -> absolute normalized path
   -> bounded path-resolution failure
 ```
@@ -216,4 +233,3 @@ The implementation may be considered compliant only when:
    or Pilot Activation action is introduced by this contract.
 10. T15-B remains explicitly BLOCKED until a separately authorized read-only
     provider reinspection passes; T15-C remains NOT AUTHORIZED.
-
