@@ -10,7 +10,6 @@ import { buildCadencePublicWebConfig } from "./vs005-generate-web-config";
 import {
   inspectVs005LocalDeploymentReadiness,
   isGeneratedCloudflareDeploymentValid,
-  resolveNpmExecutable,
   type Vs005LocalDeploymentReadinessIo,
 } from "./vs005-local-deployment-readiness";
 
@@ -27,6 +26,12 @@ const configPath = resolve("virtual/config.json");
 const publicConfigPath = resolve("virtual/web/.generated/cadence-public-config.json");
 const webDistPath = resolve("virtual/web/dist");
 const indexPath = join(webDistPath, "index.html");
+const webRoot = resolve("virtual/web");
+const nodeExecutable = resolve("virtual/node.exe");
+const typescriptPackagePath = resolve("virtual/node_modules/typescript/package.json");
+const typescriptCliPath = resolve("virtual/node_modules/typescript/bin/tsc");
+const vitePackagePath = resolve("virtual/node_modules/vite/package.json");
+const viteCliPath = resolve("virtual/node_modules/vite/bin/vite.js");
 
 function harness(input: {
   platform?: NodeJS.Platform;
@@ -35,6 +40,9 @@ function harness(input: {
   missing?: readonly string[];
   commandFailureAt?: number;
   readFailure?: string;
+  missingPackage?: "typescript" | "vite";
+  typescriptPackage?: unknown;
+  vitePackage?: unknown;
 } = {}) {
   const commands: string[][] = [];
   const files = new Map<string, string>([
@@ -42,11 +50,36 @@ function harness(input: {
     [indexPath, input.html ?? '<script type="module" src="/assets/app.js"></script><link rel="stylesheet" href="/assets/app.css">'],
     [join(webDistPath, "assets/app.js"), "javascript"],
     [join(webDistPath, "assets/app.css"), "css"],
+    [typescriptPackagePath, JSON.stringify(input.typescriptPackage ?? {
+      name: "typescript",
+      bin: { tsc: "./bin/tsc", tsserver: "./bin/tsserver" },
+    })],
+    [typescriptCliPath, "typescript-cli"],
+    [vitePackagePath, JSON.stringify(input.vitePackage ?? {
+      name: "vite",
+      bin: { vite: "bin/vite.js" },
+    })],
+    [viteCliPath, "vite-cli"],
   ]);
   for (const path of input.missing ?? []) files.delete(path);
   let commandIndex = 0;
-  const io: Vs005LocalDeploymentReadinessIo = {
+  const io: Vs005LocalDeploymentReadinessIo & {
+    nodeExecutable: string;
+    resolvePackageJson(packageName: string, packageRoot: string): string;
+    fileIsRegular(path: string): boolean;
+    realPath(path: string): string;
+  } = {
     platform: input.platform ?? "linux",
+    nodeExecutable,
+    resolvePackageJson: (packageName, packageRoot) => {
+      assert.equal(packageRoot, webRoot);
+      if (packageName === input.missingPackage) throw new Error("missing-package-canary");
+      if (packageName === "typescript") return typescriptPackagePath;
+      if (packageName === "vite") return vitePackagePath;
+      throw new Error("unexpected-package");
+    },
+    fileIsRegular: (path) => files.has(path),
+    realPath: (path) => path,
     runCommand: async (argv) => {
       assert.equal(Array.isArray(argv), true);
       commands.push([...argv]);
@@ -112,18 +145,35 @@ test("local readiness runs shell-free portable argv and validates web artifacts"
   assert.deepEqual(result, { generatedConfigValid: true, webBuildReady: true });
   assert.deepEqual(commands, [
     ["node", "--import", "tsx", "scripts/vs005-generate-web-config.ts", "--config", configPath, "--out", publicConfigPath],
-    ["npm", "--prefix", "../web", "exec", "--", "tsc", "-b"],
-    ["npm", "--prefix", "../web", "exec", "--", "vite", "build", "--mode", "beta"],
+    [nodeExecutable, typescriptCliPath, "-b", webRoot],
+    [nodeExecutable, viteCliPath, "build", webRoot, "--mode", "beta"],
   ]);
+  assert.equal(commands.slice(1).flat().some((value) => /^(?:npm|npx|pnpm|yarn)(?:\.cmd)?$|^(?:cmd|powershell)(?:\.exe)?$/i.test(value)), false);
   assert.equal(commands.flat().some((value) => /^https?:|wrangler|cloudflare/i.test(value)), false);
   assert.equal(providerCalls, 0);
   assert.equal(hostedHttpCalls, 0);
 });
 
-test("npm executable resolution is platform portable", () => {
-  assert.equal(resolveNpmExecutable("win32"), "npm.cmd");
-  assert.equal(resolveNpmExecutable("linux"), "npm");
-  assert.equal(resolveNpmExecutable("darwin"), "npm");
+test("missing or malformed local web CLI metadata fails readiness closed", async () => {
+  const cases = [
+    harness({ missingPackage: "typescript" }).io,
+    harness({ missingPackage: "vite" }).io,
+    harness({ missing: [typescriptCliPath] }).io,
+    harness({ missing: [viteCliPath] }).io,
+    harness({ typescriptPackage: { name: "typescript", bin: { tsc: "../outside.js" } } }).io,
+    harness({ vitePackage: { name: "vite", bin: { vite: ["bin/vite.js"] } } }).io,
+  ];
+  for (const io of cases) {
+    const result = await inspectVs005LocalDeploymentReadiness({
+      config,
+      configPath,
+      release,
+      publicConfigPath,
+      webDistPath,
+      io,
+    });
+    assert.deepEqual(result, { generatedConfigValid: true, webBuildReady: false });
+  }
 });
 
 test("public config must exactly match the browser-safe projection", async () => {

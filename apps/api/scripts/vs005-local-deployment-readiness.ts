@@ -1,4 +1,6 @@
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { realpathSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { fingerprintCadenceRuntimeConfig, type CadenceRuntimeConfig } from "../src/bootstrap/cadence-config";
 import type { CadenceReleaseIdentity } from "../src/bootstrap/cadence-release";
@@ -15,10 +17,52 @@ export interface Vs005LocalDeploymentReadinessIo {
   readText(path: string): string;
   fileExists(path: string): boolean;
   platform: NodeJS.Platform;
+  nodeExecutable?: string;
+  resolvePackageJson?(packageName: string, webRoot: string): string;
+  fileIsRegular?(path: string): boolean;
+  realPath?(path: string): string;
 }
 
-export function resolveNpmExecutable(platform: NodeJS.Platform): "npm" | "npm.cmd" {
-  return platform === "win32" ? "npm.cmd" : "npm";
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPathWithin(parent: string, child: string): boolean {
+  const pathFromParent = relative(parent, child);
+  return pathFromParent !== ""
+    && pathFromParent !== ".."
+    && !pathFromParent.startsWith(`..${sep}`)
+    && !isAbsolute(pathFromParent);
+}
+
+function resolvePackageCli(input: {
+  packageName: "typescript" | "vite";
+  binName: "tsc" | "vite";
+  webRoot: string;
+  io: Vs005LocalDeploymentReadinessIo;
+}): string {
+  const resolvePackageJson = input.io.resolvePackageJson ?? ((packageName, webRoot) => (
+    createRequire(join(webRoot, "package.json")).resolve(`${packageName}/package.json`)
+  ));
+  const realPath = input.io.realPath ?? realpathSync.native;
+  const fileIsRegular = input.io.fileIsRegular ?? ((path) => statSync(path).isFile());
+  const packageJsonPath = realPath(resolvePackageJson(input.packageName, input.webRoot));
+  if (!fileIsRegular(packageJsonPath)) throw new Error("LOCAL_WEB_CLI_PACKAGE_INVALID");
+  const packageRoot = dirname(packageJsonPath);
+  const metadata: unknown = JSON.parse(input.io.readText(packageJsonPath));
+  if (!isRecord(metadata) || metadata.name !== input.packageName || !isRecord(metadata.bin)) {
+    throw new Error("LOCAL_WEB_CLI_PACKAGE_INVALID");
+  }
+  const declaredBin = metadata.bin[input.binName];
+  if (typeof declaredBin !== "string" || declaredBin.length === 0
+    || isAbsolute(declaredBin) || /[\0\r\n]/.test(declaredBin)) {
+    throw new Error("LOCAL_WEB_CLI_BIN_INVALID");
+  }
+  const cliPath = realPath(resolve(packageRoot, declaredBin));
+  if (!isPathWithin(packageRoot, cliPath) || !fileIsRegular(cliPath)) {
+    throw new Error("LOCAL_WEB_CLI_BIN_INVALID");
+  }
+  return cliPath;
 }
 
 export function isGeneratedCloudflareDeploymentValid(input: {
@@ -82,7 +126,10 @@ export async function inspectVs005LocalDeploymentReadiness(input: {
 
   let webBuildReady = false;
   try {
-    const npm = resolveNpmExecutable(input.io.platform);
+    const webRoot = resolve(input.webDistPath, "..");
+    const nodeExecutable = input.io.nodeExecutable ?? process.execPath;
+    const typescriptCli = resolvePackageCli({ packageName: "typescript", binName: "tsc", webRoot, io: input.io });
+    const viteCli = resolvePackageCli({ packageName: "vite", binName: "vite", webRoot, io: input.io });
     await input.io.runCommand([
       "node",
       "--import",
@@ -93,8 +140,8 @@ export async function inspectVs005LocalDeploymentReadiness(input: {
       "--out",
       input.publicConfigPath,
     ]);
-    await input.io.runCommand([npm, "--prefix", "../web", "exec", "--", "tsc", "-b"]);
-    await input.io.runCommand([npm, "--prefix", "../web", "exec", "--", "vite", "build", "--mode", "beta"]);
+    await input.io.runCommand([nodeExecutable, typescriptCli, "-b", webRoot]);
+    await input.io.runCommand([nodeExecutable, viteCli, "build", webRoot, "--mode", "beta"]);
     webBuildReady = validateWebBuild(input);
   } catch {
     webBuildReady = false;
