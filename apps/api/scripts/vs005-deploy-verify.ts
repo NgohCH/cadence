@@ -33,6 +33,7 @@ import type {
   Vs005Observation,
   Vs005StructuredProviderObservationSnapshot,
 } from "./vs005-provider-observations";
+import { resolveCadenceOperatorPath, resolveCadenceRepositoryRoot } from "./cadence-operator-path";
 
 export interface Vs005VerificationReaders {
   getWeb(): Promise<{ status: number }>;
@@ -456,12 +457,20 @@ function parseCliArguments(args: readonly string[]): { deploymentPath: string; c
 async function runVerifyCli(args: readonly string[]): Promise<void> {
   let configPath = "<unspecified>";
   let outputPath = ".cadence/vs005/deployment-verification.json";
+  let rootEstablished = false;
   try {
     const parsed = parseCliArguments(args);
-    configPath = parsed.configPath;
-    outputPath = parsed.outputPath;
-    const config = loadCadenceRuntimeConfig(parsed.configPath);
-    const deployment = JSON.parse(readFileSync(parsed.deploymentPath, "utf8"));
+    const repositoryRoot = resolveCadenceRepositoryRoot();
+    const resolvedPaths = {
+      deploymentPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.deploymentPath }),
+      configPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.configPath }),
+      outputPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.outputPath }),
+    };
+    configPath = resolvedPaths.configPath;
+    outputPath = resolvedPaths.outputPath;
+    rootEstablished = true;
+    const config = loadCadenceRuntimeConfig(resolvedPaths.configPath);
+    const deployment = JSON.parse(readFileSync(resolvedPaths.deploymentPath, "utf8"));
     if (!isVs005CorrelatedDeploymentResult(deployment)) throw new Error("INVALID_DEPLOYMENT_EVIDENCE");
     const provider = createCloudflareDeploymentProvider(createDefaultCloudflareProviderIo());
     const origin = new URL(config.application.publicUrl);
@@ -487,8 +496,9 @@ async function runVerifyCli(args: readonly string[]): Promise<void> {
         probeControlledProject: async () => ({ status: 0, projectId: null }),
       },
     });
-    writeJson(parsed.outputPath, result);
+    writeJson(resolvedPaths.outputPath, result);
   } catch {
+    if (!rootEstablished) return;
     writeJson(outputPath, makeVs005OperatorFailure({
       stage: "verify", code: "VERIFICATION_BLOCKED", mutationOccurred: false, existingService: "UNKNOWN",
       canonicalConfigPath: configPath, nextAction: "Review the deployment result and rerun read-only verification.",

@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
@@ -26,6 +31,27 @@ import type {
   Vs005ProviderObservationSnapshot,
   Vs005StructuredProviderObservationSnapshot,
 } from "./vs005-provider-observations";
+
+const repositoryRoot = resolve(process.cwd(), "../..");
+const tsxLoader = pathToFileURL(resolve(repositoryRoot, "apps/api/node_modules/tsx/dist/loader.mjs")).href;
+const applyCli = resolve(__dirname, "vs005-deploy-apply.ts");
+
+test("apply CLI resolves every relative path from repository root across caller cwd", () => {
+  const unrelated = mkdtempSync(resolve(tmpdir(), "cadence-apply-cwd-"));
+  const original = process.cwd();
+  try {
+    for (const cwd of [repositoryRoot, resolve(repositoryRoot, "apps/api"), unrelated]) {
+      const result = spawnSync(process.execPath, ["--import", tsxLoader, applyCli, "--plan", "missing-plan.json", "--config", "missing-config.json", "--out", ".cadence/vs005/task3-apply-failure.json"], { cwd, encoding: "utf8" });
+      assert.equal(result.status, 0);
+      assert.equal(existsSync(resolve(repositoryRoot, ".cadence/vs005/task3-apply-failure.json")), true);
+      assert.equal(existsSync(resolve(cwd, ".cadence/vs005/task3-apply-failure.json")), cwd === repositoryRoot);
+      rmSync(resolve(repositoryRoot, ".cadence/vs005/task3-apply-failure.json"), { force: true });
+    }
+  } finally {
+    process.chdir(original);
+    rmSync(unrelated, { recursive: true, force: true });
+  }
+});
 
 const observed = <T>(value: T): Vs005Observation<T> => ({
   state: "OBSERVED_VALUE",

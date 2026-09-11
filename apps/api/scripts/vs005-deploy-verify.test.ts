@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 import {
@@ -25,6 +28,26 @@ import type {
   Vs005Observation,
   Vs005StructuredProviderObservationSnapshot,
 } from "./vs005-provider-observations";
+
+const repositoryRoot = resolve(process.cwd(), "../..");
+const tsxLoader = pathToFileURL(resolve(repositoryRoot, "apps/api/node_modules/tsx/dist/loader.mjs")).href;
+const verifyCli = resolve(__dirname, "vs005-deploy-verify.ts");
+
+test("verify CLI resolves every relative path from repository root across caller cwd", () => {
+  const unrelated = mkdtempSync(resolve(tmpdir(), "cadence-verify-cwd-"));
+  const original = process.cwd();
+  try {
+    for (const cwd of [repositoryRoot, resolve(repositoryRoot, "apps/api"), unrelated]) {
+      const result = spawnSync(process.execPath, ["--import", tsxLoader, verifyCli, "--deployment", "missing-deployment.json", "--config", "missing-config.json", "--out", ".cadence/vs005/task3-verify-failure.json"], { cwd, encoding: "utf8" });
+      assert.equal(result.status, 0);
+      assert.equal(existsSync(resolve(repositoryRoot, ".cadence/vs005/task3-verify-failure.json")), true);
+      rmSync(resolve(repositoryRoot, ".cadence/vs005/task3-verify-failure.json"), { force: true });
+    }
+  } finally {
+    process.chdir(original);
+    rmSync(unrelated, { recursive: true, force: true });
+  }
+});
 
 function makeBetaConfig(): CadenceRuntimeConfig {
   const value = JSON.parse(readFileSync(resolve(process.cwd(), "../../config/cadence.runtime.ci.json"), "utf8"));

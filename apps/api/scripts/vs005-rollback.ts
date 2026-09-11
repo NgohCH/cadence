@@ -33,6 +33,7 @@ import {
 } from "./vs005-provider-observations";
 import type { CloudflareStructuredInspectionRequest } from "./vs005-cloudflare-structured-inspection";
 import { buildCloudflareDeployment } from "./vs005-generate-deployment";
+import { resolveCadenceOperatorPath, resolveCadenceRepositoryRoot } from "./cadence-operator-path";
 
 export interface Vs005RollbackRequest {
   providerVersionId: string;
@@ -415,17 +416,26 @@ async function runRollbackCli(args: readonly string[]): Promise<void> {
   let outputPath = ".cadence/vs005/rollback-verification.json";
   let configPath = "<unspecified>";
   let mutationAttempted = false;
+  let rootEstablished = false;
   try {
     const parsed = parseCliArguments(args);
-    outputPath = parsed.outputPath;
-    configPath = parsed.configPath;
+    const repositoryRoot = resolveCadenceRepositoryRoot();
+    const resolvedPaths = {
+      currentDeploymentPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.currentDeploymentPath }),
+      targetDeploymentPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.targetDeploymentPath }),
+      configPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.configPath }),
+      outputPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.outputPath }),
+    };
+    outputPath = resolvedPaths.outputPath;
+    configPath = resolvedPaths.configPath;
+    rootEstablished = true;
     const currentDeployment = validateVs005DeploymentEvidence(
-      JSON.parse(require("node:fs").readFileSync(parsed.currentDeploymentPath, "utf8")),
+      JSON.parse(require("node:fs").readFileSync(resolvedPaths.currentDeploymentPath, "utf8")),
     );
     const targetDeployment = validateVs005DeploymentEvidence(
-      JSON.parse(require("node:fs").readFileSync(parsed.targetDeploymentPath, "utf8")),
+      JSON.parse(require("node:fs").readFileSync(resolvedPaths.targetDeploymentPath, "utf8")),
     );
-    const config = loadCadenceRuntimeConfig(parsed.configPath);
+    const config = loadCadenceRuntimeConfig(resolvedPaths.configPath);
     const request: Vs005RollbackRequest = {
       providerVersionId: targetDeployment.providerVersionId,
       expectedRelease: targetDeployment.release,
@@ -466,8 +476,9 @@ async function runRollbackCli(args: readonly string[]): Promise<void> {
         readers: createVerificationReaders(expectedConfig, provider),
       }),
     });
-    writeJson(parsed.outputPath, verification);
+    writeJson(resolvedPaths.outputPath, verification);
   } catch (error) {
+    if (!rootEstablished) return;
     mutationAttempted = error instanceof Vs005RollbackError && error.mutationAttempted;
     writeJson(outputPath, makeVs005OperatorFailure({
       stage: "rollback",

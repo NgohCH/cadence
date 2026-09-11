@@ -44,6 +44,7 @@ import {
 } from "./vs005-cloudflare-deployment-provider";
 import type { CloudflareStructuredInspectionRequest } from "./vs005-cloudflare-structured-inspection";
 import { buildCloudflareDeployment, type GeneratedCloudflareDeployment } from "./vs005-generate-deployment";
+import { resolveCadenceOperatorPath, resolveCadenceRepositoryRoot } from "./cadence-operator-path";
 
 export interface Vs005DeploymentProviderInspection {
   accountId: string;
@@ -634,12 +635,20 @@ async function runApplyCli(args: readonly string[]): Promise<void> {
   let configPath = "<unspecified>";
   let outputPath = ".cadence/vs005/deployment-result.json";
   let mutationAttempted = false;
+  let rootEstablished = false;
   try {
     const parsed = parseCliArguments(args);
-    configPath = parsed.configPath;
-    outputPath = parsed.outputPath;
-    const config = loadCadenceRuntimeConfig(parsed.configPath);
-    const plan = JSON.parse(readFileSync(parsed.planPath, "utf8")) as unknown;
+    const repositoryRoot = resolveCadenceRepositoryRoot();
+    const resolvedPaths = {
+      planPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.planPath }),
+      configPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.configPath }),
+      outputPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.outputPath }),
+    };
+    configPath = resolvedPaths.configPath;
+    outputPath = resolvedPaths.outputPath;
+    rootEstablished = true;
+    const config = loadCadenceRuntimeConfig(resolvedPaths.configPath);
+    const plan = JSON.parse(readFileSync(resolvedPaths.planPath, "utf8")) as unknown;
     const release = loadCadenceReleaseIdentity({
       version: process.env.CADENCE_RELEASE_VERSION,
       commitSha: process.env.CADENCE_COMMIT_SHA,
@@ -656,15 +665,15 @@ async function runApplyCli(args: readonly string[]): Promise<void> {
         : undefined,
       provider,
       prepareArtifacts: async ({ config: currentConfig, release: currentRelease }) => {
-        const publicConfigPath = resolve(process.cwd(), "../web/.generated/cadence-public-config.json");
-        const wranglerPath = resolve(process.cwd(), "../runtime-cloudflare/wrangler.generated.jsonc");
+        const publicConfigPath = resolve(repositoryRoot, "apps/web/.generated/cadence-public-config.json");
+        const wranglerPath = resolve(repositoryRoot, "apps/runtime-cloudflare/wrangler.generated.jsonc");
         await runLocalCommand([
           "node",
           "--import",
           "tsx",
           "scripts/vs005-generate-web-config.ts",
           "--config",
-          parsed.configPath,
+          resolvedPaths.configPath,
           "--out",
           publicConfigPath,
         ]);
@@ -676,7 +685,7 @@ async function runApplyCli(args: readonly string[]): Promise<void> {
           "tsx",
           "scripts/vs005-generate-deployment.ts",
           "--config",
-          parsed.configPath,
+          resolvedPaths.configPath,
           "--out",
           wranglerPath,
           "--release-version",
@@ -697,8 +706,9 @@ async function runApplyCli(args: readonly string[]): Promise<void> {
       ),
     });
     mutationAttempted = true;
-    writeJson(parsed.outputPath, result);
+    writeJson(resolvedPaths.outputPath, result);
   } catch (error) {
+    if (!rootEstablished) return;
     mutationAttempted = error instanceof Vs005ApplyError && error.mutationAttempted;
     writeJson(outputPath, makeVs005OperatorFailure({
       stage: "apply",
