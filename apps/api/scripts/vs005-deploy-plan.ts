@@ -558,17 +558,34 @@ function runLocalCommand(argv: readonly string[]): Promise<void> {
   });
 }
 
-async function runCli(args: readonly string[]): Promise<void> {
+/** CLI entrypoint; overrides exist only for local boundary tests and are not used by production invocation. */
+export async function runCli(
+  args: readonly string[],
+  overrides: {
+    resolveRepositoryRoot?: () => string;
+    onResolvedPaths?: (paths: {
+      configPath: string;
+      outputPath: string;
+      publicConfigPath: string;
+      webDistPath: string;
+    }) => void;
+  } = {},
+): Promise<void> {
   let configPath = "<unspecified>";
   let outputPath = ".cadence/vs005/deployment-plan.json";
 
   try {
     const parsed = parseArguments(args);
-    ({ configPath, outputPath } = resolveDeployPlanOperatorPaths(parsed));
+    const repositoryRoot = overrides.resolveRepositoryRoot?.() ?? resolveCadenceRepositoryRoot();
+    ({ configPath, outputPath } = {
+      configPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.configPath }),
+      outputPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.outputPath }),
+    });
+    const publicConfigPath = resolve(repositoryRoot, "apps/web/.generated/cadence-public-config.json");
+    const webDistPath = resolve(repositoryRoot, "apps/web/dist");
+    overrides.onResolvedPaths?.({ configPath, outputPath, publicConfigPath, webDistPath });
     const release = loadReleaseFromEnvironment();
     const provider = createCloudflareDeploymentProvider(createDefaultCloudflareProviderIo());
-    const publicConfigPath = resolve(process.cwd(), "../web/.generated/cadence-public-config.json");
-    const webDistPath = resolve(process.cwd(), "../web/dist");
     const dependencies: Vs005DeployPlanDependencies = {
       targetPolicy: VS005_BETA_TARGET_POLICY,
       loadConfig: (path) => loadCadenceRuntimeConfig(path),

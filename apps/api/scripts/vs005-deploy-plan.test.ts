@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 
@@ -13,6 +15,7 @@ import { buildCloudflareDeployment } from "./vs005-generate-deployment";
 import {
   inspectVs005PlanInputs,
   runVs005DeployPlan,
+  runCli,
   resolveDeployPlanOperatorPaths,
   type Vs005DeployPlanDependencies,
 } from "./vs005-deploy-plan";
@@ -52,6 +55,42 @@ test("normalization ignores INIT_CWD and preserves absolute paths", () => {
     if (original === undefined) delete process.env.INIT_CWD;
     else process.env.INIT_CWD = original;
   }
+});
+
+test("CLI orchestration uses identical repository-root paths from every caller cwd", async () => {
+  const observed: Array<{ configPath: string; outputPath: string; publicConfigPath: string; webDistPath: string }> = [];
+  const unrelatedCwd = mkdtempSync(resolve(tmpdir(), "cadence-unrelated-"));
+  const originalCwd = process.cwd();
+  try {
+    for (const callerCwd of [repositoryRoot, resolve(repositoryRoot, "apps/api"), unrelatedCwd]) {
+      process.chdir(callerCwd);
+      await runCli(["--config", "config/cadence.runtime.beta.json", "--out", resolve(repositoryRoot, ".cadence/vs005/plan.json")], {
+        onResolvedPaths: (paths) => {
+          observed.push(paths);
+          throw new Error("STOP_BEFORE_PROVIDER");
+        },
+      });
+    }
+  } finally {
+    process.chdir(originalCwd);
+    rmSync(unrelatedCwd, { recursive: true, force: true });
+  }
+  assert.equal(new Set(observed.map((paths) => JSON.stringify(paths))).size, 1);
+  assert.deepEqual(observed[0], {
+    configPath: resolve(repositoryRoot, "config/cadence.runtime.beta.json"),
+    outputPath: resolve(repositoryRoot, ".cadence/vs005/plan.json"),
+    publicConfigPath: resolve(repositoryRoot, "apps/web/.generated/cadence-public-config.json"),
+    webDistPath: resolve(repositoryRoot, "apps/web/dist"),
+  });
+});
+
+test("CLI root-establishment failure blocks before downstream orchestration", async () => {
+  let downstreamCalled = false;
+  await runCli(["--config", "config/cadence.runtime.beta.json", "--out", resolve(repositoryRoot, ".cadence/vs005/root-failure.json")], {
+    resolveRepositoryRoot: () => { throw new Error("CADENCE_REPOSITORY_ROOT_INVALID"); },
+    onResolvedPaths: () => { downstreamCalled = true; },
+  });
+  assert.equal(downstreamCalled, false);
 });
 
 function betaConfig(): CadenceRuntimeConfig {
