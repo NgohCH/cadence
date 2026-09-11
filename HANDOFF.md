@@ -204,6 +204,31 @@ remain **NOT AUTHORIZED**. Database action is **NONE**. VS004 recovery is
 **VERIFIED / CLOSED**. Governance remains 44 parent commitments and 178
 child records.
 
+## VS005 T15-B Corrective Checkpoint
+
+The first T15-B live read-only inspection reached Cloudflare without mutation,
+but T15-B remained **BLOCKED**. The provider transport prematurely discarded a
+structured Cloudflare HTTP 404 error before bounded provider-error parsing;
+that correction is commit
+`b28281ec25f6faa2ed00a6d1eeab0aa04330af5f`. Separately, Node 24 on Windows
+could not spawn `npm.cmd` with `shell:false`; the explicit `apps/web` project
+root correction was retained, and TypeScript/Vite now run through locally
+resolved JavaScript CLI entrypoints using `process.execPath` with no shell.
+That correction is commit
+`a0de679084357150a6b87173d857b18d4ca039e7`.
+
+Fresh direct/offline readiness reports `generatedConfigValid=true` and
+`webBuildReady=true`. Local recertification passed the 243-test structured/
+VS005 suite, 75-test VS003 suite, 244-test VS004 suite, API and scripts
+typechecks, 546 API tests, 64 web tests, web lint and Beta build, deployment
+generation, runtime-cloudflare tests/typecheck/dry-run, and repository quality.
+Historical T15-A readiness evidence was **NOT regenerated**. Provider state
+must be re-observed through a newly authorized T15-B read-only inspection;
+this checkpoint does not claim the Worker present or absent and does not claim
+T15-B PASS. Cloudflare remote mutation remains **NOT AUTHORIZED**, database
+action is **NONE**, clean-room work is **NOT AUTHORIZED**, Pilot Activation is
+**NOT AUTHORIZED**, and governance remains 44 parents/178 child records.
+
 ## VS004 Closure Record
 
 VS004 — Controlled Pilot Bootstrap and Access is closed and merged via PR #7.
