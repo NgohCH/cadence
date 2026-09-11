@@ -17,7 +17,6 @@ import {
   inspectVs005PlanInputs,
   runVs005DeployPlan,
   runCli,
-  resolveDeployPlanOperatorPaths,
   type Vs005DeployPlanDependencies,
 } from "./vs005-deploy-plan";
 import type { Vs005LocalDeploymentReadiness } from "./vs005-local-deployment-readiness";
@@ -39,55 +38,38 @@ const absent = () => ({ state: "OBSERVED_ABSENT" as const });
 const unavailable = (code: string) => ({ state: "UNAVAILABLE" as const, code });
 const repositoryRoot = resolve(process.cwd(), "../..");
 
-test("normalizes deploy-plan operator paths from the Cadence repository root", () => {
-  const paths = resolveDeployPlanOperatorPaths({ configPath: "./config/../config/cadence.runtime.beta.json", outputPath: ".cadence/vs005/../vs005/plan.json" });
-  assert.equal(paths.configPath, resolve(repositoryRoot, "config/cadence.runtime.beta.json"));
-  assert.equal(paths.outputPath, resolve(repositoryRoot, ".cadence/vs005/plan.json"));
-});
-
-test("normalization ignores INIT_CWD and preserves absolute paths", () => {
-  const original = process.env.INIT_CWD;
-  process.env.INIT_CWD = "C:\\unrelated";
-  try {
-    const paths = resolveDeployPlanOperatorPaths({ configPath: "C:/Operator Files/../Operator Files/config.json", outputPath: ".cadence/plan.json" });
-    assert.equal(paths.configPath, "C:\\Operator Files\\config.json");
-    assert.equal(paths.outputPath, resolve(repositoryRoot, ".cadence/plan.json"));
-  } finally {
-    if (original === undefined) delete process.env.INIT_CWD;
-    else process.env.INIT_CWD = original;
-  }
-});
-
 test("CLI orchestration uses identical repository-root paths from every caller cwd", async () => {
-  const observed: Array<{ configPath: string; outputPath: string; publicConfigPath: string; webDistPath: string }> = [];
   const unrelatedCwd = mkdtempSync(resolve(tmpdir(), "cadence-unrelated-"));
   const originalCwd = process.cwd();
+  const originalInitCwd = process.env.INIT_CWD;
+  const outputPath = resolve(repositoryRoot, ".cadence/vs005/task2-test-failure.json");
+  delete process.env.CADENCE_RELEASE_VERSION;
+  delete process.env.CADENCE_COMMIT_SHA;
+  delete process.env.CADENCE_BUILD_ID;
   try {
     for (const callerCwd of [repositoryRoot, resolve(repositoryRoot, "apps/api"), unrelatedCwd]) {
       process.chdir(callerCwd);
-      await runCli(["--config", "config/cadence.runtime.beta.json", "--out", resolve(repositoryRoot, ".cadence/vs005/plan.json")], {
-        onResolvedPaths: (paths) => {
-          observed.push(paths);
-          throw new Error("STOP_BEFORE_PROVIDER");
-        },
-      });
+      process.env.INIT_CWD = "C:\\unrelated-init-cwd";
+      await runCli(["--config", "./config/../config/cadence.runtime.beta.json", "--out", outputPath]);
+      const failure = JSON.parse(readFileSync(outputPath, "utf8")) as { canonicalConfigPath: string };
+      assert.equal(failure.canonicalConfigPath, resolve(repositoryRoot, "config/cadence.runtime.beta.json"));
     }
   } finally {
     process.chdir(originalCwd);
+    if (originalInitCwd === undefined) delete process.env.INIT_CWD;
+    else process.env.INIT_CWD = originalInitCwd;
+    rmSync(outputPath, { force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });
   }
-  assert.equal(new Set(observed.map((paths) => JSON.stringify(paths))).size, 1);
-  assert.deepEqual(observed[0], {
-    configPath: resolve(repositoryRoot, "config/cadence.runtime.beta.json"),
-    outputPath: resolve(repositoryRoot, ".cadence/vs005/plan.json"),
-    publicConfigPath: resolve(repositoryRoot, "apps/web/.generated/cadence-public-config.json"),
-    webDistPath: resolve(repositoryRoot, "apps/web/dist"),
-  });
 });
 
-test("production CLI has no caller root override and writes nothing when root identity fails", async () => {
+test("production CLI exposes no test-only path seams", async () => {
   const source = readFileSync(resolve(__dirname, "vs005-deploy-plan.ts"), "utf8");
   assert.doesNotMatch(source, /resolveRepositoryRoot\?:/);
+  assert.doesNotMatch(source, /export function resolveDeployPlanOperatorPaths/);
+});
+
+test("production CLI writes nothing when root identity fails", async () => {
   const fixtureRoot = mkdtempSync(resolve(tmpdir(), "cadence-plan-invalid-root-"));
   const outputPath = resolve(fixtureRoot, "failure.json");
   try {
@@ -107,6 +89,11 @@ test("production CLI has no caller root override and writes nothing when root id
     rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+function compileTimeRejectsPathInstrumentation(): void {
+  // @ts-expect-error onResolvedPaths is intentionally not part of the production CLI contract.
+  void runCli([], { onResolvedPaths: () => undefined });
+}
 
 function betaConfig(): CadenceRuntimeConfig {
   return validateCadenceRuntimeConfig({

@@ -519,16 +519,6 @@ function parseArguments(args: readonly string[]): { configPath: string; outputPa
   return { configPath, outputPath };
 }
 
-export function resolveDeployPlanOperatorPaths(
-  parsed: { configPath: string; outputPath: string },
-): { configPath: string; outputPath: string } {
-  const repositoryRoot = resolveCadenceRepositoryRoot();
-  return {
-    configPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.configPath }),
-    outputPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.outputPath }),
-  };
-}
-
 function writeJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -558,18 +548,7 @@ function runLocalCommand(argv: readonly string[]): Promise<void> {
   });
 }
 
-/** CLI entrypoint; the callback is an internal local boundary-test seam. */
-export async function runCli(
-  args: readonly string[],
-  overrides: {
-    onResolvedPaths?: (paths: {
-      configPath: string;
-      outputPath: string;
-      publicConfigPath: string;
-      webDistPath: string;
-    }) => void;
-  } = {},
-): Promise<void> {
+export async function runCli(args: readonly string[]): Promise<void> {
   let configPath = "<unspecified>";
   let outputPath = ".cadence/vs005/deployment-plan.json";
   let rootEstablished = false;
@@ -584,7 +563,6 @@ export async function runCli(
     const publicConfigPath = resolve(repositoryRoot, "apps/web/.generated/cadence-public-config.json");
     const webDistPath = resolve(repositoryRoot, "apps/web/dist");
     rootEstablished = true;
-    overrides.onResolvedPaths?.({ configPath, outputPath, publicConfigPath, webDistPath });
     const release = loadReleaseFromEnvironment();
     const provider = createCloudflareDeploymentProvider(createDefaultCloudflareProviderIo());
     const dependencies: Vs005DeployPlanDependencies = {
