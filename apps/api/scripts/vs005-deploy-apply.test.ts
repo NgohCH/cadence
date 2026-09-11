@@ -41,7 +41,7 @@ test("apply CLI resolves every relative path from repository root across caller 
   const original = process.cwd();
   try {
     for (const cwd of [repositoryRoot, resolve(repositoryRoot, "apps/api"), unrelated]) {
-      const result = spawnSync(process.execPath, ["--import", tsxLoader, applyCli, "--plan", "missing-plan.json", "--config", "missing-config.json", "--out", ".cadence/vs005/task3-apply-failure.json"], { cwd, encoding: "utf8" });
+      const result = spawnSync(process.execPath, ["--import", tsxLoader, applyCli, "--plan", "missing-plan.json", "--config", "missing-config.json", "--out", ".cadence/vs005/space dir/../task3-apply-failure.json"], { cwd, encoding: "utf8", env: { ...process.env, INIT_CWD: unrelated } });
       assert.equal(result.status, 0);
       assert.equal(existsSync(resolve(repositoryRoot, ".cadence/vs005/task3-apply-failure.json")), true);
       assert.equal(existsSync(resolve(cwd, ".cadence/vs005/task3-apply-failure.json")), cwd === repositoryRoot);
@@ -66,10 +66,25 @@ test("apply CLI root-establishment failure performs no downstream reads or write
   writeFileSync(resolve(fixture, "package.json"), JSON.stringify({ name: "not-cadence" }));
   writeFileSync(resolve(fixture, "apps/web/package.json"), JSON.stringify({ name: "web" }));
   const outputPath = resolve(fixture, ".cadence/root-failure.json");
-  const result = spawnSync(process.execPath, ["--import", tsxLoader, resolve(fixtureScripts, "vs005-deploy-apply.ts"), "--plan", "input.json", "--config", "config.json", "--out", outputPath], { cwd: fixture, encoding: "utf8" });
+  const reportPath = resolve(fixture, "probe.json");
+  const probePath = resolve(fixture, "probe.cjs");
+  writeFileSync(probePath, `const fs=require("node:fs");const cp=require("node:child_process");const out=${JSON.stringify(outputPath)};const report=${JSON.stringify(reportPath)};const c={inputReads:0,configReads:0,downstream:0,successWrites:0,failureWrites:0};const rr=fs.readFileSync.bind(fs);fs.readFileSync=(p,...a)=>{if(String(p).endsWith("input.json"))c.inputReads++;if(String(p).endsWith("config.json"))c.configReads++;return rr(p,...a)};const ww=fs.writeFileSync.bind(fs);fs.writeFileSync=(p,...a)=>{if(String(p)===out)c.failureWrites++;return ww(p,...a)};const ss=cp.spawn.bind(cp);cp.spawn=(...a)=>{c.downstream++;return ss(...a)};global.fetch=async()=>{c.downstream++;throw new Error("unexpected fetch")};process.on("exit",()=>ww(report,JSON.stringify(c)));`);
+  const result = spawnSync(process.execPath, ["--require", probePath, "--import", tsxLoader, resolve(fixtureScripts, "vs005-deploy-apply.ts"), "--plan", "input.json", "--config", "config.json", "--out", outputPath], { cwd: fixture, encoding: "utf8" });
   assert.equal(result.status, 0);
   assert.equal(existsSync(outputPath), false);
   assert.equal(existsSync(resolve(fixture, ".cadence")), false);
+  const probe = JSON.parse(require("node:fs").readFileSync(reportPath, "utf8")) as Record<string, number>;
+  assert.deepEqual(probe, { inputReads: 0, configReads: 0, downstream: 0, successWrites: 0, failureWrites: 0 });
+  rmSync(fixture, { recursive: true, force: true });
+});
+
+test("apply CLI preserves native absolute operator paths", () => {
+  const fixture = mkdtempSync(resolve(tmpdir(), "cadence-apply-absolute-"));
+  const outputPath = resolve(fixture, "space dir", "..", "apply-absolute.json");
+  mkdirSync(resolve(fixture, "space dir"), { recursive: true });
+  const result = spawnSync(process.execPath, ["--import", tsxLoader, applyCli, "--plan", resolve(fixture, "plan.json"), "--config", resolve(fixture, "config.json"), "--out", outputPath], { cwd: repositoryRoot, encoding: "utf8" });
+  assert.equal(result.status, 0);
+  assert.equal(existsSync(outputPath), true);
   rmSync(fixture, { recursive: true, force: true });
 });
 
