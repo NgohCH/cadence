@@ -10,22 +10,12 @@ import {
   resolveCadenceRepositoryRoot,
 } from "./cadence-operator-path";
 
-function makeFixture(overrides: Partial<Record<"root" | "api" | "web", string>> = {}): string {
-  const root = mkdtempSync(join(tmpdir(), "cadence-root-"));
-  mkdirSync(join(root, "apps", "api", "scripts"), { recursive: true });
-  mkdirSync(join(root, "apps", "web"), { recursive: true });
-  writeFileSync(join(root, "package.json"), JSON.stringify({ name: overrides.root ?? "cadence" }));
-  writeFileSync(join(root, "apps", "api", "package.json"), JSON.stringify({ name: overrides.api ?? "api" }));
-  writeFileSync(join(root, "apps", "web", "package.json"), JSON.stringify({ name: overrides.web ?? "web" }));
-  return root;
-}
-
 test("derives the repository root from the resolver module location", () => {
   const expected = resolve(__dirname, "..", "..", "..");
   assert.equal(resolveCadenceRepositoryRoot(), expected);
 });
 
-async function loadFixtureResolver(markers: { root?: string; api?: string; web?: string; malformed?: string }): Promise<() => string> {
+async function loadFixtureResolver(markers: { root?: string; api?: string; web?: string }): Promise<() => string> {
   const root = mkdtempSync(join(tmpdir(), "cadence-resolver-"));
   try {
     mkdirSync(join(root, "apps", "api", "scripts"), { recursive: true });
@@ -83,7 +73,7 @@ test("resolves relative operator paths from the proven repository root", () => {
   );
 });
 
-test("preserves absolute paths while normalizing dot segments and spaces", () => {
+test("preserves Windows absolute paths while normalizing dot segments and spaces", { skip: process.platform !== "win32" }, () => {
   const absolute = win32.normalize("C:/Operator Files/../Operator Files/plan.json");
   assert.equal(
     resolveCadenceOperatorPath({ repositoryRoot: "C:/repo", inputPath: "C:/Operator Files/../Operator Files/plan.json" }),
