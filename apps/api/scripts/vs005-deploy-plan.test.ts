@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import {
@@ -12,6 +13,7 @@ import { buildCloudflareDeployment } from "./vs005-generate-deployment";
 import {
   inspectVs005PlanInputs,
   runVs005DeployPlan,
+  resolveDeployPlanOperatorPaths,
   type Vs005DeployPlanDependencies,
 } from "./vs005-deploy-plan";
 import type { Vs005LocalDeploymentReadiness } from "./vs005-local-deployment-readiness";
@@ -31,6 +33,26 @@ const release: CadenceReleaseIdentity = {
 const observed = <T>(value: T) => ({ state: "OBSERVED_VALUE" as const, value });
 const absent = () => ({ state: "OBSERVED_ABSENT" as const });
 const unavailable = (code: string) => ({ state: "UNAVAILABLE" as const, code });
+const repositoryRoot = resolve(process.cwd(), "../..");
+
+test("normalizes deploy-plan operator paths from the Cadence repository root", () => {
+  const paths = resolveDeployPlanOperatorPaths({ configPath: "./config/../config/cadence.runtime.beta.json", outputPath: ".cadence/vs005/../vs005/plan.json" });
+  assert.equal(paths.configPath, resolve(repositoryRoot, "config/cadence.runtime.beta.json"));
+  assert.equal(paths.outputPath, resolve(repositoryRoot, ".cadence/vs005/plan.json"));
+});
+
+test("normalization ignores INIT_CWD and preserves absolute paths", () => {
+  const original = process.env.INIT_CWD;
+  process.env.INIT_CWD = "C:\\unrelated";
+  try {
+    const paths = resolveDeployPlanOperatorPaths({ configPath: "C:/Operator Files/../Operator Files/config.json", outputPath: ".cadence/plan.json" });
+    assert.equal(paths.configPath, "C:\\Operator Files\\config.json");
+    assert.equal(paths.outputPath, resolve(repositoryRoot, ".cadence/plan.json"));
+  } finally {
+    if (original === undefined) delete process.env.INIT_CWD;
+    else process.env.INIT_CWD = original;
+  }
+});
 
 function betaConfig(): CadenceRuntimeConfig {
   return validateCadenceRuntimeConfig({

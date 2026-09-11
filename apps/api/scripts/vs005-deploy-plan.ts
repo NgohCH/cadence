@@ -41,6 +41,10 @@ import {
   inspectVs005LocalDeploymentReadiness,
   type Vs005LocalDeploymentReadiness,
 } from "./vs005-local-deployment-readiness";
+import {
+  resolveCadenceOperatorPath,
+  resolveCadenceRepositoryRoot,
+} from "./cadence-operator-path";
 
 export interface Vs005PlanInspection {
   correlation: Vs005ProviderObservationCorrelation;
@@ -515,6 +519,16 @@ function parseArguments(args: readonly string[]): { configPath: string; outputPa
   return { configPath, outputPath };
 }
 
+export function resolveDeployPlanOperatorPaths(
+  parsed: { configPath: string; outputPath: string },
+): { configPath: string; outputPath: string } {
+  const repositoryRoot = resolveCadenceRepositoryRoot();
+  return {
+    configPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.configPath }),
+    outputPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.outputPath }),
+  };
+}
+
 function writeJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -549,7 +563,8 @@ async function runCli(args: readonly string[]): Promise<void> {
   let outputPath = ".cadence/vs005/deployment-plan.json";
 
   try {
-    ({ configPath, outputPath } = parseArguments(args));
+    const parsed = parseArguments(args);
+    ({ configPath, outputPath } = resolveDeployPlanOperatorPaths(parsed));
     const release = loadReleaseFromEnvironment();
     const provider = createCloudflareDeploymentProvider(createDefaultCloudflareProviderIo());
     const publicConfigPath = resolve(process.cwd(), "../web/.generated/cadence-public-config.json");
