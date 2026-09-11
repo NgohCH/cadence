@@ -5,10 +5,11 @@ import {
   inspectCurrentDeployment,
   type CloudflareCurrentDeploymentFacts,
 } from "./vs005-cloudflare-current-deployment";
-import type {
-  CloudflareReadOnlyTransport,
-  CloudflareReadOnlyTransportResult,
-  CloudflareWorkerInspectionTarget,
+import {
+  createCloudflareReadOnlyTransport,
+  type CloudflareReadOnlyTransport,
+  type CloudflareReadOnlyTransportResult,
+  type CloudflareWorkerInspectionTarget,
 } from "./vs005-cloudflare-readonly-transport";
 
 const target: CloudflareWorkerInspectionTarget = {
@@ -137,6 +138,24 @@ test("only an exact non-empty all-approved error set proves Worker absence", asy
       await inspectCurrentDeployment(transportFor({ success: false, errors }), target),
       { workerExists: { state: "OBSERVED_ABSENT" }, currentDeployment: { state: "OBSERVED_ABSENT" } },
     );
+  }
+});
+
+test("bounded 404 all-approved provider errors prove Worker absence end to end", async () => {
+  for (const errorCodes of [[10007], [10090], [10007, 10090]]) {
+    const transport = createCloudflareReadOnlyTransport({
+      credentialProvider: { getCredential: async () => "token-canary" },
+      fetchImpl: async () => new Response(JSON.stringify({
+        success: false,
+        errors: errorCodes.map((code) => ({ code, message: "message-canary" })),
+      }), { status: 404 }),
+    });
+    const facts = await inspectCurrentDeployment(transport, target);
+    assert.deepEqual(facts, {
+      workerExists: { state: "OBSERVED_ABSENT" },
+      currentDeployment: { state: "OBSERVED_ABSENT" },
+    });
+    assert.doesNotMatch(JSON.stringify(facts), /token-canary|message-canary/);
   }
 });
 

@@ -150,7 +150,7 @@ test("transport classifies status, redirect, malformed, and network failures wit
   const cases: Array<[string, () => Promise<Response>, string]> = [
     ["401", async () => response({ secret: "body-canary" }, 401), "AUTHENTICATION_FAILED"],
     ["403", async () => response({ message: "message-canary" }, 403), "AUTHORIZATION_FAILED"],
-    ["404", async () => response({}, 404), "UNEXPECTED_PROVIDER_ERROR"],
+    ["404", async () => response({}, 404), "MALFORMED_RESPONSE"],
     ["429", async () => response({}, 429), "UNEXPECTED_PROVIDER_ERROR"],
     ["500", async () => response({}, 500), "UNEXPECTED_PROVIDER_ERROR"],
     ["redirect", async () => response("redirect-canary", 302), "UNEXPECTED_PROVIDER_ERROR"],
@@ -168,6 +168,51 @@ test("transport classifies status, redirect, malformed, and network failures wit
     assert.equal(result.kind, "UNAVAILABLE", name);
     assert.equal(result.kind === "UNAVAILABLE" ? result.failure.kind : "", kind, name);
     assert.doesNotMatch(JSON.stringify(result), /token-canary|body-canary|message-canary|redirect-canary|exception-canary/);
+  }
+});
+
+test("bounded 404 provider errors retain only numeric codes for the operation layer", async () => {
+  for (const errorCodes of [[10007], [10090], [10007, 10090]]) {
+    const transport = createCloudflareReadOnlyTransport({
+      credentialProvider: { getCredential: async () => "token-canary" },
+      fetchImpl: async () => response({
+        success: false,
+        errors: errorCodes.map((code) => ({ code, message: "message-canary", metadata: "metadata-canary" })),
+        arbitrary: "body-canary",
+      }, 404, { "x-canary": "header-canary" }),
+    });
+    const result = await transport.read({ operation: "CURRENT_DEPLOYMENT", target: target() });
+    assert.deepEqual(result, {
+      kind: "PROVIDER_FAILURE",
+      operation: "CURRENT_DEPLOYMENT",
+      errorCodes,
+      errorsWellFormed: true,
+    });
+    assert.doesNotMatch(JSON.stringify(result), /token-canary|message-canary|metadata-canary|body-canary|header-canary/);
+  }
+});
+
+test("malformed empty unknown and oversized 404 bodies never become Worker absence", async () => {
+  const oversized = "x".repeat(1_048_577);
+  const cases: Array<[string, () => Promise<Response>, "UNAVAILABLE" | "PROVIDER_FAILURE"]> = [
+    ["malformed-json", async () => new Response("not-json", { status: 404 }), "UNAVAILABLE"],
+    ["empty-body", async () => new Response("", { status: 404 }), "UNAVAILABLE"],
+    ["malformed-errors", async () => response({ success: false, errors: "not-an-array" }, 404), "UNAVAILABLE"],
+    ["empty-errors", async () => response({ success: false, errors: [] }, 404), "UNAVAILABLE"],
+    ["oversized-errors", async () => response({ success: false, errors: Array.from({ length: 129 }, () => ({ code: 10007 })) }, 404), "UNAVAILABLE"],
+    ["unknown-code", async () => response({ success: false, errors: [{ code: 99999 }] }, 404), "PROVIDER_FAILURE"],
+    ["mixed-codes", async () => response({ success: false, errors: [{ code: 10007 }, { code: 99999 }] }, 404), "PROVIDER_FAILURE"],
+    ["oversized-header", async () => new Response(oversized, { status: 404, headers: { "content-length": String(oversized.length) } }), "UNAVAILABLE"],
+    ["oversized-stream", async () => new Response(oversized, { status: 404 }), "UNAVAILABLE"],
+  ];
+  for (const [name, fetchImpl, expectedKind] of cases) {
+    const transport = createCloudflareReadOnlyTransport({
+      credentialProvider: { getCredential: async () => "token-canary" },
+      fetchImpl,
+    });
+    const result = await transport.read({ operation: "CURRENT_DEPLOYMENT", target: target() });
+    assert.equal(result.kind, expectedKind, name);
+    assert.doesNotMatch(JSON.stringify(result), /token-canary|not-json|not-an-array/);
   }
 });
 

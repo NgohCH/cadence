@@ -16,6 +16,7 @@ export type {
 const CLOUDFLARE_API_ORIGIN = "https://api.cloudflare.com/client/v4" as const;
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_RESPONSE_BYTES = 1_048_576;
+const MAX_PROVIDER_ERRORS = 128;
 
 export interface CloudflareCredentialProvider {
   getCredential(): Promise<string>;
@@ -138,13 +139,29 @@ export function createCloudflareReadOnlyTransport(input: {
       if (response.status >= 300 && response.status < 400) return unavailable(operation, "UNEXPECTED_PROVIDER_ERROR");
       if (response.status === 401) return unavailable(operation, "AUTHENTICATION_FAILED");
       if (response.status === 403) return unavailable(operation, "AUTHORIZATION_FAILED");
-      if (response.status < 200 || response.status >= 300) return unavailable(operation, "UNEXPECTED_PROVIDER_ERROR");
+      const structuredProviderFailureStatus = response.status === 404;
+      if (!structuredProviderFailureStatus && (response.status < 200 || response.status >= 300)) {
+        return unavailable(operation, "UNEXPECTED_PROVIDER_ERROR");
+      }
 
       const body = await readBodyWithinLimit(response);
       if (!body.ok) return unavailable(operation, "MALFORMED_RESPONSE");
       let parsed: unknown;
       try { parsed = JSON.parse(body.text); } catch { return unavailable(operation, "MALFORMED_RESPONSE"); }
       if (!isRecord(parsed) || typeof parsed.success !== "boolean") return unavailable(operation, "MALFORMED_RESPONSE");
+      if (structuredProviderFailureStatus) {
+        if (parsed.success !== false || !Array.isArray(parsed.errors)
+          || parsed.errors.length === 0 || parsed.errors.length > MAX_PROVIDER_ERRORS) {
+          return unavailable(operation, "MALFORMED_RESPONSE");
+        }
+        const errorCodes = parsed.errors.map((entry) => (
+          isRecord(entry) && typeof entry.code === "number" ? entry.code : undefined
+        ));
+        if (!errorCodes.every((code): code is number => code !== undefined)) {
+          return unavailable(operation, "MALFORMED_RESPONSE");
+        }
+        return { kind: "PROVIDER_FAILURE", operation, errorCodes, errorsWellFormed: true };
+      }
       if (parsed.success === true && "result" in parsed) return { kind: "SUCCESS", operation, result: parsed.result };
       if (parsed.success === false && Array.isArray(parsed.errors)) {
         const errorCodes = parsed.errors.map((entry) => isRecord(entry) && typeof entry.code === "number" ? entry.code : undefined);
