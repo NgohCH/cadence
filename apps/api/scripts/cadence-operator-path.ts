@@ -41,11 +41,6 @@ export function resolveCadenceRepositoryRoot(): string {
   return deriveRepositoryRoot(__dirname);
 }
 
-/** Internal test seam; production callers must use resolveCadenceRepositoryRoot(). */
-export function resolveCadenceRepositoryRootFromFixture(moduleDirectory: string): string {
-  return deriveRepositoryRoot(moduleDirectory);
-}
-
 export function resolveCadenceOperatorPath(input: {
   repositoryRoot: string;
   inputPath: string;
