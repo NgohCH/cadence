@@ -558,11 +558,10 @@ function runLocalCommand(argv: readonly string[]): Promise<void> {
   });
 }
 
-/** CLI entrypoint; overrides exist only for local boundary tests and are not used by production invocation. */
+/** CLI entrypoint; the callback is an internal local boundary-test seam. */
 export async function runCli(
   args: readonly string[],
   overrides: {
-    resolveRepositoryRoot?: () => string;
     onResolvedPaths?: (paths: {
       configPath: string;
       outputPath: string;
@@ -573,16 +572,18 @@ export async function runCli(
 ): Promise<void> {
   let configPath = "<unspecified>";
   let outputPath = ".cadence/vs005/deployment-plan.json";
+  let rootEstablished = false;
 
   try {
     const parsed = parseArguments(args);
-    const repositoryRoot = overrides.resolveRepositoryRoot?.() ?? resolveCadenceRepositoryRoot();
+    const repositoryRoot = resolveCadenceRepositoryRoot();
     ({ configPath, outputPath } = {
       configPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.configPath }),
       outputPath: resolveCadenceOperatorPath({ repositoryRoot, inputPath: parsed.outputPath }),
     });
     const publicConfigPath = resolve(repositoryRoot, "apps/web/.generated/cadence-public-config.json");
     const webDistPath = resolve(repositoryRoot, "apps/web/dist");
+    rootEstablished = true;
     overrides.onResolvedPaths?.({ configPath, outputPath, publicConfigPath, webDistPath });
     const release = loadReleaseFromEnvironment();
     const provider = createCloudflareDeploymentProvider(createDefaultCloudflareProviderIo());
@@ -612,6 +613,11 @@ export async function runCli(
     console.log(`DEPLOYMENT READINESS: ${plan.readiness}`);
     console.log("NO DEPLOYMENT PERFORMED");
   } catch {
+    if (!rootEstablished) {
+      console.log("DEPLOYMENT READINESS: BLOCKED");
+      console.log("NO DEPLOYMENT PERFORMED");
+      return;
+    }
     const failure = makeVs005OperatorFailure({
       stage: "plan",
       code: "SETUP_OR_PLAN_BLOCKED",

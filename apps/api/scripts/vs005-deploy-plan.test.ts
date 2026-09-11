@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 import {
@@ -84,13 +85,27 @@ test("CLI orchestration uses identical repository-root paths from every caller c
   });
 });
 
-test("CLI root-establishment failure blocks before downstream orchestration", async () => {
-  let downstreamCalled = false;
-  await runCli(["--config", "config/cadence.runtime.beta.json", "--out", resolve(repositoryRoot, ".cadence/vs005/root-failure.json")], {
-    resolveRepositoryRoot: () => { throw new Error("CADENCE_REPOSITORY_ROOT_INVALID"); },
-    onResolvedPaths: () => { downstreamCalled = true; },
-  });
-  assert.equal(downstreamCalled, false);
+test("production CLI has no caller root override and writes nothing when root identity fails", async () => {
+  const source = readFileSync(resolve(__dirname, "vs005-deploy-plan.ts"), "utf8");
+  assert.doesNotMatch(source, /resolveRepositoryRoot\?:/);
+  const fixtureRoot = mkdtempSync(resolve(tmpdir(), "cadence-plan-invalid-root-"));
+  const outputPath = resolve(fixtureRoot, "failure.json");
+  try {
+    cpSync(resolve(__dirname), resolve(fixtureRoot, "apps/api/scripts"), { recursive: true });
+    cpSync(resolve(__dirname, "../src"), resolve(fixtureRoot, "apps/api/src"), { recursive: true });
+    symlinkSync(resolve(repositoryRoot, "apps/api/node_modules"), resolve(fixtureRoot, "apps/api/node_modules"), "junction");
+    mkdirSync(resolve(fixtureRoot, "apps/web"), { recursive: true });
+    writeFileSync(resolve(fixtureRoot, "package.json"), JSON.stringify({ name: "not-cadence" }));
+    writeFileSync(resolve(fixtureRoot, "apps/api/package.json"), JSON.stringify({ name: "api" }));
+    writeFileSync(resolve(fixtureRoot, "apps/web/package.json"), JSON.stringify({ name: "web" }));
+    const loaded = await import(`${pathToFileURL(resolve(fixtureRoot, "apps/api/scripts/vs005-deploy-plan.ts")).href}?invalid-root=${Date.now()}`) as {
+      runCli: (args: readonly string[]) => Promise<void>;
+    };
+    await loaded.runCli(["--config", "config/cadence.runtime.beta.json", "--out", outputPath]);
+    assert.equal(existsSync(outputPath), false);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
 });
 
 function betaConfig(): CadenceRuntimeConfig {
