@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -47,6 +47,26 @@ test("verify CLI resolves every relative path from repository root across caller
     process.chdir(original);
     rmSync(unrelated, { recursive: true, force: true });
   }
+});
+
+test("verify CLI root-establishment failure performs no downstream reads or writes", () => {
+  const fixture = mkdtempSync(resolve(tmpdir(), "cadence-verify-invalid-root-"));
+  const apiRoot = resolve(fixture, "apps/api");
+  const fixtureScripts = resolve(apiRoot, "scripts");
+  mkdirSync(resolve(fixture, "apps/web"), { recursive: true });
+  cpSync(resolve(repositoryRoot, "apps/api/scripts"), fixtureScripts, { recursive: true });
+  cpSync(resolve(repositoryRoot, "apps/api/src"), resolve(apiRoot, "src"), { recursive: true });
+  cpSync(resolve(repositoryRoot, "apps/api/package.json"), resolve(apiRoot, "package.json"));
+  mkdirSync(resolve(apiRoot, "node_modules"), { recursive: true });
+  cpSync(resolve(repositoryRoot, "apps/api/node_modules"), resolve(apiRoot, "node_modules"), { recursive: true });
+  writeFileSync(resolve(fixture, "package.json"), JSON.stringify({ name: "not-cadence" }));
+  writeFileSync(resolve(fixture, "apps/web/package.json"), JSON.stringify({ name: "web" }));
+  const outputPath = resolve(fixture, ".cadence/root-failure.json");
+  const result = spawnSync(process.execPath, ["--import", tsxLoader, resolve(fixtureScripts, "vs005-deploy-verify.ts"), "--deployment", "input.json", "--config", "config.json", "--out", outputPath], { cwd: fixture, encoding: "utf8" });
+  assert.equal(result.status, 0);
+  assert.equal(existsSync(outputPath), false);
+  assert.equal(existsSync(resolve(fixture, ".cadence")), false);
+  rmSync(fixture, { recursive: true, force: true });
 });
 
 function makeBetaConfig(): CadenceRuntimeConfig {
