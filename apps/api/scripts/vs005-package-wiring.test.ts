@@ -23,6 +23,25 @@ test("root exposes the governed VS005 operator commands", () => {
   }
 });
 
+test("root VS005 management scripts forward operator arguments to nested npm", () => {
+  assert.deepEqual(
+    {
+      "cadence:setup:check": rootPackage.scripts["cadence:setup:check"],
+      "cadence:deploy:plan": rootPackage.scripts["cadence:deploy:plan"],
+      "cadence:deploy:apply": rootPackage.scripts["cadence:deploy:apply"],
+      "cadence:deploy:verify": rootPackage.scripts["cadence:deploy:verify"],
+      "cadence:rollback": rootPackage.scripts["cadence:rollback"],
+    },
+    {
+      "cadence:setup:check": "npm --prefix apps/api run vs005:deploy:plan --",
+      "cadence:deploy:plan": "npm --prefix apps/api run vs005:deploy:plan --",
+      "cadence:deploy:apply": "npm --prefix apps/api run vs005:deploy:apply --",
+      "cadence:deploy:verify": "npm --prefix apps/api run vs005:deploy:verify --",
+      "cadence:rollback": "npm --prefix apps/api run vs005:rollback --",
+    },
+  );
+});
+
 test("release toolchain declares the same Node major used by CI", () => {
   assert.equal(rootPackage.engines.node, ">=24 <25");
   assert.equal(nodeVersion, "24");
