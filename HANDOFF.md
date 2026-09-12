@@ -293,6 +293,29 @@ provider reinspection. T15-C remains **NOT AUTHORIZED**; Pilot Activation
 remains **NOT AUTHORIZED**. No Worker presence/absence, provider PASS,
 deployment-readiness, or hosted-verification claim is made.
 
+## VS005 T15-B Read-Only Planning Closure
+
+The separately authorized T15-B governed plan invocation completed with
+`TASK_4_LOCAL_RECERTIFICATION_PASS` prerequisites satisfied and deployment
+readiness **PASS**. Release identity was `beta-2026.09.12.1`, source commit
+`048fa20ede2678db270a6fd56ac3750a663e2bbf`, and build ID
+`manual-20260912T060925Z-048fa20ede26`. The canonical plan
+`.cadence/vs005/deployment-plan.json` was refreshed with SHA-256
+`103940783238c985c96b6d5694e963a8348064e43c0f3d41341a23c1da364668`.
+
+The plan is a structured v2 **PASS** artifact correlated to the reviewed Beta
+target. Provider inspection was read-only and recorded only bounded structured
+observations; first-deployment absence states were represented according to
+the approved profile. Local readiness and correlation/completeness validation
+passed. `database.migrationAction = NONE`; provider mutations, database
+operations, and deployment/rollback operations were all zero. No raw provider
+payload, credential, or secret was retained.
+
+This closes T15-B read-only planning evidence only. T15-C remains **NOT
+AUTHORIZED** and Pilot Activation remains **NOT AUTHORIZED**. Any next action
+requires separate T15-C authorization; no deployment, hosted verification,
+rollback, or provider mutation is authorized by this closure.
+
 ## VS004 Closure Record
 
 VS004 — Controlled Pilot Bootstrap and Access is closed and merged via PR #7.
