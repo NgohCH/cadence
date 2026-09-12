@@ -269,11 +269,21 @@ Task B local recertification is **TASK_4_LOCAL_RECERTIFICATION_PASS**:
 operator-path 95 passed/1 platform skip; structured/VS005 244 passed; VS003
 75 passed; VS004 244 passed; API 546 passed; web 64 passed; runtime-cloudflare
 tests 1 passed; typechecks, lint, Beta build, and VS005 generation passed.
-The Codex sandbox dry-run was blocked by local filesystem traversal
-restrictions; the exact approved `npm.cmd --prefix apps/runtime-cloudflare run
-deploy:dry-run` command was then rerun from ordinary Windows PowerShell with
-Wrangler 4.127.1 and exit code 0. It was dry-run only and caused no remote
-mutation; this is not hosted/provider verification.
+The Codex sandbox dry-run had a **PRIMARY** failure: its filesystem traversal
+boundary denied Wrangler/esbuild access while resolving outside the allowed
+workspace. Wrangler also reported a **SECONDARY** log-directory write `EPERM`
+under `C:\Users\chngo\AppData\Roaming\xdg.config\.wrangler\logs\...`.
+The configured entrypoint `apps/runtime-cloudflare/src/index.ts` existed and
+was readable; its reported resolution failure was downstream of the upstream
+sandbox access failure. No source, package-script, Wrangler-config,
+path-contract, permission, or repository fix was made because the investigation
+identified the sandbox/filesystem boundary—not a repository configuration
+defect—as primary. The exact approved
+`npm.cmd --prefix apps/runtime-cloudflare run deploy:dry-run` command was then
+rerun from ordinary Windows PowerShell with Wrangler 4.127.1 and exit code 0.
+This was local dry-run evidence only: it was not hosted verification,
+Cloudflare provider inspection, deployment, Worker presence/absence evidence,
+T15-B completion, or T15-C authorization, and caused no remote mutation.
 
 Governance remains 44 governed parents and 178 child records; removed
 commitments = 0 and none moved beyond M3. Database action = NONE; config,
