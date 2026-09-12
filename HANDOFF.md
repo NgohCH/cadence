@@ -229,6 +229,60 @@ T15-B PASS. Cloudflare remote mutation remains **NOT AUTHORIZED**, database
 action is **NONE**, clean-room work is **NOT AUTHORIZED**, Pilot Activation is
 **NOT AUTHORIZED**, and governance remains 44 parents/178 child records.
 
+## Operator Path Boundary Reconciliation
+
+Governed Task 15 execution exposed cwd/path ambiguity in root-exposed tooling.
+Operator filesystem paths are now normalized once at the shared boundary
+against the proven Cadence repository root. A later Task 4 review identified a
+design-to-interface acceptance mismatch between path-bearing tooling and
+path-free domain APIs; that mismatch was reconciled additively without
+rewriting historical approved records.
+
+The final architecture is: root-exposed CLI wrappers establish repository
+identity, invoke `resolveCadenceRepositoryRoot()` and
+`resolveCadenceOperatorPath()`, interpret operator-relative paths, and own the
+canonical `<repo>/.cadence` meaning. `runVs005DeployPlan({ configPath,
+outputPath }, ...)` remains a path-bearing tooling API that consumes explicit
+paths and does not own operator cwd or repository-root semantics. The
+`applyVs005Deployment(...)`, `verifyVs005Deployment(...)`, and
+`rollbackVs005Application(...)` APIs remain intentionally path-free and consume
+loaded domain/config/evidence objects.
+
+The canonical evidence root is `<repo>/.cadence/`; `apps/api/.cadence` is
+non-authoritative diagnostic residue. Historical evidence was not migrated,
+relabelled, or deleted, and no `process.chdir()` authority was introduced.
+
+Authoritative records remain the original operator-path design
+(`docs/superpowers/specs/2026-09-11-cadence-operator-path-contract-reconciliation-design.md`),
+original plan
+(`docs/superpowers/plans/2026-09-11-cadence-operator-path-contract-reconciliation.md`),
+boundary reconciliation design
+(`docs/superpowers/specs/2026-09-12-cadence-operator-path-boundary-reconciliation-design.md`,
+SHA-256 `74d330568d05f7f086573fd0c01590d63bd2042aa31b5aa196ab6c189a9855aa`),
+and amendment plan
+(`docs/superpowers/plans/2026-09-12-cadence-operator-path-boundary-reconciliation.md`,
+SHA-256 `f26bd4611fbe48a81058affb046aba08c7483a6b1e44e9e35bfc797acc055c74`).
+
+Final implementation lineage is: Task 1 resolver `c6090fd94d0a73e82c723752210f8631afc7c61c` (with native-path test closure `7d92426fe476f54b1962ab19a6afef53caa2d201`); Task 2 setup/plan integration `e9c3e835226f0f41f201bb20b84d2a2138fa2391` (final authority-surface cleanup `1cfc8c102e5cd25baa1caef3fd284b0ac8c6badf`); Task 3 management CLI integration `dcd2ad8488c86d4b5c2c4758c2eac6d3ea679bff` (contract coverage `1670148b76640ec2e5aedc9a965007edf6f4d89b`); and Task A evidence reconciliation `b08b234cc40a66e729475680545ac0c8dfe49492`.
+
+Task B local recertification is **TASK_4_LOCAL_RECERTIFICATION_PASS**:
+operator-path 95 passed/1 platform skip; structured/VS005 244 passed; VS003
+75 passed; VS004 244 passed; API 546 passed; web 64 passed; runtime-cloudflare
+tests 1 passed; typechecks, lint, Beta build, and VS005 generation passed.
+The Codex sandbox dry-run was blocked by local filesystem traversal
+restrictions; the exact approved `npm.cmd --prefix apps/runtime-cloudflare run
+deploy:dry-run` command was then rerun from ordinary Windows PowerShell with
+Wrangler 4.127.1 and exit code 0. It was dry-run only and caused no remote
+mutation; this is not hosted/provider verification.
+
+Governance remains 44 governed parents and 178 child records; removed
+commitments = 0 and none moved beyond M3. Database action = NONE; config,
+migrations, provider semantics, and frozen VS005 records changed = NO.
+T15-B remains **BLOCKED** and requires a separately authorized read-only
+provider reinspection. T15-C remains **NOT AUTHORIZED**; Pilot Activation
+remains **NOT AUTHORIZED**. No Worker presence/absence, provider PASS,
+deployment-readiness, or hosted-verification claim is made.
+
 ## VS004 Closure Record
 
 VS004 — Controlled Pilot Bootstrap and Access is closed and merged via PR #7.
