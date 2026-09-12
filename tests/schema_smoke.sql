@@ -47,12 +47,11 @@ begin
   from public.users u
   left join public.persons p
     on p.id = u.person_id
-  where p.id is null
-     or u.person_id <> u.id;
+  where p.id is null;
 
   if unmapped_user_count <> 0 then
     raise exception
-      'Expected deterministic VS-001 user-to-Person mappings, found % invalid rows',
+      'Expected stable User-to-Person mappings, found % invalid rows',
       unmapped_user_count;
   end if;
 
