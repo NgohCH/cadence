@@ -90,6 +90,40 @@ test("production CLI writes nothing when root identity fails", async () => {
   }
 });
 
+test("post-root failures retain a bounded diagnostic code", async () => {
+  const outputPath = resolve(repositoryRoot, ".cadence/vs005/task2-config-failure.json");
+  const previousRelease = {
+    version: process.env.CADENCE_RELEASE_VERSION,
+    commitSha: process.env.CADENCE_COMMIT_SHA,
+    buildId: process.env.CADENCE_BUILD_ID,
+  };
+  try {
+    process.env.CADENCE_RELEASE_VERSION = "";
+    process.env.CADENCE_COMMIT_SHA = "";
+    process.env.CADENCE_BUILD_ID = "";
+    await runCli([
+      "--config",
+      "config/cadence.runtime.beta.json",
+      "--out",
+      outputPath,
+    ]);
+    const failure = JSON.parse(readFileSync(outputPath, "utf8")) as {
+      code: string;
+      safeObserved?: { diagnosticCode?: string };
+    };
+    assert.equal(failure.code, "SETUP_OR_PLAN_BLOCKED");
+    assert.deepEqual(failure.safeObserved, { diagnosticCode: "RELEASE_IDENTITY_INVALID" });
+  } finally {
+    if (previousRelease.version === undefined) delete process.env.CADENCE_RELEASE_VERSION;
+    else process.env.CADENCE_RELEASE_VERSION = previousRelease.version;
+    if (previousRelease.commitSha === undefined) delete process.env.CADENCE_COMMIT_SHA;
+    else process.env.CADENCE_COMMIT_SHA = previousRelease.commitSha;
+    if (previousRelease.buildId === undefined) delete process.env.CADENCE_BUILD_ID;
+    else process.env.CADENCE_BUILD_ID = previousRelease.buildId;
+    rmSync(outputPath, { force: true });
+  }
+});
+
 function compileTimeRejectsPathInstrumentation(): void {
   // @ts-expect-error onResolvedPaths is intentionally not part of the production CLI contract.
   void runCli([], { onResolvedPaths: () => undefined });

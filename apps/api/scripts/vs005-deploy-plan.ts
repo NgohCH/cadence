@@ -548,6 +548,21 @@ function runLocalCommand(argv: readonly string[]): Promise<void> {
   });
 }
 
+function safePlanFailureDiagnostic(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (message.startsWith("Unable to load Cadence runtime config from ")) {
+    return "CONFIG_LOAD_FAILED";
+  }
+  if (message.startsWith("Cadence runtime configuration is invalid")) {
+    return "CONFIG_VALIDATION_FAILED";
+  }
+  if (message.startsWith("Cadence release ")) {
+    return "RELEASE_IDENTITY_INVALID";
+  }
+  const code = message.match(/^([A-Z][A-Z0-9_]{1,79})(?::|$)/)?.[1];
+  return code ?? "UNKNOWN_POST_ROOT_FAILURE";
+}
+
 export async function runCli(args: readonly string[]): Promise<void> {
   let configPath = "<unspecified>";
   let outputPath = ".cadence/vs005/deployment-plan.json";
@@ -590,7 +605,7 @@ export async function runCli(args: readonly string[]): Promise<void> {
     const plan = await runVs005DeployPlan({ configPath, outputPath }, dependencies);
     console.log(`DEPLOYMENT READINESS: ${plan.readiness}`);
     console.log("NO DEPLOYMENT PERFORMED");
-  } catch {
+  } catch (error) {
     if (!rootEstablished) {
       console.log("DEPLOYMENT READINESS: BLOCKED");
       console.log("NO DEPLOYMENT PERFORMED");
@@ -602,6 +617,7 @@ export async function runCli(args: readonly string[]): Promise<void> {
       mutationOccurred: false,
       existingService: "UNCHANGED",
       canonicalConfigPath: configPath,
+      safeObserved: { diagnosticCode: safePlanFailureDiagnostic(error) },
       nextAction: "Review the canonical config and read-only setup prerequisites, then rerun the deployment plan.",
     });
     writeJson(outputPath, failure);
