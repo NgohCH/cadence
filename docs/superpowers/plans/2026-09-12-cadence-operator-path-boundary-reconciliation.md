@@ -55,6 +55,14 @@ They invoke the real functions, but pass empty/invalid domain objects, terminate
 
   Inspect the three probe titles and the production signatures. Confirm each probe has the exact empty/invalid invocation described above, and confirm none of the three programmatic signatures contains a filesystem-path parameter. Do not edit production code or add a replacement probe.
 
+  Also run this boundary-specific source inspection from the repository root:
+
+  ```text
+  rg -n "resolveCadenceRepositoryRoot|resolveCadenceOperatorPath|process\.cwd\(\)|INIT_CWD|applyVs005Deployment|verifyVs005Deployment|rollbackVs005Application" apps/api/scripts/vs005-deploy-apply.ts apps/api/scripts/vs005-deploy-verify.ts apps/api/scripts/vs005-rollback.ts
+  ```
+
+  Read the surrounding signatures and implementation, not only the matching lines. For each of `applyVs005Deployment(...)`, `verifyVs005Deployment(...)`, and `rollbackVs005Application(...)`, record PASS only when its public/programmatic signature has no operator filesystem-path parameter, it has no import or call of either operator-path resolver, it has no operator path interpretation through `process.cwd()` or `INIT_CWD`, and its inputs remain domain/config/evidence/provider-oriented. Resolver matches in the CLI-wrapper portions are permitted and are not evidence of leakage into the path-free domain function.
+
 - [ ] **Step 2: Remove only the three probes.**
 
   Delete the one named test block from each of the three allowed test files. Preserve all existing fixtures, valid domain/provider tests, CLI cwd/path tests, and root-failure probes. Do not alter production files.
@@ -115,13 +123,22 @@ They invoke the real functions, but pass empty/invalid domain objects, terminate
 
 **Task A acceptance:** The three invalid early-rejection probes are removed, or demonstrably absent with no empty commit; no production seam or API change exists; valid domain/provider behavior and path-bearing CLI evidence remain covered.
 
+**Task A review gate:** After Task A verification and any tests-only commit, stop and request an independent review. Record:
+
+```text
+TASK_A_COMPLETE
+AWAITING_TASK_A_REVIEW
+```
+
+Task B may begin only after that review returns Critical = 0, Important = 0, Task A contract compliance = YES, and `READY_FOR_TASK_B`. Task A completion alone does not authorize Task B.
+
 ---
 
 ### Task B: Corrected Task 4 acceptance and full local recertification
 
 **Files:**
 
-- Inspect only the Task 1–3 tests and production boundaries listed in the original plan.
+- Inspect only the Task 1-3 tests and production boundaries listed in the original plan.
 - Do not modify source, tests, HANDOFF, governance, config, migrations, frozen records, or historical `.cadence/vs005/t15a-local-readiness.json`.
 
 **Interfaces consumed:**
