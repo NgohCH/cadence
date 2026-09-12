@@ -36,18 +36,22 @@ The following boundaries own operator filesystem strings and their meaning:
 - `cadence:deploy:verify` CLI;
 - `cadence:rollback` CLI.
 
-These boundaries establish the Cadence repository root, call
-`resolveCadenceOperatorPath()`, and own relative-path normalization,
-absolute-path preservation, canonical `<repo>/.cadence` evidence ownership,
-artifact/config loading, and output paths. They are independent of operator
-`cwd` and `INIT_CWD`.
+The root-exposed CLI wrappers establish the Cadence repository root, normalize
+operator filesystem arguments through `resolveCadenceOperatorPath(...)`, own
+relative-path normalization, absolute-path preservation, canonical
+`<repo>/.cadence` evidence ownership, and pass resolved explicit paths into
+the tooling/application boundaries. They are independent of operator `cwd`
+and `INIT_CWD`.
 
 `runVs005DeployPlan(...)` is a path-bearing programmatic tooling API. It
-legitimately accepts explicit `configPath` and `outputPath` values, retains
-their explicit-path meaning, and must not reinterpret them using operator
-`cwd` or `INIT_CWD` metadata. When called through `cadence:deploy:plan` or
-`cadence:setup:check`, it receives the already-resolved absolute paths from
-the CLI. Programmatic callers may continue to supply explicit paths directly.
+accepts explicit `configPath` and `outputPath` values and retains their
+explicit-path meaning. When called through `cadence:deploy:plan` or
+`cadence:setup:check`, it receives already-resolved absolute paths from the
+root-exposed CLI. It uses those paths without re-establishing repository
+identity, does not call `resolveCadenceRepositoryRoot()` or
+`resolveCadenceOperatorPath()`, and does not reinterpret paths through
+`process.cwd()` or `INIT_CWD`. Programmatic callers may continue to supply
+explicit paths directly.
 
 ### Path-free downstream APIs
 
