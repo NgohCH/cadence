@@ -27,18 +27,27 @@ T15-B remains **BLOCKED**. T15-C remains **NOT AUTHORIZED**.
 
 The following boundaries own operator filesystem strings and their meaning:
 
+- `cadence:setup:check`, which remains the existing transport alias through
+  the deploy-plan CLI;
 - `cadence:deploy:plan` CLI;
+- `runVs005DeployPlan({ configPath, outputPath }, ...)`, the existing
+  programmatic tooling API used by that CLI;
 - `cadence:deploy:apply` CLI;
 - `cadence:deploy:verify` CLI;
-- `cadence:rollback` CLI;
-- `cadence:setup:check`, which remains the existing transport alias through
-  the deploy-plan CLI.
+- `cadence:rollback` CLI.
 
 These boundaries establish the Cadence repository root, call
 `resolveCadenceOperatorPath()`, and own relative-path normalization,
 absolute-path preservation, canonical `<repo>/.cadence` evidence ownership,
 artifact/config loading, and output paths. They are independent of operator
 `cwd` and `INIT_CWD`.
+
+`runVs005DeployPlan(...)` is a path-bearing programmatic tooling API. It
+legitimately accepts explicit `configPath` and `outputPath` values, retains
+their explicit-path meaning, and must not reinterpret them using operator
+`cwd` or `INIT_CWD` metadata. When called through `cadence:deploy:plan` or
+`cadence:setup:check`, it receives the already-resolved absolute paths from
+the CLI. Programmatic callers may continue to supply explicit paths directly.
 
 ### Path-free downstream APIs
 
@@ -62,17 +71,21 @@ contracts remain unchanged.
 > programmatic APIs remain path-free. Neither boundary may acquire operator
 > `cwd` or repository-root authority outside its intended responsibility.
 
-CLI/tooling resolves each operator path exactly once at the command boundary.
-Already-loaded domain/configuration/evidence data then crosses into the
-downstream API. Downstream APIs do not reconstruct or reinterpret operator
-paths. No filesystem path is introduced into a downstream API solely to make
-an acceptance test observable.
+Operator-relative path interpretation occurs only at a root-exposed CLI
+boundary. CLI/tooling resolves each operator path exactly once, then passes
+the resulting explicit path to the path-bearing tooling API or to the
+appropriate loader/writer. `runVs005DeployPlan(...)` retains explicit-path
+semantics but does not acquire operator cwd authority. Already-loaded
+domain/configuration/evidence data then crosses into the path-free downstream
+APIs. Those APIs do not reconstruct or reinterpret operator paths. No
+filesystem path is introduced into a path-free domain API solely to make an
+acceptance test observable.
 
 ## Acceptance and evidence model
 
 ### Path-bearing boundary evidence
 
-CLI/tooling tests must prove, for all five root-exposed command names:
+CLI-wrapper tests must prove, for all five root-exposed command names:
 
 - repository-root authority and exact `cadence`/`api`/`web` identity markers;
 - relative-path normalization and native absolute-path preservation;
@@ -83,6 +96,16 @@ CLI/tooling tests must prove, for all five root-exposed command names:
   `apps/api/.cadence`;
 - root-establishment failure occurs before downstream work or output;
 - exact resolved paths reach the existing loading and writing boundaries.
+
+The existing path-bearing tooling API `runVs005DeployPlan(...)` must retain
+the following contract evidence:
+
+- explicit `configPath` and `outputPath` parameters exist;
+- supplied explicit paths retain their meaning at its load/write boundaries;
+- no operator cwd or `INIT_CWD` authority is introduced inside the tooling
+  API; and
+- the deploy-plan and setup-check CLIs supply the resolved paths when they
+  invoke it.
 
 ### Path-free API evidence
 
@@ -142,13 +165,21 @@ was written.
 Task 4 remains verification-only. Its first step must confirm that committed
 Task 1–3 evidence covers:
 
-**Path-bearing CLI/tooling:** all five command names, the path-normalization
-matrix, cwd/`INIT_CWD` independence, root-marker failure, exact downstream
-absolute path arguments, and canonical evidence ownership.
+1. **Root-exposed CLI boundaries:** all five command names, the
+   path-normalization matrix, cwd/`INIT_CWD` independence, root-marker
+   failure, exact downstream absolute path arguments, and canonical evidence
+   ownership.
 
-**Path-free domain/programmatic:** no filesystem-path parameters, no
-repository-root/operator-path resolver dependency, no cwd/`INIT_CWD`
-dependency, and domain/configuration/evidence-only semantics.
+2. **Path-bearing tooling API:** specifically
+   `runVs005DeployPlan(...)`, with explicit-path semantics, no operator cwd
+   reinterpretation, and resolved paths supplied by its root-exposed CLI
+   callers.
+
+3. **Path-free domain APIs:** `applyVs005Deployment(...)`,
+   `verifyVs005Deployment(...)`, and `rollbackVs005Application(...)`, with no
+   filesystem-path parameters, no repository-root/operator-path resolver
+   dependency, no cwd/`INIT_CWD` dependency, and domain/configuration/evidence-
+   only semantics.
 
 The existing consolidated tests, local recertification, and authority audit
 remain required. A failed acceptance check returns to the owning Task 1, 2,
