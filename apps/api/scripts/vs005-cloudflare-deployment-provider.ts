@@ -28,6 +28,8 @@ import {
   createCloudflareWorkerInspectionTarget,
   type CloudflareCredentialProvider,
 } from "./vs005-cloudflare-readonly-transport";
+import { resolveCadenceRepositoryRoot } from "./cadence-operator-path";
+import { resolveCadenceWranglerCommand } from "./vs005-wrangler";
 
 export interface CloudflareReadOnlyProviderFacts extends Vs005ProviderObservationSnapshot {}
 
@@ -556,7 +558,7 @@ function runWrangler(
   childEnvironment?: NodeJS.ProcessEnv,
 ): Promise<{ exitCode: number; stdout: string }> {
   return new Promise((resolve) => {
-    const [command, ...commandArgs] = args;
+    const [command, ...commandArgs] = resolveCadenceWranglerCommand(args, resolveCadenceRepositoryRoot());
     const child = spawn(command, commandArgs, {
       shell: false,
       windowsHide: true,
