@@ -42,6 +42,10 @@ test("root VS005 management scripts forward operator arguments to nested npm", (
   );
 });
 
+test("normal API test command includes the VS005 package-wiring regression", () => {
+  assert.match(apiPackage.scripts.test, /scripts\/vs005-package-wiring\.test\.ts/);
+});
+
 test("release toolchain declares the same Node major used by CI", () => {
   assert.equal(rootPackage.engines.node, ">=24 <25");
   assert.equal(nodeVersion, "24");
