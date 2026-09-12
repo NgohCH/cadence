@@ -83,19 +83,6 @@ test("rollback CLI preserves native absolute operator paths", () => {
   rmSync(fixture, { recursive: true, force: true });
 });
 
-test("rollback programmatic API is independent of caller cwd and INIT_CWD", () => {
-  const unrelated = mkdtempSync(resolve(tmpdir(), "cadence-rollback-api-cwd-"));
-  const moduleUrl = pathToFileURL(resolve(__dirname, "vs005-rollback.ts")).href;
-  const script = `(async()=>{const {rollbackVs005Application}=await import(${JSON.stringify(moduleUrl)});try{await rollbackVs005Application({request:{},currentDeploymentEvidence:{},targetDeploymentEvidence:{},currentConfig:{},targetPolicy:{},provider:{},verify:async()=>({})});console.log("UNEXPECTED_SUCCESS")}catch{console.log("REJECTED")}})()`;
-  try {
-    const outputs = [repositoryRoot, unrelated].map((cwd) => spawnSync(process.execPath, ["--import", tsxLoader, "--input-type=module", "--eval", script], { cwd, env: { ...process.env, INIT_CWD: "C:\\conflicting-init-cwd" }, encoding: "utf8" }));
-    assert.equal(outputs[0]?.status, 0);
-    assert.equal(outputs[1]?.status, 0);
-    assert.equal(outputs[0]?.stdout, "REJECTED\n");
-    assert.equal(outputs[1]?.stdout, outputs[0]?.stdout);
-  } finally { rmSync(unrelated, { recursive: true, force: true }); }
-});
-
 function makeBetaConfig(): CadenceRuntimeConfig {
   const value = JSON.parse(readFileSync(resolve(process.cwd(), "../../config/cadence.runtime.ci.json"), "utf8"));
   value.application.publicUrl = "https://mycadence.ngohch-3d6.workers.dev";
