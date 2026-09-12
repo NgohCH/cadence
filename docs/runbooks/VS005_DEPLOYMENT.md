@@ -37,6 +37,66 @@ binding presence, deployed release, provider fingerprint, hosted health, or
 hosted API behavior. Those facts require later host-operated read-only
 inspection and safe runtime verification.
 
+## Beta release identity prerequisite
+
+Before the governed Beta setup-check or deployment-plan command, establish
+one release identity for the exact source being planned. Release identity is
+metadata, not a credential, and is supplied only to the current operator
+process (or by an approved CI orchestration):
+
+```text
+CADENCE_RELEASE_VERSION = beta-YYYY.MM.DD.N
+CADENCE_COMMIT_SHA      = full lowercase 40-hex Git SHA
+CADENCE_BUILD_ID        = manual-YYYYMMDDTHHMMSSZ-<12-char-commit-prefix>
+```
+
+`CADENCE_RELEASE_VERSION` identifies a governed Beta release candidate. `N`
+starts at `1` for the UTC release-candidate date and increments for each
+distinct governed candidate on that date. The first governed Beta candidate
+on 2026-09-12 is `beta-2026.09.12.1`. Do not derive this value from
+`package.json` (`1.0.0` is not a product release identity), use the CI-only
+`0.0.0-ci` fixture, or substitute `VS005` or another vertical-slice name.
+Before use, search the governed release evidence for that exact version; if
+it is already associated with a different source commit, stop and obtain a
+new approved release version.
+
+`CADENCE_COMMIT_SHA` identifies the exact source state and must equal the
+full SHA of the current Git `HEAD`; never shorten or substitute it.
+`CADENCE_BUILD_ID` identifies this individual manually governed planning/build
+execution. Its timestamp is UTC and must be generated at preparation time;
+do not reuse a prior build ID. Future CI executions may use the separately
+defined `ci-<provider>-<immutable-run-id>` pattern, but that convention is
+not established by this runbook for manual preparation.
+
+Set and validate the values in the current PowerShell process only. For the
+first governed Beta candidate, after confirming the release-version search is
+clear and confirming `git rev-parse HEAD`, use:
+
+```powershell
+$env:CADENCE_RELEASE_VERSION = "beta-2026.09.12.1"
+$env:CADENCE_COMMIT_SHA = (git rev-parse HEAD).Trim().ToLowerInvariant()
+$env:CADENCE_BUILD_ID = "manual-$((Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ'))-$($env:CADENCE_COMMIT_SHA.Substring(0,12))"
+
+if ($env:CADENCE_COMMIT_SHA -notmatch '^[0-9a-f]{40}$') { throw "Invalid release commit SHA" }
+if ($env:CADENCE_COMMIT_SHA -ne (git rev-parse HEAD).Trim().ToLowerInvariant()) { throw "Release SHA is not current HEAD" }
+if ($env:CADENCE_RELEASE_VERSION -notmatch '^beta-\d{4}\.\d{2}\.\d{2}\.\d+$') { throw "Invalid Beta release version" }
+if ($env:CADENCE_BUILD_ID -notmatch '^manual-\d{8}T\d{6}Z-[0-9a-f]{12}$') { throw "Invalid manual build ID" }
+```
+
+Use the governed command only after these checks:
+
+```powershell
+npm run cadence:deploy:plan -- `
+  --config config/cadence.runtime.beta.json `
+  --out .cadence/vs005/deployment-plan.json
+```
+
+Never use `setx`, persistent user or machine environment changes, `.env`
+files, or configuration edits for these values. Clear the three process-local
+variables after the authorized planning/verification sequence. Once a release
+is promoted or deployed, its identity remains auditable and is never silently
+reassigned to another source commit.
+
 ## Before deployment
 
 Run the local/CI quality gate first:
