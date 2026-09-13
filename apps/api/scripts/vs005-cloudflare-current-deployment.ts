@@ -37,17 +37,19 @@ export async function inspectCurrentDeployment(
   if (result.kind === "UNAVAILABLE" || result.operation !== "CURRENT_DEPLOYMENT") {
     return unavailableFacts("CURRENT_DEPLOYMENT_UNAVAILABLE");
   }
-  if (!Array.isArray(result.result) || result.result.length > MAX_DEPLOYMENTS) {
+  if (!isRecord(result.result) || !Array.isArray(result.result.deployments)
+    || result.result.deployments.length > MAX_DEPLOYMENTS) {
     return unavailableFacts("CURRENT_DEPLOYMENT_MALFORMED");
   }
-  if (result.result.length === 0) {
+  const deployments = result.result.deployments;
+  if (deployments.length === 0) {
     return {
       workerExists: { state: "OBSERVED_VALUE", value: true },
       currentDeployment: { state: "OBSERVED_ABSENT" },
     };
   }
 
-  const current = parseDeployment(result.result[0]);
+  const current = parseDeployment(deployments[0]);
   if (!current) return unavailableFacts("CURRENT_DEPLOYMENT_MALFORMED");
   return {
     workerExists: { state: "OBSERVED_VALUE", value: true },

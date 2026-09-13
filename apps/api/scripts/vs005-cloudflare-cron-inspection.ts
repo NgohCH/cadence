@@ -11,15 +11,17 @@ export async function inspectCronSchedules(
   target: CloudflareWorkerInspectionTarget,
 ): Promise<Vs005Observation<readonly string[]>> {
   const result = await transport.read({ operation: "CRON_SCHEDULES", target });
-  if (result.kind !== "SUCCESS" || result.operation !== "CRON_SCHEDULES" || !Array.isArray(result.result)) {
+  if (result.kind !== "SUCCESS" || result.operation !== "CRON_SCHEDULES"
+    || !isRecord(result.result) || !Array.isArray(result.result.schedules)) {
     return unavailable();
   }
-  if (result.result.length === 0) return { state: "OBSERVED_ABSENT" };
-  if (result.result.length > MAX_SCHEDULES) return unavailable();
+  const providerSchedules = result.result.schedules;
+  if (providerSchedules.length === 0) return { state: "OBSERVED_ABSENT" };
+  if (providerSchedules.length > MAX_SCHEDULES) return unavailable();
 
   const schedules: string[] = [];
   const seen = new Set<string>();
-  for (const entry of result.result) {
+  for (const entry of providerSchedules) {
     if (!isRecord(entry) || !isCronExpression(entry.cron) || seen.has(entry.cron)) return unavailable();
     seen.add(entry.cron);
     schedules.push(entry.cron);

@@ -82,7 +82,7 @@ function assertUnavailable(facts: CloudflareCurrentDeploymentFacts): void {
 
 test("parses the first deployment as current and retains only bounded identity and traffic", async () => {
   const facts = await inspectCurrentDeployment(
-    transportFor({ success: true, result: [deployment0, deployment1] }),
+    transportFor({ success: true, result: { deployments: [deployment0, deployment1] } }),
     target,
   );
   assert.deepEqual(facts, {
@@ -102,7 +102,7 @@ test("parses the first deployment as current and retains only bounded identity a
 });
 
 test("successful empty deployments prove Worker presence but no current deployment", async () => {
-  const facts = await inspectCurrentDeployment(transportFor({ success: true, result: [] }), target);
+  const facts = await inspectCurrentDeployment(transportFor({ success: true, result: { deployments: [] } }), target);
   assert.deepEqual(facts, {
     workerExists: { state: "OBSERVED_VALUE", value: true },
     currentDeployment: { state: "OBSERVED_ABSENT" },
@@ -111,7 +111,6 @@ test("successful empty deployments prove Worker presence but no current deployme
 
 test("nested deployment wrappers and malformed deployment results are unavailable", async () => {
   for (const result of [
-    { deployments: [deployment0] },
     {},
     "not-an-array",
     [null],
@@ -129,7 +128,7 @@ test("oversized deployment collections are unavailable", async () => {
     id: `deployment-${index}`,
     versions: [{ version_id: `version-${index}`, percentage: 100 }],
   }));
-  assertUnavailable(await inspectCurrentDeployment(transportFor({ success: true, result: deployments }), target));
+  assertUnavailable(await inspectCurrentDeployment(transportFor({ success: true, result: { deployments } }), target));
 });
 
 test("only an exact non-empty all-approved error set proves Worker absence", async () => {
@@ -180,7 +179,7 @@ test("generic status, authentication, authorization, and transport failures rema
 
 test("current deployment parsing never selects a rollback target", async () => {
   const facts = await inspectCurrentDeployment(
-    transportFor({ success: true, result: [deployment0, deployment1] }),
+    transportFor({ success: true, result: { deployments: [deployment0, deployment1] } }),
     target,
   );
   assert.equal(facts.currentDeployment.state, "OBSERVED_VALUE");

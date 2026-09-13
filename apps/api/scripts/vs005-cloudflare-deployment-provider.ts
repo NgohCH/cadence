@@ -6,8 +6,8 @@ import { spawn } from "node:child_process";
 import type { CadenceRuntimeConfig } from "../src/bootstrap/cadence-config";
 import { loadCadenceReleaseIdentity, type CadenceReleaseIdentity } from "../src/bootstrap/cadence-release";
 import {
-  type Vs005DeploymentProvider,
   type Vs005DeploymentProviderInspection,
+  type Vs005StructuredDeploymentProvider,
 } from "./vs005-deploy-apply";
 import {
   type Vs005Observation,
@@ -384,33 +384,6 @@ export function buildCloudflareWorkerStatusInspectionRequest(input: {
   };
 }
 
-function parseDeploymentIdentifiers(stdout: string): {
-  deploymentId: string;
-  providerVersionId: string;
-} {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch {
-    parsed = undefined;
-  }
-
-  const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-    ? parsed as Record<string, unknown>
-    : {};
-  const deploymentId = boundedIdentifier(
-    typeof record.deployment_id === "string" ? record.deployment_id : undefined,
-  ) ?? boundedIdentifier(stdout.match(/deployment_id\s*[:=]\s*([A-Za-z0-9._-]{1,128})/)?.[1]);
-  const providerVersionId = boundedIdentifier(
-    typeof record.version_id === "string" ? record.version_id : undefined,
-  ) ?? boundedIdentifier(stdout.match(/version_id\s*[:=]\s*([A-Za-z0-9._-]{1,128})/)?.[1]);
-
-  if (!deploymentId || !providerVersionId) {
-    throw new Error("CLOUDFLARE_DEPLOYMENT_IDENTIFIERS_UNAVAILABLE");
-  }
-  return { deploymentId, providerVersionId };
-}
-
 export async function inspectCloudflareAccountMembership(input: {
   expectedAccountId: string;
   runWrangler: CloudflareDeploymentProviderIo["runWrangler"];
@@ -479,9 +452,7 @@ function parseRollbackIdentifiers(stdout: string): {
 export function createCloudflareDeploymentProvider(
   io: CloudflareDeploymentProviderIo,
   rollbackTarget?: { workerName?: string },
-): Omit<Vs005DeploymentProvider, "inspect"> & Vs005RollbackProvider & {
-  inspectStructured(input: CloudflareStructuredInspectionRequest): Promise<Vs005CorrelatedProviderInspection>;
-} {
+): Vs005StructuredDeploymentProvider & Vs005RollbackProvider {
   return {
     async inspectStructured(input) {
       try {
@@ -510,7 +481,44 @@ export function createCloudflareDeploymentProvider(
           withoutCloudflareInspectionCredential(input.childEnvironment ?? io.environment ?? process.env),
         );
         if (result.exitCode !== 0) throw new Error("CLOUDFLARE_DEPLOYMENT_FAILED");
-        return parseDeploymentIdentifiers(result.stdout);
+        const inspectionRequest: CloudflareStructuredInspectionRequest = {
+          config: input.config,
+          release: input.release,
+          generatedConfig: input.generatedConfig,
+          profile: "FIRST_DEPLOYMENT_READINESS",
+        };
+        let inspection: Vs005CorrelatedProviderInspection;
+        try {
+          inspection = sanitizeStructuredInspection(
+            await io.inspectReadOnly(inspectionRequest),
+            inspectionRequest,
+          );
+        } catch {
+          throw new Error("CLOUDFLARE_DEPLOYMENT_IDENTIFIERS_UNAVAILABLE");
+        }
+        const currentRelease = inspection.observations.currentRelease;
+        if (
+          currentRelease.state !== "OBSERVED_VALUE"
+          || currentRelease.value.version !== input.release.version
+          || currentRelease.value.commitSha !== input.release.commitSha
+          || currentRelease.value.buildId !== input.release.buildId
+        ) {
+          throw new Error("CLOUDFLARE_DEPLOYMENT_IDENTIFIERS_UNAVAILABLE");
+        }
+        const currentDeployment = inspection.observations.currentDeployment;
+        if (currentDeployment.state !== "OBSERVED_VALUE") {
+          throw new Error("CLOUDFLARE_DEPLOYMENT_IDENTIFIERS_UNAVAILABLE");
+        }
+        const activeVersions = currentDeployment.value.versions.filter(
+          (version) => version.percentage === 100,
+        );
+        if (activeVersions.length !== 1) {
+          throw new Error("CLOUDFLARE_DEPLOYMENT_IDENTIFIERS_UNAVAILABLE");
+        }
+        return {
+          deploymentId: currentDeployment.value.deploymentId,
+          providerVersionId: activeVersions[0]!.providerVersionId,
+        };
       } finally {
         if (temporaryPath) await io.deleteFile(temporaryPath);
       }

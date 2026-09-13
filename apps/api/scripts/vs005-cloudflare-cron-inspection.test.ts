@@ -18,7 +18,12 @@ const target: CloudflareWorkerInspectionTarget = {
   profile: "FIRST_DEPLOYMENT_READINESS",
 };
 
-const canarySchedule = { cron: "0 0 * * *", created_at: "timestamp-canary", metadata: "metadata-canary" };
+const canarySchedule = {
+  cron: "0 0 * * *",
+  created_on: "timestamp-canary",
+  modified_on: "timestamp-canary-2",
+  metadata: "metadata-canary",
+};
 
 function schedules(result: unknown, extra: Record<string, unknown> = {}): { success: true; result: unknown } {
   return { success: true, result, ...extra };
@@ -55,34 +60,38 @@ function assertUnavailable(value: unknown): void {
 }
 
 test("parses one valid Cron expression and discards provider metadata", async () => {
-  const result = await inspectCronSchedules(transportFor(schedules([canarySchedule])), target);
+  const result = await inspectCronSchedules(transportFor(schedules({ schedules: [canarySchedule] })), target);
   assert.deepEqual(result, { state: "OBSERVED_VALUE", value: ["0 0 * * *"] });
   assert.doesNotMatch(JSON.stringify(result), /timestamp-canary|metadata-canary/);
 });
 
 test("preserves provider order for multiple valid schedules", async () => {
-  const result = await inspectCronSchedules(transportFor(schedules([
-    { cron: "0 0 * * *" },
-    { cron: "*/15 * * * *" },
-    { cron: "30 6 * * 1-5" },
-  ])), target);
+  const result = await inspectCronSchedules(transportFor(schedules({
+    schedules: [
+      { cron: "0 0 * * *" },
+      { cron: "*/15 * * * *" },
+      { cron: "30 6 * * 1-5" },
+    ],
+  })), target);
   assert.deepEqual(result, { state: "OBSERVED_VALUE", value: ["0 0 * * *", "*/15 * * * *", "30 6 * * 1-5"] });
 });
 
 test("successful empty schedules are explicitly absent", async () => {
-  assert.deepEqual(await inspectCronSchedules(transportFor(schedules([])), target), { state: "OBSERVED_ABSENT" });
+  assert.deepEqual(await inspectCronSchedules(transportFor(schedules({ schedules: [] })), target), { state: "OBSERVED_ABSENT" });
 });
 
 test("duplicate, malformed, invalid, oversized, or incomplete schedules are unavailable", async () => {
   const cases: unknown[] = [
     [{ cron: "0 0 * * *" }, { cron: "0 0 * * *" }],
-    [{ name: "missing-cron" }],
-    [{ cron: "0 0 * * *\n" }],
-    [{ cron: "not a cron expression" }],
-    Array.from({ length: 129 }, () => ({ cron: "0 0 * * *" })),
-    { schedules: [{ cron: "0 0 * * *" }], complete: false },
+    { schedules: [{ cron: "0 0 * * *" }, { cron: "0 0 * * *" }] },
+    { schedules: [{ name: "missing-cron" }] },
+    { schedules: [{ cron: "0 0 * * *\n" }] },
+    { schedules: [{ cron: "not a cron expression" }] },
+    { schedules: Array.from({ length: 129 }, () => ({ cron: "0 0 * * *" })) },
+    {},
+    { schedules: "not-an-array" },
     null,
-    "not-an-array",
+    "not-an-object",
   ];
   for (const result of cases) {
     assertUnavailable(await inspectCronSchedules(transportFor(schedules(result)), target));

@@ -65,6 +65,61 @@ const readOnlyFacts: CloudflareReadOnlyProviderFacts = {
   hostname: observed("worker.example.test"),
 };
 
+const deployRelease = {
+  version: "1.2.3",
+  commitSha: "0123456789abcdef0123456789abcdef01234567",
+  buildId: "2026-09-13T00:00:00Z",
+};
+const deployGeneratedConfig = buildCloudflareDeployment({ config, release: deployRelease }).wrangler;
+
+function deployInput(generatedWranglerPath = "wrangler.generated.jsonc") {
+  return {
+    config,
+    generatedWranglerPath,
+    release: deployRelease,
+    generatedConfig: deployGeneratedConfig,
+    childEnvironment: {},
+  };
+}
+
+function deploymentInspection(
+  input: Parameters<CloudflareDeploymentProviderIo["inspectReadOnly"]>[0],
+  deploymentId = "deployment-1",
+  providerVersionId = "version-1",
+): Vs005CorrelatedProviderInspection {
+  const configFingerprint = fingerprintCadenceRuntimeConfig(input.config);
+  return {
+    correlation: {
+      accountId: input.config.cloudflare!.accountId,
+      workerName: input.config.cloudflare!.workerName,
+      configFingerprint,
+      providerOrigin: "api.cloudflare.com",
+      profile: input.profile,
+      completedOperations: [
+        "CURRENT_DEPLOYMENT",
+        "WORKER_SETTINGS",
+        "CRON_SCHEDULES",
+        "WORKER_SUBDOMAIN",
+        "ACCOUNT_SUBDOMAIN",
+      ],
+      observedAt: "2026-09-13T00:00:01.000Z",
+    },
+    observations: {
+      ...readOnlyFacts,
+      accountId: observed(input.config.cloudflare!.accountId),
+      workerName: observed(input.config.cloudflare!.workerName),
+      workerConfigFingerprint: observed(configFingerprint),
+      currentRelease: observed(input.release),
+      currentDeployment: observed({
+        deploymentId,
+        versions: [{ providerVersionId, percentage: 100 }],
+      }),
+      workersDevEnabled: observed(true),
+      accountWorkersDevSubdomain: observed("account-subdomain"),
+    },
+  };
+}
+
 function fakeProviderIo(overrides: Partial<CloudflareDeploymentProviderIo> = {}) {
   const calls: Array<{ args: readonly string[]; content?: string; mode?: number }> = [];
   const deleted: string[] = [];
@@ -83,7 +138,7 @@ function fakeProviderIo(overrides: Partial<CloudflareDeploymentProviderIo> = {})
         stdout: JSON.stringify({ deployment_id: "deployment-1", version_id: "version-1" }),
       };
     },
-    inspectReadOnly: async () => { throw new Error("structured inspection not configured"); },
+    inspectReadOnly: async (input) => deploymentInspection(input),
     inspectLegacyReadOnly: async () => readOnlyFacts,
     ...overrides,
   };
@@ -164,10 +219,9 @@ test("Wrangler deploy and rollback children omit only the inspection credential"
     UNRELATED_SETTING: "preserved",
   });
   await provider.deploy({
-    config,
-    generatedWranglerPath: "wrangler.generated.jsonc",
+    ...deployInput(),
     childEnvironment: parentEnvironment,
-  } as never);
+  });
   await provider.rollback("version-1");
 
   assert.equal(captured.length, 2);
@@ -380,8 +434,7 @@ test("bootstrap secret uses a protected temporary file and never enters argv", a
   const fake = fakeProviderIo();
   const provider = createCloudflareDeploymentProvider(fake.io);
   const result = await provider.deploy({
-    config,
-    generatedWranglerPath: "wrangler.generated.jsonc",
+    ...deployInput(),
     bootstrapSecrets: { supabaseSecretKey: "server-secret" },
   });
 
@@ -413,8 +466,7 @@ test("temporary secret is cleaned up when provider deployment fails", async () =
   });
   const provider = createCloudflareDeploymentProvider(fake.io);
   await assert.rejects(() => provider.deploy({
-    config,
-    generatedWranglerPath: "wrangler.generated.jsonc",
+    ...deployInput(),
     bootstrapSecrets: { supabaseSecretKey: "server-secret" },
   }));
   assert.deepEqual(fake.deleted, ["temporary-secret.json"]);
@@ -424,7 +476,7 @@ test("temporary secret is cleaned up when provider deployment fails", async () =
 test("existing remote secret deploy does not create a temporary secret file", async () => {
   const fake = fakeProviderIo();
   const provider = createCloudflareDeploymentProvider(fake.io);
-  await provider.deploy({ config, generatedWranglerPath: "wrangler.generated.jsonc" });
+  await provider.deploy(deployInput());
   assert.equal(fake.calls.some((call) => call.content), false);
   assert.deepEqual(fake.calls.find((call) => call.args.length > 0)?.args, [
     "wrangler",
@@ -437,25 +489,135 @@ test("existing remote secret deploy does not create a temporary secret file", as
 test("provider executes an argv array rather than a shell-concatenated command", async () => {
   const fake = fakeProviderIo();
   const provider = createCloudflareDeploymentProvider(fake.io);
-  await provider.deploy({ config, generatedWranglerPath: "path with spaces.jsonc" });
+  await provider.deploy(deployInput("path with spaces.jsonc"));
   const args = fake.calls.find((call) => call.args.length > 0)?.args;
   assert.ok(Array.isArray(args));
   assert.equal(typeof args?.join(" "), "string");
 });
 
-test("provider returns bounded deployment identifiers", async () => {
+test("provider returns bounded deployment identifiers from structured inspection", async () => {
   const fake = fakeProviderIo({
     runWrangler: async () => ({
       exitCode: 0,
-      stdout: "deployment_id=deployment-2 version_id=version-2 raw=ignored",
+      stdout: "human output does not provide authoritative identifiers",
     }),
+    inspectReadOnly: async (input) => deploymentInspection(input, "deployment-2", "version-2"),
   });
   const provider = createCloudflareDeploymentProvider(fake.io);
-  const result = await provider.deploy({ config, generatedWranglerPath: "wrangler.generated.jsonc" });
+  const result = await provider.deploy(deployInput());
   assert.deepEqual(result, {
     deploymentId: "deployment-2",
     providerVersionId: "version-2",
   });
+});
+
+test("successful Wrangler deploy derives deployment identity from correlated post-deploy inspection", async () => {
+  const release = {
+    version: "1.2.3",
+    commitSha: "0123456789abcdef0123456789abcdef01234567",
+    buildId: "2026-09-13T00:00:00Z",
+  };
+  const generatedConfig = buildCloudflareDeployment({ config, release }).wrangler;
+  const configFingerprint = fingerprintCadenceRuntimeConfig(config);
+  const events: string[] = [];
+  const structured: Vs005CorrelatedProviderInspection = {
+    correlation: {
+      accountId: config.cloudflare!.accountId,
+      workerName: config.cloudflare!.workerName,
+      configFingerprint,
+      providerOrigin: "api.cloudflare.com",
+      profile: "FIRST_DEPLOYMENT_READINESS",
+      completedOperations: [
+        "CURRENT_DEPLOYMENT",
+        "WORKER_SETTINGS",
+        "CRON_SCHEDULES",
+        "WORKER_SUBDOMAIN",
+        "ACCOUNT_SUBDOMAIN",
+      ],
+      observedAt: "2026-09-13T00:00:01.000Z",
+    },
+    observations: {
+      ...readOnlyFacts,
+      accountId: observed(config.cloudflare!.accountId),
+      workerName: observed(config.cloudflare!.workerName),
+      workerConfigFingerprint: observed(configFingerprint),
+      currentRelease: observed(release),
+      currentDeployment: observed({
+        deploymentId: "deployment-observed",
+        versions: [{ providerVersionId: "version-observed", percentage: 100 }],
+      }),
+      workersDevEnabled: observed(true),
+      accountWorkersDevSubdomain: observed("account-subdomain"),
+    },
+  };
+  const fake = fakeProviderIo({
+    runWrangler: async () => {
+      events.push("deploy");
+      return {
+        exitCode: 0,
+        stdout: "Uploaded worker-ci\n"
+          + "Deployed worker-ci triggers\n"
+          + "Current Version ID: version-observed\n",
+      };
+    },
+    inspectReadOnly: async (input) => {
+      events.push("inspect");
+      assert.equal(input.config, config);
+      assert.equal(input.release, release);
+      assert.equal(input.generatedConfig, generatedConfig);
+      return structured;
+    },
+  });
+
+  const result = await createCloudflareDeploymentProvider(fake.io).deploy({
+    config,
+    generatedWranglerPath: "wrangler.generated.jsonc",
+    release,
+    generatedConfig,
+  } as never);
+
+  assert.deepEqual(events, ["deploy", "inspect"]);
+  assert.deepEqual(result, {
+    deploymentId: "deployment-observed",
+    providerVersionId: "version-observed",
+  });
+  assert.doesNotMatch(JSON.stringify(result), /Uploaded|triggers|Current Version ID/);
+});
+
+test("post-deploy inspection with stale release cannot establish deployment identity", async () => {
+  const staleInspection = deploymentInspection(
+    {
+      config,
+      release: deployRelease,
+      generatedConfig: deployGeneratedConfig,
+      profile: "FIRST_DEPLOYMENT_READINESS",
+    },
+    "deployment-stale",
+    "version-stale",
+  );
+  staleInspection.observations.currentRelease = observed({
+    version: "stale-release",
+    commitSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    buildId: "stale-build",
+  });
+  const fake = fakeProviderIo({
+    runWrangler: async () => ({
+      exitCode: 0,
+      stdout: "Uploaded worker-ci\n"
+        + "Deployed worker-ci triggers\n"
+        + "Current Version ID: version-stale\n",
+    }),
+    inspectReadOnly: async () => staleInspection,
+  });
+
+  await assert.rejects(
+    createCloudflareDeploymentProvider(fake.io).deploy(deployInput()),
+    (error: Error) => {
+      assert.equal(error.message, "CLOUDFLARE_DEPLOYMENT_IDENTIFIERS_UNAVAILABLE");
+      assert.doesNotMatch(error.message, /Uploaded|triggers|Current Version ID|deployment-stale|version-stale/);
+      return true;
+    },
+  );
 });
 
 test("inspection returns account and Worker identity", async () => {
@@ -625,9 +787,9 @@ test("default inspectReadOnly uses injected structured REST without Wrangler who
     fetchImpl: async (url) => {
       fetchUrls.push(String(url));
       const path = new URL(String(url)).pathname;
-      if (path.endsWith("/deployments")) return new Response(JSON.stringify({ success: true, result: [] }));
+      if (path.endsWith("/deployments")) return new Response(JSON.stringify({ success: true, result: { deployments: [] } }));
       if (path.endsWith("/settings")) return new Response(JSON.stringify({ success: true, result: { bindings: [] } }));
-      if (path.endsWith("/schedules")) return new Response(JSON.stringify({ success: true, result: [] }));
+      if (path.endsWith("/schedules")) return new Response(JSON.stringify({ success: true, result: { schedules: [] } }));
       if (path.endsWith("/scripts/worker-ci/subdomain")) return new Response(JSON.stringify({ success: true, result: { enabled: false } }));
       return new Response(JSON.stringify({ success: true, result: { subdomain: "portable-team" } }));
     },

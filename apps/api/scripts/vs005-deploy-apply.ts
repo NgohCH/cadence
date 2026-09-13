@@ -74,6 +74,8 @@ export interface Vs005StructuredDeploymentProvider {
   deploy(input: {
     config: CadenceRuntimeConfig;
     generatedWranglerPath: string;
+    release: CadenceReleaseIdentity;
+    generatedConfig: GeneratedCloudflareDeployment["wrangler"];
     childEnvironment: NodeJS.ProcessEnv;
     bootstrapSecrets?: CadenceResolvedSecrets;
   }): Promise<{ deploymentId: string; providerVersionId: string }>;
@@ -542,6 +544,8 @@ export async function applyVs005Deployment(input: {
     deployed = await input.provider.deploy({
       config,
       generatedWranglerPath: prepared.generatedWranglerPath,
+      release,
+      generatedConfig: prepared.generatedConfig,
       childEnvironment,
       ...(requiredSecret.providerPresent
         ? {}
