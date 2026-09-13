@@ -88,6 +88,54 @@ test("apply CLI preserves native absolute operator paths", () => {
   rmSync(fixture, { recursive: true, force: true });
 });
 
+test("apply CLI runs web artifact preparation from apps/web", () => {
+  const fixture = mkdtempSync(resolve(repositoryRoot, ".cadence-apply-web-cwd-"));
+  const planPath = resolve(fixture, "plan.json");
+  const configPath = resolve(fixture, "config.json");
+  const outputPath = resolve(fixture, "deployment-result.json");
+  const reportPath = resolve(fixture, "probe.json");
+  const probePath = resolve(fixture, "probe.cjs");
+  writeFileSync(planPath, JSON.stringify(validPlan()));
+  writeFileSync(configPath, JSON.stringify(config));
+  writeFileSync(probePath, `const fs=require("node:fs");const cp=require("node:child_process");const {EventEmitter}=require("node:events");const out=${JSON.stringify(reportPath)};const commands=[];const originalCwd=process.cwd();cp.spawn=(command,args,options)=>{if(args.includes("tsc")||args.includes("vite"))commands.push({command,args,cwd:options&&options.cwd||process.cwd()});const child=new EventEmitter();process.nextTick(()=>child.emit("close",0));return child};global.fetch=async()=>{throw new Error("stop-before-provider-mutation")};process.on("exit",()=>fs.writeFileSync(out,JSON.stringify({originalCwd,commands})));`);
+
+  const result = spawnSync(process.execPath, [
+    "--require",
+    probePath,
+    "--import",
+    tsxLoader,
+    applyCli,
+    "--plan",
+    planPath,
+    "--config",
+    configPath,
+    "--out",
+    outputPath,
+  ], {
+    cwd: resolve(repositoryRoot, "apps/api"),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CADENCE_RELEASE_VERSION: release.version,
+      CADENCE_COMMIT_SHA: release.commitSha,
+      CADENCE_BUILD_ID: release.buildId,
+    },
+  });
+
+  assert.equal(result.status, 0);
+  const probe = JSON.parse(require("node:fs").readFileSync(reportPath, "utf8")) as {
+    originalCwd: string;
+    commands: Array<{ command: string; args: string[]; cwd: string }>;
+  };
+  assert.equal(probe.originalCwd, resolve(repositoryRoot, "apps/api"));
+  assert.equal(probe.commands.length, 2);
+  assert.deepEqual(probe.commands.map((command) => command.cwd), [
+    resolve(repositoryRoot, "apps/web"),
+    resolve(repositoryRoot, "apps/web"),
+  ]);
+  rmSync(fixture, { recursive: true, force: true });
+});
+
 const observed = <T>(value: T): Vs005Observation<T> => ({
   state: "OBSERVED_VALUE",
   value,

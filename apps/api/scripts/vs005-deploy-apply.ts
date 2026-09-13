@@ -576,13 +576,18 @@ export async function applyVs005Deployment(input: {
   };
 }
 
-function runLocalCommand(args: readonly string[], childEnvironment?: NodeJS.ProcessEnv): Promise<void> {
+function runLocalCommand(
+  args: readonly string[],
+  childEnvironment?: NodeJS.ProcessEnv,
+  cwd?: string,
+): Promise<void> {
   return new Promise((resolveCommand, rejectCommand) => {
     const [command, ...commandArgs] = resolveCadenceWranglerCommand(args, resolveCadenceRepositoryRoot());
     const child = spawn(command, commandArgs, {
       shell: false,
       windowsHide: true,
       ...(childEnvironment ? { env: childEnvironment } : {}),
+      ...(cwd ? { cwd } : {}),
     });
     child.on("close", (exitCode) => {
       if (exitCode === 0) resolveCommand();
@@ -666,6 +671,7 @@ async function runApplyCli(args: readonly string[]): Promise<void> {
         : undefined,
       provider,
       prepareArtifacts: async ({ config: currentConfig, release: currentRelease }) => {
+        const webRoot = resolve(repositoryRoot, "apps/web");
         const publicConfigPath = resolve(repositoryRoot, "apps/web/.generated/cadence-public-config.json");
         const wranglerPath = resolve(repositoryRoot, "apps/runtime-cloudflare/wrangler.generated.jsonc");
         await runLocalCommand([
@@ -678,8 +684,8 @@ async function runApplyCli(args: readonly string[]): Promise<void> {
           "--out",
           publicConfigPath,
         ]);
-        await runLocalCommand(["npm.cmd", "--prefix", "../web", "exec", "--", "tsc", "-b"]);
-        await runLocalCommand(["npm.cmd", "--prefix", "../web", "exec", "--", "vite", "build", "--mode", "ci"]);
+        await runLocalCommand(["npm.cmd", "--prefix", "../web", "exec", "--", "tsc", "-b"], undefined, webRoot);
+        await runLocalCommand(["npm.cmd", "--prefix", "../web", "exec", "--", "vite", "build", "--mode", "ci"], undefined, webRoot);
         await runLocalCommand([
           "node",
           "--import",
