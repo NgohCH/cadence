@@ -282,6 +282,28 @@ test("exact Beta tuple produces a PASS plan", async () => {
   assert.equal(structuredCalls, 1);
 });
 
+test("different valid Cron schedules produce a CREATE_OR_CHANGE plan", async () => {
+  const config = betaConfig();
+  for (const cronSchedules of [
+    ["*/5 * * * *"],
+    [config.worker.schedule, "*/5 * * * *"],
+  ]) {
+    const plan = await runVs005DeployPlan(
+      { configPath: "beta.json", outputPath: "plan.json" },
+      makeDependencies(config, {
+        inspectStructured: async () => inspection(config, {
+          observations: observations(config, { cronSchedules: observed(cronSchedules) }),
+        }),
+      }),
+    );
+
+    assert.equal(plan.readiness, "PASS");
+    assert.equal(plan.mutationEnvelope.cronAction, "CREATE_OR_CHANGE");
+    assert.equal(plan.database.migrationAction, "NONE");
+    assert.deepEqual(plan.destructiveActions, []);
+  }
+});
+
 test("structured correlation mismatch blocks planning without legacy authority", async () => {
   const config = betaConfig();
   const cases: Array<Partial<Vs005CorrelatedProviderInspection["correlation"]>> = [
@@ -491,21 +513,35 @@ test("existing Worker missing configuration observation blocks", async () => {
   assert.ok(plan.blockers.some((blocker) => blocker.code === "WORKER_CONFIG_OBSERVATION_REQUIRED"));
 });
 
-test("existing Worker release mismatch blocks the plan", async () => {
+test("existing Worker predecessor release permits a normal deployment", async () => {
   const config = betaConfig();
+  const predecessorRelease = {
+    version: "0.9.0",
+    commitSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    buildId: "predecessor-build",
+  };
   const plan = await runVs005DeployPlan(
     { configPath: "beta.json", outputPath: "plan.json" },
     makeDependencies(config, {
       inspectStructured: async () => inspection(config, {
         observations: observations(config, {
-          currentRelease: observed({ ...release, version: "2.0.0" }),
+          currentRelease: observed(predecessorRelease),
         }),
       }),
     }),
   );
 
-  assert.equal(plan.readiness, "BLOCKED");
-  assert.ok(plan.blockers.some((blocker) => blocker.code === "PROVIDER_RELEASE_MISMATCH"));
+  assert.equal(plan.readiness, "PASS");
+  assert.deepEqual(plan.release, release);
+  assert.deepEqual(plan.observedProvider.currentRelease, observed(predecessorRelease));
+  assert.equal(plan.blockers.some((blocker) => blocker.code === "PROVIDER_RELEASE_MISMATCH"), false);
+  assert.deepEqual(plan.mutationEnvelope, {
+    workerAction: "CREATE_OR_UPDATE",
+    cronAction: "NO_CHANGE",
+    secretNamesToSet: [],
+  });
+  assert.equal(plan.database.migrationAction, "NONE");
+  assert.deepEqual(plan.destructiveActions, []);
 });
 
 test("existing Worker configuration fingerprint mismatch blocks the plan", async () => {

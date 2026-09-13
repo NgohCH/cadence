@@ -365,9 +365,11 @@ function expectedMutationEnvelope(
 ): Vs005MutationEnvelope {
   return {
     workerAction: "CREATE_OR_UPDATE",
-    cronAction: observations.cronSchedules.state === "OBSERVED_ABSENT"
-      ? "CREATE_OR_CHANGE"
-      : "NO_CHANGE",
+    cronAction: observations.cronSchedules.state === "OBSERVED_VALUE"
+      && observations.cronSchedules.value.length === 1
+      && observations.cronSchedules.value[0] === config.worker.schedule
+      ? "NO_CHANGE"
+      : "CREATE_OR_CHANGE",
     secretNamesToSet: observations.secretNames.state === "OBSERVED_ABSENT"
       ? [config.supabase.secretKeySecretRef]
       : [],

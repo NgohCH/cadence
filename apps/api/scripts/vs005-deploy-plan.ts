@@ -259,9 +259,11 @@ function buildMutationEnvelope(
 ): Vs005MutationEnvelope {
   return {
     workerAction: "CREATE_OR_UPDATE",
-    cronAction: observations.cronSchedules.state === "OBSERVED_ABSENT"
-      ? "CREATE_OR_CHANGE"
-      : "NO_CHANGE",
+    cronAction: observations.cronSchedules.state === "OBSERVED_VALUE"
+      && observations.cronSchedules.value.length === 1
+      && observations.cronSchedules.value[0] === config.worker.schedule
+      ? "NO_CHANGE"
+      : "CREATE_OR_CHANGE",
     secretNamesToSet: observations.secretNames.state === "OBSERVED_ABSENT"
       ? [config.supabase.secretKeySecretRef]
       : [],
@@ -270,7 +272,6 @@ function buildMutationEnvelope(
 
 function makeBlockers(
   config: CadenceRuntimeConfig,
-  release: CadenceReleaseIdentity,
   configFingerprint: string,
   inspection: Vs005PlanInspection,
   mutationEnvelope: Vs005MutationEnvelope,
@@ -287,7 +288,6 @@ function makeBlockers(
   const observedWorker = observationValue(inspection.observations.workerName);
   const workerExists = observationValue(inspection.observations.workerExists);
   const observedConfigFingerprint = observationValue(inspection.observations.workerConfigFingerprint);
-  const observedRelease = observationValue(inspection.observations.currentRelease);
   const expectedTarget = getCadenceTargetFacts(config);
 
   if (inspection.correlation.accountId !== expectedTarget.cloudflare.accountId) {
@@ -329,15 +329,6 @@ function makeBlockers(
       "Observed Worker configuration does not match the intended configuration.",
     ));
   }
-  if (workerExists === true && observedRelease !== undefined) {
-    if (!equalJson(observedRelease, release)) {
-      blockers.push(blocker(
-        "PROVIDER_RELEASE_MISMATCH",
-        "Observed Worker release does not match the intended release.",
-      ));
-    }
-  }
-
   if (!inspection.hostnameReady) {
     blockers.push(blocker(
       "HOSTNAME_NOT_READY",
@@ -436,7 +427,7 @@ export async function runVs005DeployPlan(
       && `${config.cloudflare!.workerName}.${accountSubdomain}.workers.dev` === new URL(config.application.publicUrl).hostname
     : providerHostname === new URL(config.application.publicUrl).hostname;
   const mutationEnvelope = buildMutationEnvelope(config, inspection.observations);
-  const blockers = makeBlockers(config, release, configFingerprint, inspection, mutationEnvelope);
+  const blockers = makeBlockers(config, configFingerprint, inspection, mutationEnvelope);
   const target = getCadenceTargetFacts(config);
   const observedWorkerExists = inspection.observations.workerExists.state === "OBSERVED_VALUE"
     ? inspection.observations.workerExists.value

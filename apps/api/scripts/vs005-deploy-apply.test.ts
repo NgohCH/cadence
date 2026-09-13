@@ -614,6 +614,27 @@ test("apply rejects provider account and Worker drift", async () => {
   }
 });
 
+test("apply rejects predecessor release drift before deployment", async () => {
+  const predecessorA = {
+    version: "0.9.0",
+    commitSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    buildId: "predecessor-a",
+  };
+  const predecessorB = {
+    version: "0.9.1",
+    commitSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    buildId: "predecessor-b",
+  };
+  const plannedObservations = observations(config, { currentRelease: observed(predecessorA) });
+  const provider = makeProvider(observations(config, { currentRelease: observed(predecessorB) }));
+
+  await assert.rejects(
+    () => apply(validPlan({ observedProvider: plannedObservations }), { provider }),
+    /RELEASE_DRIFT/,
+  );
+  assert.equal(provider.deployCalls.length, 0);
+});
+
 test("fresh structured correlation drift blocks deployment", async () => {
   const cases: Array<Partial<Vs005CorrelatedProviderInspection["correlation"]>> = [
     { accountId: "other-account" },
@@ -635,6 +656,24 @@ test("apply rejects Cron precondition drift", async () => {
   const provider = makeProvider(observations(config, { cronSchedules: absent() }));
   await assert.rejects(() => apply(validPlan(), { provider }), /cron|drift|observation|unavailable/i);
   assert.equal(provider.deployCalls.length, 0);
+});
+
+test("apply accepts reviewed CREATE_OR_CHANGE for a different valid Cron schedule", async () => {
+  const mismatchedCron = observations(config, {
+    cronSchedules: observed(["*/5 * * * *"]),
+  });
+  const provider = makeProvider(mismatchedCron);
+
+  await apply(validPlan({
+    observedProvider: mismatchedCron,
+    mutationEnvelope: {
+      workerAction: "CREATE_OR_UPDATE",
+      cronAction: "CREATE_OR_CHANGE",
+      secretNamesToSet: [],
+    },
+  }), { provider });
+
+  assert.equal(provider.deployCalls.length, 1);
 });
 
 test("apply rejects database action", async () => {
