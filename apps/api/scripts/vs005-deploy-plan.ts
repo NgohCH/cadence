@@ -443,6 +443,23 @@ export async function runVs005DeployPlan(
     : false;
   const secretObserved = inspection.observations.secretNames.state === "OBSERVED_VALUE"
     && inspection.observations.secretNames.value.includes(config.supabase.secretKeySecretRef);
+  const secretName = config.supabase.secretKeySecretRef;
+  const bootstrapSecretValue = process.env[secretName];
+  const bootstrapInputAvailable =
+    !secretObserved
+    && mutationEnvelope.secretNamesToSet.includes(secretName)
+    && typeof bootstrapSecretValue === "string"
+    && bootstrapSecretValue.trim().length > 0;
+
+  if (!secretObserved
+    && mutationEnvelope.secretNamesToSet.includes(secretName)
+    && !bootstrapInputAvailable) {
+    blockers.push(blocker(
+      "MISSING_REQUIRED_SECRET",
+      `Required secret ${secretName} is neither configured remotely nor available as authorized bootstrap input.`,
+    ));
+  }
+
   const priorVersionAvailable = inspection.observations.priorVersion.state === "OBSERVED_VALUE";
 
   const plan: Vs005DeploymentPlanV2 = {
@@ -479,10 +496,10 @@ export async function runVs005DeployPlan(
       softDeadlineSeconds: config.worker.softDeadlineSeconds,
     },
     secrets: [{
-      name: config.supabase.secretKeySecretRef,
+      name: secretName,
       providerPresent: secretObserved,
-      bootstrapInputAvailable: false,
-      ready: secretObserved || mutationEnvelope.secretNamesToSet.includes(config.supabase.secretKeySecretRef),
+      bootstrapInputAvailable,
+      ready: secretObserved || bootstrapInputAvailable,
     }],
     rollback: {
       application: priorVersionAvailable ? "SUPPORTED" : "UNAVAILABLE",

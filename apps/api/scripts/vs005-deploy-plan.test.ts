@@ -387,35 +387,47 @@ test("expected absent Worker is represented", async () => {
 
 test("unexpected absence outside mutation envelope blocks", async () => {
   const config = betaConfig();
+  const previous = process.env.SUPABASE_SECRET_KEY;
   const providerFacts = observations(config, {
     workerExists: observed(true),
     cronSchedules: absent(),
     secretNames: absent(),
   });
-  const unplannedBlockers = validateVs005ObservationCompleteness({
-    phase: "FIRST_DEPLOYMENT_READINESS",
-    observations: providerFacts,
-    mutationEnvelope: {
+
+  try {
+    process.env.SUPABASE_SECRET_KEY = "test-bootstrap-secret";
+
+    const unplannedBlockers = validateVs005ObservationCompleteness({
+      phase: "FIRST_DEPLOYMENT_READINESS",
+      observations: providerFacts,
+      mutationEnvelope: {
+        workerAction: "CREATE_OR_UPDATE",
+        cronAction: "NO_CHANGE",
+        secretNamesToSet: [],
+      },
+    });
+    assert.ok(unplannedBlockers.some((blocker) => blocker.code === "CRON_ABSENCE_NOT_PLANNED"));
+
+    const plan = await runVs005DeployPlan(
+      { configPath: "beta.json", outputPath: "plan.json" },
+      makeDependencies(config, {
+        inspectStructured: async () => inspection(config, { observations: providerFacts }),
+      }),
+    );
+
+    assert.equal(plan.readiness, "PASS");
+    assert.deepEqual(plan.mutationEnvelope, {
       workerAction: "CREATE_OR_UPDATE",
-      cronAction: "NO_CHANGE",
-      secretNamesToSet: [],
-    },
-  });
-  assert.ok(unplannedBlockers.some((blocker) => blocker.code === "CRON_ABSENCE_NOT_PLANNED"));
-
-  const plan = await runVs005DeployPlan(
-    { configPath: "beta.json", outputPath: "plan.json" },
-    makeDependencies(config, {
-      inspectStructured: async () => inspection(config, { observations: providerFacts }),
-    }),
-  );
-
-  assert.equal(plan.readiness, "PASS");
-  assert.deepEqual(plan.mutationEnvelope, {
-    workerAction: "CREATE_OR_UPDATE",
-    cronAction: "CREATE_OR_CHANGE",
-    secretNamesToSet: ["SUPABASE_SECRET_KEY"],
-  });
+      cronAction: "CREATE_OR_CHANGE",
+      secretNamesToSet: ["SUPABASE_SECRET_KEY"],
+    });
+  } finally {
+    if (previous === undefined) {
+      delete process.env.SUPABASE_SECRET_KEY;
+    } else {
+      process.env.SUPABASE_SECRET_KEY = previous;
+    }
+  }
 });
 
 test("first deployment does not require prior version", async () => {
@@ -536,6 +548,78 @@ test("secret-looking provider fixture fields do not enter the serialized plan", 
   assert.doesNotMatch(JSON.stringify(plan.blockers), /server-secret-must-not-escape|provider-token-must-not-escape/);
 });
 
+test("missing remote secret blocks planning when bootstrap input is unavailable", async () => {
+  const config = betaConfig();
+  const previous = process.env.SUPABASE_SECRET_KEY;
+
+  try {
+    delete process.env.SUPABASE_SECRET_KEY;
+
+    const plan = await runVs005DeployPlan(
+      { configPath: "beta.json", outputPath: "plan.json" },
+      makeDependencies(config, {
+        inspectStructured: async () => inspection(config, {
+          observations: observations(config, {
+            secretNames: absent(),
+          }),
+        }),
+      }),
+    );
+
+    assert.equal(plan.readiness, "BLOCKED");
+    assert.deepEqual(plan.secrets, [{
+      name: "SUPABASE_SECRET_KEY",
+      providerPresent: false,
+      bootstrapInputAvailable: false,
+      ready: false,
+    }]);
+    assert.ok(
+      plan.blockers.some((item) => item.code === "MISSING_REQUIRED_SECRET"),
+    );
+  } finally {
+    if (previous === undefined) {
+      delete process.env.SUPABASE_SECRET_KEY;
+    } else {
+      process.env.SUPABASE_SECRET_KEY = previous;
+    }
+  }
+});
+
+test("available bootstrap secret permits planned secret creation without exposing its value", async () => {
+  const config = betaConfig();
+  const previous = process.env.SUPABASE_SECRET_KEY;
+  const secretValue = "server-secret-must-not-escape";
+
+  try {
+    process.env.SUPABASE_SECRET_KEY = secretValue;
+
+    const plan = await runVs005DeployPlan(
+      { configPath: "beta.json", outputPath: "plan.json" },
+      makeDependencies(config, {
+        inspectStructured: async () => inspection(config, {
+          observations: observations(config, {
+            secretNames: absent(),
+          }),
+        }),
+      }),
+    );
+
+    assert.equal(plan.readiness, "PASS");
+    assert.deepEqual(plan.secrets, [{
+      name: "SUPABASE_SECRET_KEY",
+      providerPresent: false,
+      bootstrapInputAvailable: true,
+      ready: true,
+    }]);
+    assert.doesNotMatch(JSON.stringify(plan), /server-secret-must-not-escape/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.SUPABASE_SECRET_KEY;
+    } else {
+      process.env.SUPABASE_SECRET_KEY = previous;
+    }
+  }
+});
 test("planning dependencies expose no mutation capability", () => {
   const config = betaConfig();
   const dependencies = makeDependencies(config);
