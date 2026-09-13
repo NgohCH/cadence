@@ -35,13 +35,17 @@ import type {
 const repositoryRoot = resolve(process.cwd(), "../..");
 const tsxLoader = pathToFileURL(resolve(repositoryRoot, "apps/api/node_modules/tsx/dist/loader.mjs")).href;
 const applyCli = resolve(__dirname, "vs005-deploy-apply.ts");
+const npmExecPath = process.env.npm_execpath
+  ?? (process.platform === "win32"
+    ? resolve(process.env.APPDATA ?? "", "npm/node_modules/npm/bin/npm-cli.js")
+    : undefined);
 
 test("apply CLI resolves every relative path from repository root across caller cwd", () => {
   const unrelated = mkdtempSync(resolve(tmpdir(), "cadence-apply-cwd-"));
   const original = process.cwd();
   try {
     for (const cwd of [repositoryRoot, resolve(repositoryRoot, "apps/api"), unrelated]) {
-      const result = spawnSync(process.execPath, ["--import", tsxLoader, applyCli, "--plan", "missing-plan.json", "--config", "missing-config.json", "--out", ".cadence/vs005/space dir/../task3-apply-failure.json"], { cwd, encoding: "utf8", env: { ...process.env, INIT_CWD: unrelated } });
+      const result = spawnSync(process.execPath, ["--import", tsxLoader, applyCli, "--plan", "missing-plan.json", "--config", "missing-config.json", "--out", ".cadence/vs005/space dir/../task3-apply-failure.json"], { cwd, encoding: "utf8", env: { ...process.env, INIT_CWD: unrelated, ...(npmExecPath ? { npm_execpath: npmExecPath } : {}) } });
       assert.equal(result.status, 0);
       assert.equal(existsSync(resolve(repositoryRoot, ".cadence/vs005/task3-apply-failure.json")), true);
       assert.equal(existsSync(resolve(cwd, ".cadence/vs005/task3-apply-failure.json")), cwd === repositoryRoot);
@@ -119,6 +123,7 @@ test("apply CLI runs web artifact preparation from apps/web", () => {
       CADENCE_RELEASE_VERSION: release.version,
       CADENCE_COMMIT_SHA: release.commitSha,
       CADENCE_BUILD_ID: release.buildId,
+      ...(npmExecPath ? { npm_execpath: npmExecPath } : {}),
     },
   });
 
@@ -134,6 +139,60 @@ test("apply CLI runs web artifact preparation from apps/web", () => {
     resolve(repositoryRoot, "apps/web"),
   ]);
   rmSync(fixture, { recursive: true, force: true });
+});
+
+test("apply CLI reports Windows npm.cmd spawn failure during real artifact preparation", {
+  skip: process.platform !== "win32",
+}, () => {
+  const fixture = mkdtempSync(resolve(repositoryRoot, ".cadence-apply-npm-cmd-"));
+  const planPath = resolve(fixture, "plan.json");
+  const configPath = resolve(fixture, "config.json");
+  const outputPath = resolve(fixture, "deployment-result.json");
+  const probePath = resolve(fixture, "probe.cjs");
+  try {
+    assert.ok(npmExecPath);
+    assert.equal(existsSync(npmExecPath), true);
+    writeFileSync(planPath, JSON.stringify(validPlan()));
+    writeFileSync(configPath, JSON.stringify(config));
+    writeFileSync(probePath, `const cp=require("node:child_process");const {EventEmitter}=require("node:events");const realSpawn=cp.spawn;cp.spawn=(command,args,options)=>{if(args.some((arg)=>String(arg).endsWith("wrangler.js"))){const child=new EventEmitter();process.nextTick(()=>child.emit("close",0));return child}return realSpawn(command,args,options)};global.fetch=async()=>({});`);
+
+    const result = spawnSync(process.execPath, [
+      "--require",
+      probePath,
+      "--import",
+      tsxLoader,
+      applyCli,
+      "--plan",
+      planPath,
+      "--config",
+      configPath,
+      "--out",
+      outputPath,
+    ], {
+      cwd: resolve(repositoryRoot, "apps/api"),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CADENCE_RELEASE_VERSION: release.version,
+        CADENCE_COMMIT_SHA: release.commitSha,
+        CADENCE_BUILD_ID: release.buildId,
+        npm_execpath: npmExecPath,
+        CLOUDFLARE_INSPECTION_API_TOKEN: "test-only-inspection-token",
+      },
+    });
+
+    assert.equal(result.status, 0);
+    const failure = JSON.parse(require("node:fs").readFileSync(outputPath, "utf8")) as {
+      artifactType: string;
+      code: string;
+      mutationOccurred: boolean;
+    };
+    assert.equal(failure.artifactType, "cadence.vs005.operator-failure");
+    assert.equal(failure.code, "PROVIDER_INSPECTION_FAILED");
+    assert.equal(failure.mutationOccurred, false);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
 const observed = <T>(value: T): Vs005Observation<T> => ({

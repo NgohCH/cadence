@@ -45,6 +45,7 @@ import {
 import type { CloudflareStructuredInspectionRequest } from "./vs005-cloudflare-structured-inspection";
 import { buildCloudflareDeployment, type GeneratedCloudflareDeployment } from "./vs005-generate-deployment";
 import { resolveCadenceOperatorPath, resolveCadenceRepositoryRoot } from "./cadence-operator-path";
+import { resolveCadenceNpmCommand } from "./vs005-npm";
 import { resolveCadenceWranglerCommand } from "./vs005-wrangler";
 
 export interface Vs005DeploymentProviderInspection {
@@ -582,7 +583,9 @@ function runLocalCommand(
   cwd?: string,
 ): Promise<void> {
   return new Promise((resolveCommand, rejectCommand) => {
-    const [command, ...commandArgs] = resolveCadenceWranglerCommand(args, resolveCadenceRepositoryRoot());
+    const [command, ...commandArgs] = resolveCadenceNpmCommand(
+      resolveCadenceWranglerCommand(args, resolveCadenceRepositoryRoot()),
+    );
     const child = spawn(command, commandArgs, {
       shell: false,
       windowsHide: true,
