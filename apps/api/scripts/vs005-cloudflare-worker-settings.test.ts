@@ -29,7 +29,7 @@ const release = {
 };
 
 function binding(name: string, type: string, value: unknown = "value-canary"): Record<string, unknown> {
-  return { name, type, value };
+  return type === "plain_text" ? { name, type, text: value } : { name, type, value };
 }
 
 function settings(bindings: readonly unknown[], extra: Record<string, unknown> = {}): { success: true; result: unknown } {

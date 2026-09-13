@@ -76,13 +76,13 @@ export function reduceCloudflareIdentityBindings(
     if (!isRecord(binding) || !boundedName(binding.name) || !IDENTITY_BINDINGS.has(binding.name)) continue;
     if (invalidIdentityNames.has(binding.name)
       || binding.type !== "plain_text"
-      || typeof binding.value !== "string"
+      || typeof binding.text !== "string"
       || identityValues.has(binding.name)) {
       invalidIdentityNames.add(binding.name);
       identityValues.delete(binding.name);
       continue;
     }
-    identityValues.set(binding.name, binding.value);
+    identityValues.set(binding.name, binding.text);
   }
   const workerConfigFingerprint = parseFingerprint(identityValues.get("CADENCE_CONFIG_FINGERPRINT"));
   const release = parseRelease(identityValues);
