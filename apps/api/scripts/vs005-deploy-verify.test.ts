@@ -21,6 +21,7 @@ import {
   type Vs005DeploymentVerification,
   type Vs005VerificationReaders,
 } from "./vs005-deploy-verify";
+import * as verifyModule from "./vs005-deploy-verify";
 import type { CloudflareStructuredInspectionRequest } from "./vs005-cloudflare-structured-inspection";
 import type { Vs005CorrelatedDeploymentResult, Vs005DeploymentResult } from "./vs005-deploy-apply";
 import type {
@@ -375,4 +376,155 @@ test("verification accepts another target only through explicit policy input", (
     pilotProjectId: "22222222-2222-4222-8222-222222222222",
   };
   assert.notDeepEqual(alternateFacts, VS005_BETA_TARGET_POLICY.expected);
+});
+
+type ProductionHostIntegration = {
+  createHostedRuntimeTargetReader?: (input: {
+    config: CadenceRuntimeConfig;
+    fetchImpl: typeof fetch;
+  }) => Vs005VerificationReaders["inspectRuntimeTarget"];
+  createControlledProjectProbe?: (input: {
+    config: CadenceRuntimeConfig;
+    environment: NodeJS.ProcessEnv;
+    fetchImpl: typeof fetch;
+    authenticate: (input: {
+      supabaseUrl: string;
+      publishableKey: string;
+      email: string;
+      password: string;
+    }) => Promise<{ accessToken: string | null }>;
+  }) => Vs005VerificationReaders["probeControlledProject"];
+};
+
+const productionHostIntegration = verifyModule as ProductionHostIntegration;
+
+function hostedRuntimeTargetReader(fetchImpl: typeof fetch): Vs005VerificationReaders["inspectRuntimeTarget"] {
+  assert.equal(
+    typeof productionHostIntegration.createHostedRuntimeTargetReader,
+    "function",
+    "production hosted runtime-target reader is absent",
+  );
+  return productionHostIntegration.createHostedRuntimeTargetReader!({ config, fetchImpl });
+}
+
+function controlledProjectProbe(input: {
+  fetchImpl: typeof fetch;
+  authenticate?: ProductionHostIntegration["createControlledProjectProbe"] extends (...args: never[]) => never
+    ? never
+    : never;
+  environment?: NodeJS.ProcessEnv;
+}): Vs005VerificationReaders["probeControlledProject"] {
+  assert.equal(
+    typeof productionHostIntegration.createControlledProjectProbe,
+    "function",
+    "production controlled-Project probe is absent",
+  );
+  return productionHostIntegration.createControlledProjectProbe!({
+    config,
+    environment: input.environment ?? {
+      TEST_USER_EMAIL: "email-credential-canary",
+      TEST_USER_PASSWORD: "password-credential-canary",
+    },
+    fetchImpl: input.fetchImpl,
+    authenticate: async () => ({ accessToken: "access-token-canary" }),
+  });
+}
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+test("production runtime reader projects canonical target only after hosted fingerprint attestation", async () => {
+  const reader = hostedRuntimeTargetReader(async () => jsonResponse(200, {
+    environment: config.application.environment,
+    configFingerprint,
+  }));
+
+  assert.deepEqual(await reader(), {
+    environment: config.application.environment,
+    safeTargetMarker: config.pilot.safeTargetMarker,
+    supabaseProjectRef: config.supabase.projectRef,
+    pilotProjectId: config.pilot.projectId,
+  });
+});
+
+test("production runtime reader fails closed for wrong or malformed hosted attestation", async () => {
+  const cases: Array<{ status: number; body: unknown }> = [
+    { status: 200, body: { environment: "beta", configFingerprint: "wrong-fingerprint" } },
+    { status: 200, body: { environment: "beta" } },
+    { status: 503, body: { environment: "beta", configFingerprint } },
+    { status: 200, body: { environment: "wrong-environment", configFingerprint } },
+  ];
+
+  for (const item of cases) {
+    const reader = hostedRuntimeTargetReader(async () => jsonResponse(item.status, item.body));
+    await assert.rejects(reader(), { message: "RUNTIME_TARGET_ATTESTATION_UNAVAILABLE" });
+  }
+});
+
+test("production controlled-Project probe retains only status and bounded Project identity", async () => {
+  const businessCanary = "unrelated-business-data-canary";
+  const probe = controlledProjectProbe({
+    fetchImpl: async (request, init) => {
+      assert.equal(String(request), `${config.application.publicUrl}/api/v1/projects/${config.pilot.projectId}/summary`);
+      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer access-token-canary");
+      return jsonResponse(200, {
+        success: true,
+        data: { project: { id: config.pilot.projectId, name: businessCanary }, alerts: [businessCanary] },
+      });
+    },
+  });
+
+  const result = await probe();
+  assert.deepEqual(result, { status: 200, projectId: config.pilot.projectId });
+  assert.doesNotMatch(JSON.stringify(result), /credential-canary|access-token-canary|unrelated-business-data-canary/);
+});
+
+test("production controlled-Project probe preserves a wrong bounded identity for verification rejection", async () => {
+  const wrongProjectId = "22222222-2222-4222-8222-222222222222";
+  const probe = controlledProjectProbe({
+    fetchImpl: async () => jsonResponse(200, { data: { project: { id: wrongProjectId } } }),
+  });
+  const result = await verify(passReaders({ probeControlledProject: probe }));
+  assert.equal(result.outcome, "FAIL");
+  assert.ok(result.checks.some((item) => item.code === "CONTROLLED_PROJECT_DRIFT"));
+});
+
+test("production controlled-Project probe fails closed for non-success provider status", async () => {
+  for (const status of [401, 403, 404]) {
+    const probe = controlledProjectProbe({ fetchImpl: async () => jsonResponse(status, { error: "body-canary" }) });
+    assert.deepEqual(await probe(), { status, projectId: null });
+  }
+});
+
+test("production controlled-Project probe fails closed for network and malformed success responses", async () => {
+  const networkProbe = controlledProjectProbe({ fetchImpl: async () => { throw new Error("network-secret-canary"); } });
+  const malformedProbe = controlledProjectProbe({ fetchImpl: async () => jsonResponse(200, { data: { project: {} } }) });
+  assert.deepEqual(await networkProbe(), { status: 0, projectId: null });
+  assert.deepEqual(await malformedProbe(), { status: 200, projectId: null });
+});
+
+test("production reader failures retain no credential, token, or business-data canaries", async () => {
+  const runtimeReader = hostedRuntimeTargetReader(async () => jsonResponse(200, {
+    environment: "beta",
+    configFingerprint: "access-token-canary",
+  }));
+  let boundedError = "";
+  try {
+    await runtimeReader();
+  } catch (error) {
+    boundedError = error instanceof Error ? error.message : String(error);
+  }
+  const probe = controlledProjectProbe({
+    fetchImpl: async () => jsonResponse(200, { data: { project: { name: "business-body-canary" } } }),
+  });
+  const verification = await verify(passReaders({
+    inspectRuntimeTarget: runtimeReader,
+    probeControlledProject: probe,
+  }));
+  const serialized = JSON.stringify({ boundedError, verification });
+  assert.doesNotMatch(serialized, /email-credential-canary|password-credential-canary|access-token-canary|business-body-canary/);
 });

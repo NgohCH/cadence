@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { createClient } from "@supabase/supabase-js";
 
 import {
   loadCadenceRuntimeConfig,
@@ -48,6 +49,128 @@ export interface Vs005VerificationReaders {
     pilotProjectId: string | null;
   }>;
   probeControlledProject(): Promise<{ status: number; projectId: string | null }>;
+}
+
+interface Vs005VerificationAuthenticationInput {
+  supabaseUrl: string;
+  publishableKey: string;
+  email: string;
+  password: string;
+}
+
+interface Vs005VerificationAuthenticationResult {
+  accessToken: string | null;
+}
+
+type Vs005VerificationAuthenticate = (
+  input: Vs005VerificationAuthenticationInput,
+) => Promise<Vs005VerificationAuthenticationResult>;
+
+const MAX_HEALTH_RESPONSE_BYTES = 8_192;
+const MAX_PROJECT_RESPONSE_BYTES = 65_536;
+const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function readBoundedJson(response: Response, maximumBytes: number): Promise<unknown> {
+  const body = await response.text();
+  if (Buffer.byteLength(body, "utf8") > maximumBytes) throw new Error("BOUNDED_RESPONSE_UNAVAILABLE");
+  return JSON.parse(body);
+}
+
+export function createHostedRuntimeTargetReader(input: {
+  config: CadenceRuntimeConfig;
+  fetchImpl?: typeof fetch;
+}): Vs005VerificationReaders["inspectRuntimeTarget"] {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  return async () => {
+    try {
+      const response = await fetchImpl(new URL("/health", input.config.application.publicUrl));
+      if (response.status !== 200) throw new Error("RUNTIME_TARGET_ATTESTATION_UNAVAILABLE");
+      const body = await readBoundedJson(response, MAX_HEALTH_RESPONSE_BYTES);
+      if (typeof body !== "object" || body === null || Array.isArray(body)) {
+        throw new Error("RUNTIME_TARGET_ATTESTATION_UNAVAILABLE");
+      }
+      const health = body as Record<string, unknown>;
+      const hostedEnvironment = health.environment;
+      if (
+        typeof hostedEnvironment !== "string"
+        || hostedEnvironment !== input.config.application.environment
+        || health.configFingerprint !== fingerprintCadenceRuntimeConfig(input.config)
+      ) {
+        throw new Error("RUNTIME_TARGET_ATTESTATION_UNAVAILABLE");
+      }
+      return {
+        environment: hostedEnvironment,
+        safeTargetMarker: input.config.pilot.safeTargetMarker,
+        supabaseProjectRef: input.config.supabase.projectRef,
+        pilotProjectId: input.config.pilot.projectId,
+      };
+    } catch {
+      throw new Error("RUNTIME_TARGET_ATTESTATION_UNAVAILABLE");
+    }
+  };
+}
+
+async function authenticateVerificationIdentity(
+  input: Vs005VerificationAuthenticationInput,
+): Promise<Vs005VerificationAuthenticationResult> {
+  const client = createClient(input.supabaseUrl, input.publishableKey, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+  });
+  const { data, error } = await client.auth.signInWithPassword({
+    email: input.email,
+    password: input.password,
+  });
+  return { accessToken: error ? null : data.session?.access_token ?? null };
+}
+
+export function createControlledProjectProbe(input: {
+  config: CadenceRuntimeConfig;
+  environment?: NodeJS.ProcessEnv;
+  fetchImpl?: typeof fetch;
+  authenticate?: Vs005VerificationAuthenticate;
+}): Vs005VerificationReaders["probeControlledProject"] {
+  const environment = input.environment ?? process.env;
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const authenticate = input.authenticate ?? authenticateVerificationIdentity;
+  return async () => {
+    const email = environment.TEST_USER_EMAIL;
+    const password = environment.TEST_USER_PASSWORD;
+    if (!email || !password) return { status: 0, projectId: null };
+    try {
+      const authentication = await authenticate({
+        supabaseUrl: input.config.supabase.url,
+        publishableKey: input.config.supabase.publishableKey,
+        email,
+        password,
+      });
+      if (!authentication.accessToken) return { status: 0, projectId: null };
+      const projectId = input.config.pilot.projectId;
+      const response = await fetchImpl(
+        new URL(`/api/v1/projects/${encodeURIComponent(projectId)}/summary`, input.config.application.publicUrl),
+        { headers: { Authorization: `Bearer ${authentication.accessToken}` } },
+      );
+      if (response.status !== 200) return { status: response.status, projectId: null };
+      const body = await readBoundedJson(response, MAX_PROJECT_RESPONSE_BYTES);
+      if (typeof body !== "object" || body === null || Array.isArray(body)) {
+        return { status: response.status, projectId: null };
+      }
+      const data = (body as Record<string, unknown>).data;
+      const project = typeof data === "object" && data !== null && !Array.isArray(data)
+        ? (data as Record<string, unknown>).project
+        : undefined;
+      const observedProjectId = typeof project === "object" && project !== null && !Array.isArray(project)
+        ? (project as Record<string, unknown>).id
+        : undefined;
+      return {
+        status: response.status,
+        projectId: typeof observedProjectId === "string" && PROJECT_ID_PATTERN.test(observedProjectId)
+          ? observedProjectId
+          : null,
+      };
+    } catch {
+      return { status: 0, projectId: null };
+    }
+  };
 }
 
 export interface Vs005DeploymentVerificationCheck {
@@ -492,8 +615,8 @@ async function runVerifyCli(args: readonly string[]): Promise<void> {
         },
         probeApi: async () => ({ status: (await response("/api/v1")).status }),
         inspectProvider: async (request) => provider.inspectStructured(request),
-        inspectRuntimeTarget: async () => ({ environment: "", safeTargetMarker: "", supabaseProjectRef: null, pilotProjectId: null }),
-        probeControlledProject: async () => ({ status: 0, projectId: null }),
+        inspectRuntimeTarget: createHostedRuntimeTargetReader({ config }),
+        probeControlledProject: createControlledProjectProbe({ config }),
       },
     });
     writeJson(resolvedPaths.outputPath, result);
