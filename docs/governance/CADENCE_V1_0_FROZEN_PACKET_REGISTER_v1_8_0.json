@@ -1,0 +1,1603 @@
+{
+  "project": "Cadence",
+  "contract_version": "1.8.0-FROZEN",
+  "status": "SPONSOR_APPROVED_SCOPE_FREEZE__IMPLEMENTATION_NOT_STARTED",
+  "date_prepared": "2026-10-13",
+  "repository": "NgohCH/cadence",
+  "release": {
+    "product": "Cadence",
+    "version": "1.0.0",
+    "hard_target_local_date": "2026-11-17",
+    "timezone": "Asia/Kuala_Lumpur",
+    "release_identity_requires_actual_deployment": true,
+    "go_no_go_date": "2026-11-16",
+    "single_organisation_product": true,
+    "first_licensee": "HELP University",
+    "v1_scope": "one organisation, 5-10 users, five projects"
+  },
+  "execution": {
+    "max_simultaneous_agent_writers_initial": 1,
+    "max_simultaneous_agent_writers_after_stability": 2,
+    "enable_second_gate": [
+      "3 consecutively ACCEPTED packets on exact merged SHAs",
+      "CAD-WP-003 accepted",
+      "CAD-WP-004 accepted",
+      "CAD-WP-005 accepted",
+      "CAD-WP-006 accepted and remote checkpoint restore proven",
+      "CAD-WP-007 baseline integration accepted",
+      "central serial integrator and no P0/P1",
+      "CAD-WP-068 unattended runner and remote checkpoint fail-safe accepted",
+      "recorded sponsor authorisation to enable lane B"
+    ],
+    "packet_acceptance": "exact SHA, tests, real connector, source-bound formal record",
+    "new_packets_allowed_without_sponsor_revision": false,
+    "daily_forecast_required": true,
+    "forecast_fields": [
+      "accepted_count",
+      "remaining_estimated_agent_hours",
+      "rolling_accepted_throughput_hours_per_lane_day",
+      "mandatory_critical_path",
+      "code_freeze_slack_days",
+      "release_slack_days",
+      "active_branches",
+      "latest_remote_checkpoint",
+      "P0_P1_open_count",
+      "measured_24h_accepted_agent_hours",
+      "overnight_failures",
+      "estimated_effort_to_feature_freeze",
+      "monthly_org_ai_spend_usd"
+    ],
+    "visual_quality_release_gate": "Mandatory; company UAT must use accepted Cadence visual system and hosted desktop/mobile visual evidence.",
+    "no_new_frontend_systems": "No UI framework re-platforming, new shell per packet, copied brand assets or speculative dashboard features.",
+    "single_developer": true,
+    "overnight_running_policy": "Eligible accepted-contract work only; Windows laptop runner required; actual progress measured at accepted merge SHAs."
+  },
+  "packets": [
+    {
+      "id": "CAD-WP-001",
+      "number": 1,
+      "phase": "F0",
+      "title": "Freeze V1.0 product and governance",
+      "estimate_agent_hours": 3,
+      "risk": "SPONSOR",
+      "dependencies": [],
+      "navigation": [
+        "docs/governance/CADENCE_CHANGE_CONTROL.md",
+        "docs/governance/CADENCE_MILESTONE_ROADMAP.md",
+        "+docs/legal/CADENCE_COPYRIGHT_AND_LICENCE.md"
+      ],
+      "deliverable": "Freeze V1.0 scope, source ownership intention, HELP academic licence boundary, data ownership, complete packet register and fixed 17 November date.",
+      "acceptance": "Sponsor-approved contract, 68-packet traceability, draft copyright and HELP academic licence terms, legal/IP authority checkpoint, signed scope and fixed 17 November date. Existing M3 commitments remain governed.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-002",
+      "number": 2,
+      "phase": "F0",
+      "title": "Pin baseline and classify VS005 salvage",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-001"
+      ],
+      "navigation": [
+        "docs/vertical-slices/VS-004.md",
+        "VS005:docs/vertical-slices/VS-005.md"
+      ],
+      "deliverable": "Inventory remote and any locally unpushed VS005 work as reuse/exclude candidates.",
+      "acceptance": "Hashes, branch/commit inventory and KEEP/EXTRACT/REPLACE/EXCLUDE table; no automatic wholesale merge.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-003",
+      "number": 3,
+      "phase": "F0",
+      "title": "Freeze API/event/schema/interface catalogue",
+      "estimate_agent_hours": 5,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-001",
+        "CAD-WP-002"
+      ],
+      "navigation": [
+        "api/Cadence_v0.1_openapi.yaml",
+        "apps/api/src/modules/team-agent/team-agent.types.ts"
+      ],
+      "deliverable": "Freeze exact API/event/schema/SSO/AI-budget/transcript/operator interfaces and named owners for producer-consumer integration.",
+      "acceptance": "Versioned schema registry, external provider interface contracts, budget/identity/provenance field types, connector map, test vectors and locked-file owners accepted.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-004",
+      "number": 4,
+      "phase": "F0",
+      "title": "Implement navigable packet dispatch preflight",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-001"
+      ],
+      "navigation": [
+        "+tools/cadence-dispatch.ps1",
+        "apps/api/src/modules/team-agent/message-created.handler.ts"
+      ],
+      "deliverable": "Dispatch the current packet with verified repo identity, absolute worktree, exact files/symbols and commands.",
+      "acceptance": "Wrong repo/branch/SHA/login or unresolved path blocks; signed dispatch manifest prints correct cwd.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-005",
+      "number": 5,
+      "phase": "F0",
+      "title": "Remote PAUSE and WIP checkpoint",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-004"
+      ],
+      "navigation": [
+        "+tools/cadence-control.ps1",
+        "+.cadence-control/control-state.json"
+      ],
+      "deliverable": "Safely pause new dispatch and privileged actions; commit and verify allowed WIP checkpoint remotely.",
+      "acceptance": "PAUSED only with verified remote SHAs and no active writer; no interruption to hosted service.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-006",
+      "number": 6,
+      "phase": "F0",
+      "title": "RESUME, reclone and crash tests",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-005"
+      ],
+      "navigation": [
+        "+tools/cadence-control.ps1",
+        "+.cadence-control/checkpoint.schema.json"
+      ],
+      "deliverable": "Resume same active packet after fresh checkout; fail closed for stale lease/offline/missing SHA.",
+      "acceptance": "Reclone-resume test, no duplicated GitHub side effects, no lost accepted state; one-agent operating proof.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-007",
+      "number": 7,
+      "phase": "F0",
+      "title": "Reproduce integrated baseline in isolation",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-002"
+      ],
+      "navigation": [
+        "package.json",
+        "supabase/migrations/20260808002600_rls.sql"
+      ],
+      "deliverable": "Build application on clean checkout and replay migrations against disposable PostgreSQL; smoke current collaboration journey.",
+      "acceptance": "Baseline tests, fresh migration/RLS tests, two-user Discussion->Task->Audit and audit of missing connectors recorded.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-008",
+      "number": 8,
+      "phase": "F0",
+      "title": "Choose bounded hosting route",
+      "estimate_agent_hours": 4,
+      "risk": "SPONSOR",
+      "dependencies": [
+        "CAD-WP-003",
+        "CAD-WP-007"
+      ],
+      "navigation": [
+        "apps/api/src/server.ts",
+        "VS005:apps/runtime-cloudflare/src/index.ts"
+      ],
+      "deliverable": "One compatibility spike selects native Cloudflare hosting or predetermined Node/static/one-shot fallback.",
+      "acceptance": "Exactly one selected primary route, fallback decision and proof; stop third-provider investigation.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-009",
+      "number": 9,
+      "phase": "F1",
+      "title": "Compose shared API application runtime",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-008"
+      ],
+      "navigation": [
+        "apps/api/src/server.ts",
+        "VS005:apps/api/src/runtime/create-cadence-app.ts"
+      ],
+      "deliverable": "Selectively salvage app composition without changing protected service interfaces.",
+      "acceptance": "API health, auth and workspace regression tests; Node API remains runnable.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-010",
+      "number": 10,
+      "phase": "F1",
+      "title": "Bound worker independent jobs",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-009"
+      ],
+      "navigation": [
+        "apps/api/src/worker.ts",
+        "VS005:apps/api/src/runtime/cadence-worker-cycle.ts"
+      ],
+      "deliverable": "Bound membership, audit and Team Agent consumption per cycle.",
+      "acceptance": "No job starves others, deadline/backlog reported and one-shot Node mode preserved.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-011",
+      "number": 11,
+      "phase": "F1",
+      "title": "Persistent retry and idempotent worker delivery",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-010"
+      ],
+      "navigation": [
+        "apps/api/src/worker.ts",
+        "VS005:apps/api/src/runtime/worker-retry-policy.ts"
+      ],
+      "deliverable": "Recover from failed deliveries without silently duplicating Tasks or Audit events.",
+      "acceptance": "Failure/retry/restart and duplicate-event tests on durable delivery state pass.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-012",
+      "number": 12,
+      "phase": "F1",
+      "title": "Safe configuration, secrets and target admission",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-009"
+      ],
+      "navigation": [
+        "apps/api/src/bootstrap/environment-safety.ts",
+        "VS005:apps/api/src/bootstrap/cadence-config.ts"
+      ],
+      "deliverable": "Use canonical environment mapping and fail closed on wrong database/provider targets.",
+      "acceptance": "Wrong-target, invalid secret, mismatched environment and no-browser-leak tests pass.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-013",
+      "number": 13,
+      "phase": "F1",
+      "title": "Deploy hosted HTTPS web and API",
+      "estimate_agent_hours": 5,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-009",
+        "CAD-WP-012"
+      ],
+      "navigation": [
+        "apps/web/package.json",
+        "apps/api/src/server.ts"
+      ],
+      "deliverable": "Provider-native build/deploy with authenticated browser->API calls and stable URLs.",
+      "acceptance": "Real hosted login, health, CORS and project data read; no custom privileged VS005 controller.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-014",
+      "number": 14,
+      "phase": "F1",
+      "title": "Schedule and inspect hosted worker",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-011",
+        "CAD-WP-013"
+      ],
+      "navigation": [
+        "apps/api/src/worker.ts",
+        "VS005:apps/runtime-cloudflare/src/index.ts"
+      ],
+      "deliverable": "Schedule event consumer automatically and make retry/failure inspection available.",
+      "acceptance": "Hosted messages yield proposals without manual worker run; one fault and recovery demonstrated.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-015",
+      "number": 15,
+      "phase": "F1",
+      "title": "Provider-native app rollback and runbook",
+      "estimate_agent_hours": 3,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-013"
+      ],
+      "navigation": [
+        "+docs/operations/DEPLOY.md",
+        "apps/api/package.json"
+      ],
+      "deliverable": "Document and test application rollback without any implied database reset.",
+      "acceptance": "Rehearse safe version rollback to known build; deployment commands and target checks captured.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-016",
+      "number": 16,
+      "phase": "F1",
+      "title": "Immutable release build identity and health",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-009",
+        "CAD-WP-012"
+      ],
+      "navigation": [
+        "apps/api/src/server.ts",
+        "+apps/web/src/features/about/ReleaseIdentity.tsx"
+      ],
+      "deliverable": "Expose commit/version/build info without secrets; distinguish candidate from released software.",
+      "acceptance": "UI/API release identity matches CI manifest; must not print 17 Nov Released before actual release.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-017",
+      "number": 17,
+      "phase": "F2",
+      "title": "AI provider adapter and privacy controls",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-003",
+        "CAD-WP-007"
+      ],
+      "navigation": [
+        "apps/api/src/modules/team-agent/team-agent.service.ts",
+        "+apps/api/src/infrastructure/ai/provider.ts"
+      ],
+      "deliverable": "Implement a replaceable AI provider adapter. Initial configured provider is OpenAI, model gpt-6-luna with medium reasoning. Secrets must remain server-side.",
+      "acceptance": "Validated configuration selects OpenAI and gpt-6-luna medium; structured outputs and provider errors handled; privacy checks and request store=false; no raw prompts or secrets logged; provider changes do not require business-module rewrites.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-018",
+      "number": 18,
+      "phase": "F2",
+      "title": "Structured AI output validation and parser",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-017"
+      ],
+      "navigation": [
+        "apps/api/src/modules/team-agent/team-agent.types.ts",
+        "+apps/api/src/infrastructure/ai/structured-output.ts"
+      ],
+      "deliverable": "Validate zero/one/many proposed actions and uncertainty against frozen schema.",
+      "acceptance": "Malformed model output fails closed; fields/provenance stable and no fabricated identities/dates.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-019",
+      "number": 19,
+      "phase": "F2",
+      "title": "Convert Discussion to grounded Task proposals",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-018"
+      ],
+      "navigation": [
+        "apps/api/src/modules/team-agent/team-agent.service.ts",
+        "apps/api/src/modules/team-agent/message-created.handler.ts"
+      ],
+      "deliverable": "Feed immutable discussion version through AI adapter and create source-grounded candidate Tasks.",
+      "acceptance": "No-action, multi-action, ambiguous text tests; message/version linkage and actual event contract pass.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-020",
+      "number": 20,
+      "phase": "F2",
+      "title": "Human review to authoritative Task integration",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-019"
+      ],
+      "navigation": [
+        "apps/api/src/modules/team-agent/team-agent-task-materialization.service.ts",
+        "apps/web/src/features/team-agent/ProposalReviewPanel.tsx"
+      ],
+      "deliverable": "Preserve authorised confirm/edit/reject and idempotent Task creation for new proposal output.",
+      "acceptance": "Real service connector, duplicate protection, negative authorisation and Audit provenance pass.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-021",
+      "number": 21,
+      "phase": "F2",
+      "title": "Freeze and pass AI extraction benchmark",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-020"
+      ],
+      "navigation": [
+        "apps/api/src/modules/team-agent/team-agent.test.ts",
+        "+tests/ai/action-evaluation.json"
+      ],
+      "deliverable": "Evaluate against predetermined 30-case fixture without tuning test labels after results.",
+      "acceptance": "30-case frozen fixture passes required precision/recall; cost and provider usage are recorded, budget exhaustion falls back safely and no extra unapproved model is selected.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-022",
+      "number": 22,
+      "phase": "F2",
+      "title": "On-demand source-grounded discussion summary",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-017",
+        "CAD-WP-007"
+      ],
+      "navigation": [
+        "apps/api/src/modules/discussion/discussion.service.ts",
+        "+apps/api/src/modules/team-agent/summary.service.ts"
+      ],
+      "deliverable": "Provide bounded summary with source references and no source disclosure across projects.",
+      "acceptance": "Test empty, multi-message, unauthorised, model failure and source-grounding behaviours.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-023",
+      "number": 23,
+      "phase": "F2",
+      "title": "Hosted AI action end-to-end smoke",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-014",
+        "CAD-WP-020",
+        "CAD-WP-021",
+        "CAD-WP-065"
+      ],
+      "navigation": [
+        "apps/web/src/features/team-agent/ProposalReviewPanel.tsx",
+        "apps/web/src/features/discussion/DiscussionPanel.tsx"
+      ],
+      "deliverable": "Demonstrate browser Discussion->model->proposal->approval->Task->Audit on hosted target.",
+      "acceptance": "Hosted real OpenAI Luna Medium requests generate reviewed tasks, correct sources and idempotent authoritative actions; monthly organisation cap and budget exhaustion are verified.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-024",
+      "number": 24,
+      "phase": "F3",
+      "title": "Atomic authorised project-creation API",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-003",
+        "CAD-WP-007"
+      ],
+      "navigation": [
+        "apps/api/src/modules/projects/projects.service.ts",
+        "apps/api/src/infrastructure/database/supabase-project-lifecycle.repository.ts"
+      ],
+      "deliverable": "Create minimal project and required health/responsibility in one authorised flow.",
+      "acceptance": "Transactional creation, idempotency, RBAC and same-person initial roles where policy permits.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-025",
+      "number": 25,
+      "phase": "F3",
+      "title": "Minimal project-creation browser UI",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-024",
+        "CAD-WP-061"
+      ],
+      "navigation": [
+        "apps/web/src/features/workspace/ProjectWorkspace.tsx",
+        "+apps/web/src/features/projects/CreateProject.tsx"
+      ],
+      "deliverable": "Permit an authenticated individual to create a project without a developer.",
+      "acceptance": "Browser create and reopen; no hard-coded starter project; empty/error states tested. Uses approved Cadence V1 visual and interaction standard; avoids one-off styling or inaccessible controls.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-026",
+      "number": 26,
+      "phase": "F3",
+      "title": "Authorised project-list API",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-024"
+      ],
+      "navigation": [
+        "apps/api/src/modules/projects/projects.routes.ts",
+        "apps/api/src/modules/projects/projects.repository.ts"
+      ],
+      "deliverable": "List only projects accessible to effective Person membership.",
+      "acceptance": "Two-project, different roles, outsider not-visible and stable paginated DTO tests.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-027",
+      "number": 27,
+      "phase": "F3",
+      "title": "Project selection and scoped navigation",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-026",
+        "CAD-WP-061"
+      ],
+      "navigation": [
+        "apps/web/src/features/workspace/ProjectWorkspace.tsx",
+        "apps/web/src/features/workspace/WorkspaceShell.tsx"
+      ],
+      "deliverable": "Replace configured fixed project ID with authorised user selection.",
+      "acceptance": "Project switch, refresh/relogin and unauthorised project denial tested; stable project identity. Uses approved Cadence V1 visual and interaction standard; avoids one-off styling or inaccessible controls.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-028",
+      "number": 28,
+      "phase": "F3",
+      "title": "Self-service internal membership API",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-024",
+        "CAD-WP-064"
+      ],
+      "navigation": [
+        "apps/api/src/modules/project-membership/project-member-admission.repository.ts",
+        "apps/api/src/modules/project-membership/project-membership.routes.ts"
+      ],
+      "deliverable": "Provide self-service invitation/admission and project membership for approved SSO identities without local Cadence passwords.",
+      "acceptance": "An eligible Azure/Google identity can be admitted to the right Person and project; external/unapproved users denied; disabled and removed users fail closed; no ad hoc SQL or local password required.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-029",
+      "number": 29,
+      "phase": "F3",
+      "title": "Membership onboarding browser workflow",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-027",
+        "CAD-WP-028",
+        "CAD-WP-061",
+        "CAD-WP-063",
+        "CAD-WP-064"
+      ],
+      "navigation": [
+        "apps/web/src/features/members/MembersPanel.tsx",
+        "+apps/web/src/features/members/InviteMember.tsx"
+      ],
+      "deliverable": "Let authorised manager invite/admit members through normal UI.",
+      "acceptance": "Approved organisation member can be invited and admitted by authorised UI; a forbidden identity is denied; SSO sign-in, permission changes, and revocation are shown with useful states.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-030",
+      "number": 30,
+      "phase": "F3",
+      "title": "Protected role UI and same-person scenario",
+      "estimate_agent_hours": 3,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-028",
+        "CAD-WP-061"
+      ],
+      "navigation": [
+        "apps/api/src/modules/project-membership/project-role-management.repository.ts",
+        "apps/web/src/features/members/MembersPanel.tsx"
+      ],
+      "deliverable": "Allow valid initial overlapping responsibilities, manage protected role moves safely.",
+      "acceptance": "Permission and succession history tests; no automatic role assumption from organisational title. Uses approved Cadence V1 visual and interaction standard; avoids one-off styling or inaccessible controls.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-031",
+      "number": 31,
+      "phase": "F3",
+      "title": "Task update/status API with permissions",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-003",
+        "CAD-WP-007"
+      ],
+      "navigation": [
+        "apps/api/src/modules/tasks/tasks.service.ts",
+        "apps/api/src/modules/tasks/tasks.routes.ts"
+      ],
+      "deliverable": "Task update/status/assignment API with permissions; retain the existing authoritative manual Task create path.",
+      "acceptance": "Open/in-progress/completed/cancelled transitions, auth, optimistic concurrency/history pass.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-032",
+      "number": 32,
+      "phase": "F3",
+      "title": "Task lifecycle browser UI",
+      "estimate_agent_hours": 5,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-027",
+        "CAD-WP-031",
+        "CAD-WP-061"
+      ],
+      "navigation": [
+        "apps/web/src/features/tasks/MyTasksPanel.tsx",
+        "+apps/web/src/features/tasks/TaskEditor.tsx"
+      ],
+      "deliverable": "Usable Task lifecycle browser UI including manual Create Task, assignment, priority, status update and completion without an AI service.",
+      "acceptance": "Any authorised user can manually create, edit and finish a Task while OpenAI is unavailable or the USD 5 quota is exhausted; My Tasks and Audit reflect every change.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-033",
+      "number": 33,
+      "phase": "F3",
+      "title": "Synchronise My Tasks and Audit after changes",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-020",
+        "CAD-WP-031"
+      ],
+      "navigation": [
+        "apps/api/src/modules/audit/audit.service.ts",
+        "apps/web/src/features/tasks/useMyTasks.ts"
+      ],
+      "deliverable": "Ensure human and agent Task updates remain accurately visible and auditable.",
+      "acceptance": "Fresh My Tasks, cross-project isolation, created/updated/completed history and no duplicate events.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-034",
+      "number": 34,
+      "phase": "F3",
+      "title": "Workspace read model for current work",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-026",
+        "CAD-WP-031"
+      ],
+      "navigation": [
+        "apps/api/src/modules/projects/projects.service.ts",
+        "apps/web/src/features/workspace/useProjectSummary.ts"
+      ],
+      "deliverable": "Provide pending/overdue work and project condition through one consistent API.",
+      "acceptance": "Current tasks and role-specific project view from real persistence, not fixtures.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-035",
+      "number": 35,
+      "phase": "F3",
+      "title": "Company workspace UI with Decisions entry",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-027",
+        "CAD-WP-034",
+        "CAD-WP-038",
+        "CAD-WP-061"
+      ],
+      "navigation": [
+        "apps/web/src/features/workspace/WorkspaceShell.tsx",
+        "apps/web/src/features/workspace/ProjectWorkspace.tsx"
+      ],
+      "deliverable": "Show projects, responsibilities, Decisions and concise project state in coherent navigation.",
+      "acceptance": "Switch between two projects and access Decision Register, with correct empty/error states. Uses approved Cadence V1 visual and interaction standard; avoids one-off styling or inaccessible controls.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-036",
+      "number": 36,
+      "phase": "F4",
+      "title": "Decision provenance, metadata and RLS (no raw transcripts)",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-003",
+        "CAD-WP-007"
+      ],
+      "navigation": [
+        "supabase/migrations/20260808001000_decisions.sql",
+        "+supabase/migrations/202610XXXX_decision_sources.sql"
+      ],
+      "deliverable": "Persist minimal Decision-source provenance and approved extracted evidence while prohibiting retention of the full imported transcript.",
+      "acceptance": "Decision source metadata, extraction time, source fingerprint and approved minimal evidence retained with RBAC/RLS; full imported transcript is not stored in the business database, storage, logs or backups.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-037",
+      "number": 37,
+      "phase": "F4",
+      "title": "Decision proposal, approval and Audit persistence",
+      "estimate_agent_hours": 5,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-036"
+      ],
+      "navigation": [
+        "supabase/migrations/20260808001000_decisions.sql",
+        "+apps/api/src/modules/decisions/decisions.repository.ts"
+      ],
+      "deliverable": "Implement canonical proposed/confirmed/rejected decision flow and source references.",
+      "acceptance": "Approved decision only after authorised human; idempotent approve, evidence/rationale, immutable audit.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-038",
+      "number": 38,
+      "phase": "F4",
+      "title": "Decision API/service and source navigation",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-037"
+      ],
+      "navigation": [
+        "api/Cadence_v0.1_openapi.yaml",
+        "+apps/api/src/modules/decisions/decisions.routes.ts"
+      ],
+      "deliverable": "Expose authorised source, proposed Decision, approval and Decision Register queries.",
+      "acceptance": "Decision read/write/review and source navigation resolve to retained extracted evidence and provenance, not a deleted raw transcript; RLS and authorisation pass.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-039",
+      "number": 39,
+      "phase": "F4",
+      "title": "Manual Decision register/review browser UI",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-027",
+        "CAD-WP-038",
+        "CAD-WP-061"
+      ],
+      "navigation": [
+        "apps/web/src/features/workspace/WorkspaceShell.tsx",
+        "+apps/web/src/features/decisions/DecisionRegister.tsx"
+      ],
+      "deliverable": "Create/view/review Decision manually with evidence and approver.",
+      "acceptance": "Authorised confirm/edit/reject/defer and trace to source; no automatic approval. Uses approved Cadence V1 visual and interaction standard; avoids one-off styling or inaccessible controls.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-040",
+      "number": 40,
+      "phase": "F4",
+      "title": "Normalised pasted-text Decision intake",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-036",
+        "CAD-WP-039",
+        "CAD-WP-061"
+      ],
+      "navigation": [
+        "+apps/web/src/features/decisions/DecisionTextInput.tsx",
+        "+apps/api/src/modules/decisions/decision-source.service.ts"
+      ],
+      "deliverable": "Enter, edit/confirm and save text source consistently across input methods.",
+      "acceptance": "Pasted content is processed through transient extraction and normalised Decision intake; no automatic authoritative decision and no raw-content persistence.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-041",
+      "number": 41,
+      "phase": "F4",
+      "title": "Text transcript import parser",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-040"
+      ],
+      "navigation": [
+        "+apps/web/src/features/decisions/TranscriptImport.tsx",
+        "+apps/api/src/modules/decisions/transcript-parser.ts"
+      ],
+      "deliverable": "Parse .txt/.md/.vtt/.srt imported transcripts through the same transient normalisation interface, without persistent document upload.",
+      "acceptance": "Valid samples produce correct text and source offsets for extraction; malformed/untrusted input bounded; transient raw input is removed after extraction attempt.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-042",
+      "number": 42,
+      "phase": "F4",
+      "title": "Grounded AI Decision extraction",
+      "estimate_agent_hours": 5,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-017",
+        "CAD-WP-038",
+        "CAD-WP-040",
+        "CAD-WP-065",
+        "CAD-WP-066"
+      ],
+      "navigation": [
+        "+apps/api/src/modules/decisions/decision-extraction.service.ts",
+        "apps/api/src/modules/team-agent/team-agent.service.ts"
+      ],
+      "deliverable": "Extract zero/one/many agreed Decisions from bounded source text; do not treat suggestions as decisions.",
+      "acceptance": "Grounded model extracts zero/one/multiple Decision proposals with status, reason and uncertainty; does not fabricate approval; passes source-safe transient-input and organisation-budget tests.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-043",
+      "number": 43,
+      "phase": "F4",
+      "title": "End-to-end transcript/text Decision approval",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-039",
+        "CAD-WP-041",
+        "CAD-WP-042",
+        "CAD-WP-061",
+        "CAD-WP-066"
+      ],
+      "navigation": [
+        "+apps/web/src/features/decisions/DecisionRegister.tsx",
+        "apps/api/src/modules/audit/audit.routes.ts"
+      ],
+      "deliverable": "Join text/import->AI proposals->authorised review->Decision Register->source.",
+      "acceptance": "5-project-compatible flow covers paste and supported transcript file, AI candidate, human edit/reject/confirm, register/provenance; verify no retained raw transcript in DB, files, logs and backup.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-044",
+      "number": 44,
+      "phase": "F4A",
+      "title": "Audio fast feasibility, consent/privacy gate",
+      "estimate_agent_hours": 2,
+      "risk": "SPONSOR",
+      "dependencies": [
+        "CAD-WP-017",
+        "CAD-WP-040"
+      ],
+      "navigation": [
+        "+docs/decisions/audio-feasibility.md",
+        "apps/web/src/features/workspace/WorkspaceShell.tsx"
+      ],
+      "deliverable": "Time-box audio only if provider, consent, file limits and remaining delivery capacity are proven.",
+      "acceptance": "GO or DEFERRED_BY_CAP; no new feature scope or date change; prerequisites verified.",
+      "release_status": "CONDITIONAL_AUDIO",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-045",
+      "number": 45,
+      "phase": "F4A",
+      "title": "Browser Start/Stop/preview capture",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-044"
+      ],
+      "navigation": [
+        "+apps/web/src/features/decisions/AudioRecorder.tsx",
+        "apps/web/src/lib/api.ts"
+      ],
+      "deliverable": "Capture short audio within explicit size/duration limits, only with consent.",
+      "acceptance": "Start/stop/preview/discard, permission denied and browser unsupported tests.",
+      "release_status": "CONDITIONAL_AUDIO",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-046",
+      "number": 46,
+      "phase": "F4A",
+      "title": "Server transcription adapter and disposal",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-044",
+        "CAD-WP-017"
+      ],
+      "navigation": [
+        "+apps/api/src/modules/decisions/transcription.service.ts",
+        "+apps/api/src/modules/decisions/transcription.routes.ts"
+      ],
+      "deliverable": "Transcribe bounded server-uploaded audio, discard raw media and return editable text.",
+      "acceptance": "Credentials server-side, file validation, retention/consent, failures and disposal tests.",
+      "release_status": "CONDITIONAL_AUDIO",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-047",
+      "number": 47,
+      "phase": "F4A",
+      "title": "Audio-to-standard Decision pipeline smoke",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-043",
+        "CAD-WP-045",
+        "CAD-WP-046"
+      ],
+      "navigation": [
+        "+apps/web/src/features/decisions/AudioRecorder.tsx",
+        "+apps/web/src/features/decisions/DecisionTextInput.tsx"
+      ],
+      "deliverable": "Pass the transcript to the same text-source service with no new Decision engine.",
+      "acceptance": "Record->transcribe->edit->propose->review works; otherwise audio remains off with recorded deferral.",
+      "release_status": "CONDITIONAL_AUDIO",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-048",
+      "number": 48,
+      "phase": "F5",
+      "title": "Continuous consumer-provider contract CI",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-003",
+        "CAD-WP-020",
+        "CAD-WP-031",
+        "CAD-WP-038",
+        "CAD-WP-043"
+      ],
+      "navigation": [
+        "api/Cadence_v0.1_openapi.yaml",
+        ".github/workflows/quality.yml"
+      ],
+      "deliverable": "Complete integrated consumer-provider CI, extending the early contract checks established in CAD-WP-003.",
+      "acceptance": "Cross-packet provider/consumer tests run with every affected PR from the first connector onwards; representative renamed fields and missing endpoints fail the gate; end-to-end integrated tests pass.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-049",
+      "number": 49,
+      "phase": "F5",
+      "title": "Hosted two-session M1 synthetic rehearsal",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-014",
+        "CAD-WP-063",
+        "CAD-WP-064"
+      ],
+      "navigation": [
+        "apps/web/src/features/discussion/DiscussionPanel.tsx",
+        "apps/web/src/features/audit/TaskAuditPanel.tsx"
+      ],
+      "deliverable": "Prove discussion reload, cross-user refresh, baseline proposal, human approval, Task, Audit and role denial hosted. The M1 rehearsal may use the existing deterministic development proposer when clearly labelled; real LLM acceptance is separately mandatory for V1.0.",
+      "acceptance": "Hosted two-session login with configured Entra sign-in, durable Discussion, automatic worker, human Task review and role isolation pass; no passwords local to Cadence.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-050",
+      "number": 50,
+      "phase": "F5",
+      "title": "Real PostgreSQL negative security regression",
+      "estimate_agent_hours": 4,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-024",
+        "CAD-WP-028",
+        "CAD-WP-031",
+        "CAD-WP-038",
+        "CAD-WP-064"
+      ],
+      "navigation": [
+        "supabase/migrations/20260808002600_rls.sql",
+        "tests/schema_smoke.sql"
+      ],
+      "deliverable": "Verify privileges across new project/membership/Task/Decision data against real PostgreSQL.",
+      "acceptance": "Real PostgreSQL migrations, RLS denials, five-project isolation, SSO identity admission, unapproved-user rejection and Decision role checks verified on disposable database.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-051",
+      "number": 51,
+      "phase": "F5",
+      "title": "Operational logs, support owner and incident runbook",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-014",
+        "CAD-WP-015",
+        "CAD-WP-067"
+      ],
+      "navigation": [
+        "+docs/operations/SUPPORT.md",
+        "apps/api/src/worker.ts"
+      ],
+      "deliverable": "Provide observable support, incident and recovery operations using configurable named primary and backup operators.",
+      "acceptance": "Operator assignments are stored outside source code, replaceable by authorised procedure, role separation respected, runbook names active configured contacts and realistic on-call escalation.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-052",
+      "number": 52,
+      "phase": "F5",
+      "title": "Independent isolated database restore proof",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-007",
+        "CAD-WP-051"
+      ],
+      "navigation": [
+        "supabase/migrations/20260808001000_decisions.sql",
+        "+docs/operations/RESTORE.md"
+      ],
+      "deliverable": "Restore selected project records and permissions into isolated target and prove usable recovery.",
+      "acceptance": "Backup and isolated restore proof preserves authoritative Decisions/Tasks and operator configuration, but contains no deleted transcript raw payload or AI secrets.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-053",
+      "number": 53,
+      "phase": "F5",
+      "title": "M1 Pilot Activation sponsor GO/NO-GO",
+      "estimate_agent_hours": 1,
+      "risk": "SPONSOR",
+      "dependencies": [
+        "CAD-WP-049",
+        "CAD-WP-051",
+        "CAD-WP-052",
+        "CAD-WP-063",
+        "CAD-WP-064",
+        "CAD-WP-067"
+      ],
+      "navigation": [
+        "docs/milestones/M1_CONTROLLED_PILOT.md",
+        "+docs/releases/M1_ACTIVATION.md"
+      ],
+      "deliverable": "Authorise exactly one small real-project pilot after safety/restore/support proof.",
+      "acceptance": "GO only with hosted SSO, valid configured operator and backup, supervised worker, security, logs and isolated restore; no live project content before gate.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-054",
+      "number": 54,
+      "phase": "F5",
+      "title": "Five-working-day M1 real-user pilot",
+      "estimate_agent_hours": 3,
+      "risk": "SPONSOR",
+      "dependencies": [
+        "CAD-WP-053"
+      ],
+      "navigation": [
+        "docs/milestones/M1_CONTROLLED_PILOT.md",
+        "+docs/releases/M1_PILOT_RESULTS.md"
+      ],
+      "deliverable": "Complete five-working-day controlled M1 use by 5-10 named real users, without routine developer intervention.",
+      "acceptance": "Real pilot user evidence covers sign-in, membership, Discussion, deterministic-or-real-labelled Task proposal, review, worker, audit, permissions, restore and support; no false real-AI claim.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 5
+    },
+    {
+      "id": "CAD-WP-055",
+      "number": 55,
+      "phase": "F5",
+      "title": "Five-project complete-journey company UAT",
+      "estimate_agent_hours": 6,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-022",
+        "CAD-WP-023",
+        "CAD-WP-025",
+        "CAD-WP-027",
+        "CAD-WP-029",
+        "CAD-WP-030",
+        "CAD-WP-032",
+        "CAD-WP-033",
+        "CAD-WP-035",
+        "CAD-WP-043",
+        "CAD-WP-048",
+        "CAD-WP-050",
+        "CAD-WP-062",
+        "CAD-WP-063",
+        "CAD-WP-064",
+        "CAD-WP-065",
+        "CAD-WP-066",
+        "CAD-WP-067"
+      ],
+      "navigation": [
+        "apps/web/src/features/workspace/ProjectWorkspace.tsx",
+        "+tests/e2e/company-journey.spec.ts"
+      ],
+      "deliverable": "Complete full company-scale hosted user acceptance: one configured organisation, 5-10 real users, exactly five active test/initial projects, secure SSO and real AI.",
+      "acceptance": "All five projects are accessible to authorised members and isolated from others; each demonstrates project navigation, Discussion, AI proposal, human review, manual fallback, Decision from text/transcript, Task updates and Audit. Two or more real users run the complete journey on release-candidate SHA; USD 5 monthly cap and operator handover included.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-056",
+      "number": 56,
+      "phase": "F5",
+      "title": "Signed V1.0 package, About screen and date controls",
+      "estimate_agent_hours": 3,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-016",
+        "CAD-WP-035",
+        "CAD-WP-061"
+      ],
+      "navigation": [
+        "+apps/web/src/features/about/AboutCadence.tsx",
+        "+.github/workflows/release.yml"
+      ],
+      "deliverable": "Produce signed v1.0.0 package and About screen with true released_at, source copyright notice and HELP academic licence reference.",
+      "acceptance": "Package hash matches source/SHA, owner and licence wording documented, application About distinguishes target from verified released date, no implied transfer of HELP data rights.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-057",
+      "number": 57,
+      "phase": "F5",
+      "title": "16 November release GO/NO-GO",
+      "estimate_agent_hours": 2,
+      "risk": "SPONSOR",
+      "dependencies": [
+        "CAD-WP-048",
+        "CAD-WP-050",
+        "CAD-WP-052",
+        "CAD-WP-054",
+        "CAD-WP-055",
+        "CAD-WP-056",
+        "CAD-WP-063",
+        "CAD-WP-064",
+        "CAD-WP-065",
+        "CAD-WP-066",
+        "CAD-WP-067"
+      ],
+      "navigation": [
+        "+docs/releases/V1_GO_NO_GO.md",
+        "docs/governance/CADENCE_REQUIREMENT_TRACEABILITY.md"
+      ],
+      "deliverable": "Approve exact release candidate and rollback/support condition after all mandatory tests.",
+      "acceptance": "Sponsor GO/NO-GO on exact staging SHA includes licence/IP sign-off, Azure SSO live evidence, provider/model, USD 5 cap, transient transcript policy, operators and backup, five projects, 5-10 users and genuine real-user UAT. No waiver of P0/P1.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-058",
+      "number": 58,
+      "phase": "F5",
+      "title": "17 November V1.0 hosted release and verification",
+      "estimate_agent_hours": 3,
+      "risk": "SPONSOR",
+      "dependencies": [
+        "CAD-WP-057"
+      ],
+      "navigation": [
+        "+docs/releases/RELEASE_MANIFEST.json",
+        "+apps/web/src/features/about/AboutCadence.tsx"
+      ],
+      "deliverable": "Deploy signed Cadence 1.0.0 to company target on 2026-11-17 local time.",
+      "acceptance": "At least five configured real projects in a single organisation with 5-10 actual SSO users; live web/API, AI, Decisions, Tasks, budget enforcement, operator configuration and restore proven. About shows Released 17 Nov 2026 only after verified deployment.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-059",
+      "number": 59,
+      "phase": "F5",
+      "title": "Ten-working-day post-release real-use acceptance",
+      "estimate_agent_hours": 2,
+      "risk": "SPONSOR",
+      "dependencies": [
+        "CAD-WP-058"
+      ],
+      "navigation": [
+        "+docs/releases/V1_FIELD_ACCEPTANCE.md",
+        "docs/governance/CADENCE_REQUIREMENT_TRACEABILITY.md"
+      ],
+      "deliverable": "Observe 5+ users, 2+ active projects after V1.0 release and formally accept or block.",
+      "acceptance": "10 full working days, normal business activity, decision import evidence, no routine dev repair; accepted or BLOCKED.",
+      "release_status": "POST_RELEASE",
+      "calendar_min_workdays": 10
+    },
+    {
+      "id": "CAD-WP-060",
+      "number": 60,
+      "phase": "FUI",
+      "title": "Freeze Cadence V1 visual system and screen references",
+      "estimate_agent_hours": 3,
+      "risk": "SPONSOR",
+      "dependencies": [
+        "CAD-WP-001",
+        "CAD-WP-007"
+      ],
+      "navigation": [
+        "apps/web/src/index.css",
+        "apps/web/src/features/workspace/WorkspaceShell.tsx",
+        "+docs/design/CADENCE_V1_UI_DESIGN_STANDARD.md"
+      ],
+      "deliverable": "Establish Cadence-owned visual direction informed by Plane and Leantime, with design tokens, navigation hierarchy and minimal desktop/mobile representative states.",
+      "acceptance": "One sponsor visual direction sign-off from actual Codex-produced screenshots or sketches; versioned token names; mobile/navigation/accessibility checklist; no copied code/brand assets and no scope expansion.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-061",
+      "number": 61,
+      "phase": "FUI",
+      "title": "Implement refined login and responsive workspace shell",
+      "estimate_agent_hours": 5,
+      "risk": "AUTO",
+      "dependencies": [
+        "CAD-WP-060",
+        "CAD-WP-063"
+      ],
+      "navigation": [
+        "apps/web/src/index.css",
+        "apps/web/src/features/auth/LoginScreen.tsx",
+        "apps/web/src/features/workspace/WorkspaceShell.tsx",
+        "apps/web/src/features/workspace/ProjectWorkspace.tsx"
+      ],
+      "deliverable": "Apply approved styling to login, topbar, navigation, summary panels, typography, spacing, forms and core feedback states. Preserve React and existing business contracts.",
+      "acceptance": "Responsive, visually cohesive login and workspace with SSO-only sign-in, project navigation, desktop/mobile accessibility, meaningful error/empty states and no fake release identity.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-062",
+      "number": 62,
+      "phase": "FUI",
+      "title": "Confirm V1 visual consistency and usability",
+      "estimate_agent_hours": 3,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-061",
+        "CAD-WP-025",
+        "CAD-WP-027",
+        "CAD-WP-029",
+        "CAD-WP-030",
+        "CAD-WP-032",
+        "CAD-WP-035",
+        "CAD-WP-039",
+        "CAD-WP-040",
+        "CAD-WP-043"
+      ],
+      "navigation": [
+        "apps/web/src/index.css",
+        "apps/web/src/features/workspace/WorkspaceShell.tsx",
+        "apps/web/src/features/team-agent/ProposalReviewPanel.tsx",
+        "+docs/design/V1_UI_VISUAL_ACCEPTANCE.md"
+      ],
+      "deliverable": "Review representative actual V1.0 screens and their key interactive states for visual cohesion, easy navigation and nontechnical usability; repair only scoped visual defects.",
+      "acceptance": "Actual browser screenshots and interactive sessions show Azure login (Google alternative config), five projects, Task manual create, AI quota fallback, Decision text/transcript, About/copyright, accessible desktop/mobile. No blocking UX defect.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-063",
+      "number": 63,
+      "phase": "FSSO",
+      "title": "Configurable Entra ID and Google OAuth sign-in",
+      "estimate_agent_hours": 5,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-003",
+        "CAD-WP-007"
+      ],
+      "navigation": [
+        "apps/web/src/features/auth/useAuth.ts",
+        "apps/web/src/features/auth/LoginScreen.tsx",
+        "apps/web/src/lib/supabase.ts",
+        "+apps/web/src/lib/identity-providers.ts"
+      ],
+      "deliverable": "Replace Cadence email/password UI with configured Microsoft Entra or Google OAuth through existing Supabase Auth; HELP selects Entra tenant.",
+      "acceptance": "Both provider adapters/configs and redirect allowlists verified with mocked flow; HELP Entra live login evidenced with approved tenant and identity-provider credentials; no local Cadence password and no unknown-account automatic access.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-064",
+      "number": 64,
+      "phase": "FSSO",
+      "title": "SSO Person mapping, tenant restriction and revocation",
+      "estimate_agent_hours": 5,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-003",
+        "CAD-WP-007",
+        "CAD-WP-063"
+      ],
+      "navigation": [
+        "apps/api/src/infrastructure/auth/supabase-auth-provider.ts",
+        "apps/api/src/modules/identity/identity.service.ts",
+        "apps/api/src/infrastructure/database/supabase-identity-persistence.repository.ts",
+        "apps/api/src/modules/project-membership/project-authorisation.service.ts"
+      ],
+      "deliverable": "Map approved OAuth subjects to stable Cadence Person/memberships; enforce organisation/tenant allowlist and denial/revocation without altering Person history.",
+      "acceptance": "Valid tenant identity admitted only when authorised; matching emails alone never grant project authority; disabled membership/identity denied immediately; switching allowed providers does not change canonical Person or owner/sponsor/manager history.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-065",
+      "number": 65,
+      "phase": "FAI",
+      "title": "Configurable monthly organisation AI cap",
+      "estimate_agent_hours": 5,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-003",
+        "CAD-WP-007",
+        "CAD-WP-017"
+      ],
+      "navigation": [
+        "apps/api/src/modules/team-agent/team-agent.service.ts",
+        "apps/api/src/infrastructure/database/supabase-team-agent.repository.ts",
+        "+apps/api/src/modules/ai-budget/ai-budget.service.ts",
+        "+supabase/migrations/AI_BUDGET_PLACEHOLDER.sql"
+      ],
+      "deliverable": "Enforce USD 5 calendar-month organisation-wide usage ceiling across Task/Decision/summary AI requests, with atomic cost reservations and safe cutoff.",
+      "acceptance": "Five-project concurrent requests cannot overspend estimated cost envelope; in-app ledger and usage notifications work; requests fail closed before quota exhaustion, manual flows remain usable; provider OpenAI project hard spend limit is configured where available with a margin for delayed billing; budget editing audited.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-066",
+      "number": 66,
+      "phase": "FPRIV",
+      "title": "Transient transcript intake and deletion",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-017",
+        "CAD-WP-036",
+        "CAD-WP-041"
+      ],
+      "navigation": [
+        "+apps/api/src/modules/decisions/transcript-intake.ts",
+        "+apps/api/src/modules/decisions/transcript-retention.test.ts",
+        "supabase/migrations/20260808001000_decisions.sql"
+      ],
+      "deliverable": "Process text/transcript in bounded temporary memory, extract structured candidates, discard full raw text promptly, retain approved derived Decision evidence only.",
+      "acceptance": "Success, rejection, timeout and failure paths remove raw source; raw is absent from persistence, logs, files, crash outputs and backups; provider requests request non-storage where supported; help/privacy notice differentiates app deletion from external provider retention.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-067",
+      "number": 67,
+      "phase": "FOPS",
+      "title": "Configurable primary and backup operator roles",
+      "estimate_agent_hours": 4,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-003",
+        "CAD-WP-007",
+        "CAD-WP-064"
+      ],
+      "navigation": [
+        "apps/api/src/modules/identity/identity.types.ts",
+        "apps/api/src/modules/project-membership/project-permissions.ts",
+        "+apps/api/src/modules/operations/operator-config.ts",
+        "+docs/operations/OPERATOR_ASSIGNMENT.md"
+      ],
+      "deliverable": "Allow authorised assignment/replacement of named primary and backup operators and contact routes without application code changes; preserve least privilege.",
+      "acceptance": "Operator can be replaced by approved administrative action/config, auditable Person identity, no hard-coded email or personal laptop path, no global project-reader access, operator support handover proven.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    },
+    {
+      "id": "CAD-WP-068",
+      "number": 68,
+      "phase": "FDEVOPS",
+      "title": "Bounded overnight Codex runner on Windows laptop",
+      "estimate_agent_hours": 5,
+      "risk": "REVIEW",
+      "dependencies": [
+        "CAD-WP-004",
+        "CAD-WP-005",
+        "CAD-WP-006"
+      ],
+      "navigation": [
+        "+tools/cadence-unattended.ps1",
+        "+tools/cadence-runner-status.ps1",
+        "+docs/development/OVERNIGHT_RUNNER.md"
+      ],
+      "deliverable": "Run eligible approved work packets continuously on powered, networked laptop, preserving fixed packet scope, remote checkpoints and safe stop/resume.",
+      "acceptance": "Runner auto-selects only eligible contract packets; verifies repo/account/worktree and lease; applies time/attempt/credential/CI/merge gates; restarts safely after simulated interruption; emits end-of-run status and blocks privileged actions, hosted deployments and new scopes until approvals.",
+      "release_status": "MANDATORY",
+      "calendar_min_workdays": 0
+    }
+  ],
+  "visual_design_standard": {
+    "primary_reference": "Plane — refined hierarchy, compact app navigation and calm SaaS visual design",
+    "accessibility_reference": "Leantime — low-cognitive-load task and project flows for nontechnical users",
+    "workflow_reference": "Huly — put collaboration and context next to relevant work, without extra functionality",
+    "governance_reference": "OpenProject — clear status, activity and responsibility hierarchy, but no complex admin chrome",
+    "design_intelligence_reference": "UI UX Pro Max — optional design-system/checklist inspiration, not a runtime dependency or new product scope",
+    "theme": "Calm, modern, clean and pleasing; Cadence own distinctive identity, not a clone.",
+    "design_system_document": "docs/design/CADENCE_V1_UI_DESIGN_STANDARD.md",
+    "explicitly_out_of_scope": [
+      "New framework migration",
+      "Full dark/light theme switcher",
+      "Custom dashboard charts not backed by committed data",
+      "Icon pack rewrite",
+      "Animations/3D effects",
+      "Copied product assets"
+    ],
+    "screen_acceptance": [
+      "Login",
+      "Project picker and creation",
+      "Workspace",
+      "Discussion and proposal review",
+      "Tasks",
+      "Decisions and text/transcript import",
+      "Member administration",
+      "About/release"
+    ],
+    "screen_sizes": [
+      "Desktop 1440 x 900 or comparable",
+      "Narrow mobile 390 x 844 or comparable"
+    ],
+    "gates": [
+      "Visual direction reviewed once before screen implementation",
+      "No hidden navigation at mobile widths",
+      "Keyboard focus visible",
+      "Readable AA-level contrast",
+      "Empty/loading/error/permission states complete",
+      "Screenshots of staging product reviewed before release"
+    ],
+    "target_release_date": "2026-11-17"
+  },
+  "licensing": {
+    "intended_source_copyright_owner": "Ngoh Chee Hung",
+    "initial_licensee": "HELP University",
+    "grant": "non-exclusive royalty-free academic/institutional use, terms subject to executed written grant",
+    "commercial_rights": "reserved to copyright owner; no generic open-source grant implied",
+    "data_control": "HELP University is the operator/controller of HELP institutional project data; no source ownership transfer implied",
+    "required_human_gate": "Confirm actual IP rights under employment/contract terms and approve written licence before live HELP deployment",
+    "public_repository_warning": "GitHub repository currently public, LICENSE file was absent at inspected source revision; do not assume public visibility grants reproduction rights."
+  },
+  "organisation_initial": {
+    "name": "HELP University",
+    "deployment_mode": "single_organisation",
+    "licensed_tier": "academic_free",
+    "users_min": 5,
+    "users_max": 10,
+    "projects": 5,
+    "capacity_interpretation": "initial release acceptance footprint, not hardcoded organisational, user, or project product limits",
+    "operator_assignment": "audited configurable roles, primary and backup; no source-code values"
+  },
+  "authentication": {
+    "mechanism": "Supabase Auth OAuth",
+    "providers_configurable": [
+      "azure",
+      "google"
+    ],
+    "initial_provider": "azure",
+    "tenant_scoped": true,
+    "local_password_login": false,
+    "stable_person_mapping": true,
+    "access_rule": "SSO authentication never implies Cadence project membership; approved accounts only"
+  },
+  "ai_product": {
+    "provider_configurable": true,
+    "initial_provider": "openai",
+    "initial_model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "organisation_budget_usd_calendar_month": 5.0,
+    "budget_hard_stop": true,
+    "provider_project_hard_spend_limit_required_where_supported": true,
+    "app_budget_headroom_advisory_usd": 0.25,
+    "budget_scope": "product usage all projects and AI features, not autonomous Codex development",
+    "manual_fallback": true
+  },
+  "transcript_policy": {
+    "raw_source_storage": "transient process only; discard after extraction attempt",
+    "retain": "approved structured Decision, rationale, source fingerprint and minimal approved derived evidence",
+    "must_not_enter": [
+      "database raw fields",
+      "object storage",
+      "logs",
+      "crash reports",
+      "backups"
+    ],
+    "third_party_provider_retention": "separate provider terms apply; use store=false and disclose limits",
+    "audio": "conditional, no live stream"
+  },
+  "date_frozen": "2026-10-13",
+  "freeze_authority": "User explicitly authorised the 68-packet scope freeze in ChatGPT on 2026-10-13; this is not a legal IP or HELP licence signature.",
+  "freeze": {
+    "packet_register_locked": true,
+    "packet_count": 68,
+    "mandatory_pre_release_packets": 63,
+    "conditional_audio_packets": 4,
+    "post_release_packets": 1,
+    "baseline_main_sha_last_verified": "80223c078539544a8d53b64abcbfc37ee7483783",
+    "baseline_note": "Last remotely inspected main SHA, NOT asserted to be the code baseline currently installed on the developer laptop; WP-002 must pin current remote and local changes.",
+    "no_unsponsored_new_packets": true,
+    "no_exclusion_of_mandatory_acceptance_by_agents": true,
+    "no_unapproved_date_change": true,
+    "source_ownership": "Ngoh Chee Hung - asserted intention; legal rights to be confirmed before institutional release",
+    "licence": "HELP University academic royalty-free licence requires separate written acknowledgement",
+    "audio_default": "DEFERRED_BY_CAP unless sponsor explicitly enables and all core gates are GREEN",
+    "execution_initial": "SERIAL_ONE_WRITER",
+    "second_lane": "Only after stable acceptance of WP-003,004,005,006,007,068, 3 consecutive engineering packet acceptances and human ENABLE_SECOND_AGENT",
+    "proposal_requirement": "Every issue/work package must link this exact version, registered packet ID, immutable API contracts, dependency acceptance SHAs, allowed paths, operator cost bounds and tests",
+    "scope_change_handling": "Escalate and stop; only sponsor-signed amendment with cost/date analysis may modify frozen scope. No automatic packet discovery/creation.",
+    "release_outcome": "Only display Released 17 November 2026 if deployed and verified on that date; otherwise GO/NO-GO record and no false release.",
+    "external_gates": [
+      "HELP IP/licence written authorisation",
+      "Entra tenant OAuth registration + approved pilot identities",
+      "OpenAI project access + gpt-6-luna / medium + US$5 budget policy",
+      "hosting environment and isolated Supabase target",
+      "primary and backup operators and credential custody",
+      "five real projects and 5-10 pilot users"
+    ],
+    "acceptance_threshold": "No P0/P1; complete V1 real-user journey; audited provider/consumer test evidence; non-compressible pilot and real-use acceptance."
+  }
+}
