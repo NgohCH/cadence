@@ -32,3 +32,17 @@ scope.
 No governed baseline requirement may be moved beyond M3. Every future vertical
 slice must identify the baseline IDs it advances and update traceability at
 closure.
+
+## Frozen V1.0 execution reconciliation
+
+The merged [v1.8.0 execution contract](CADENCE_V1_0_FROZEN_EXECUTION_CONTRACT_v1_8_0.md)
+and [68-packet register](CADENCE_V1_0_FROZEN_PACKET_REGISTER_v1_8_0.json) remain
+unchanged. Read the [CAD-WP-002 reconciliation](CADENCE_V1_0_CAD_WP_002_VS005_RECONCILIATION.md)
+and [commit inventory](CADENCE_V1_0_CAD_WP_002_VS005_COMMIT_INVENTORY.json) for
+the retained VS005 work and selective successor routes.
+
+The [M1 sequence amendment](CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md) is
+**PROPOSED — NOT APPROVED OR APPLIED**. The Owner's decision to stop selecting
+VS005 does not close its requirements, accept CAD-WP-001/002, approve the
+amendment or activate the pilot. The Scope Baseline and existing M1 contract
+retain their authority pending explicit governance disposition.
