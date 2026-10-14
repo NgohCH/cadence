@@ -1,5 +1,6 @@
 {
   "name": "cadence",
+  "private": true,
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -31,7 +32,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "UNLICENSED",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/NgohCH/cadence/issues"

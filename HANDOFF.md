@@ -92,11 +92,19 @@ part of the accepted main implementation baseline.
 
 ## Current Delivery State
 
-Active governance checkpoint: **CAD-WP-002 inventory and salvage reconciliation;
-formal acceptance pending.** The frozen V1.0 scope is merged. CAD-WP-001's
+Active governance checkpoint: **CAD-WP-001/002 documentary and human decision
+preparation; formal acceptance pending.** The frozen V1.0 scope is merged. CAD-WP-001's
 legal/IP authority and written HELP academic licence checkpoint is outstanding;
 neither CAD-WP-001 nor CAD-WP-002 is marked ACCEPTED here.
 
+- [Draft copyright/HELP academic terms](docs/legal/CADENCE_COPYRIGHT_AND_LICENCE.md):
+  ownership, authority and terms are unconfirmed/unexecuted.
+- [Exact-source M1 sponsor decision preparation](docs/governance/CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md):
+  decision PENDING; proposal unchanged; no amendment enacted.
+- [Dependency acceptance evidence checklist](docs/governance/CADENCE_V1_0_DEPENDENCY_ACCEPTANCE_CHECKLIST.md):
+  completed legal/IP authority and separate sponsor packet decisions are
+  still required. Final HELP institutional signing remains an independent
+  live-deployment gate, distinct from early draft/authority review.
 - [Reconciliation and salvage](docs/governance/CADENCE_V1_0_CAD_WP_002_VS005_RECONCILIATION.md).
 - [82-commit inventory](docs/governance/CADENCE_V1_0_CAD_WP_002_VS005_COMMIT_INVENTORY.json).
 - [M1 sequencing amendment](docs/governance/CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md):
