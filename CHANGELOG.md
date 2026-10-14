@@ -6,6 +6,18 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### V1.0 — CAD-WP-001/002 dependency-clearance preparation
+
+- Added draft copyright/HELP academic terms with explicit employment/IP,
+  existing ISC metadata, institutional data and signing review gates.
+- Pinned the unchanged M1 proposal for an attributable exact-source sponsor
+  decision; no approval or enactment is recorded.
+- Documented formal packet acceptance evidence separately from final HELP
+  licence execution for live deployment. CAD-WP-003 remains blocked until
+  its CAD-WP-001/002 dependencies are formally accepted.
+- No frozen packet, application, database, hosting or baseline-status change.
+
+
 ### CAD-WP-002 — V1.0 execution-path reconciliation
 
 - Recorded the merged v1.8.0 scope freeze, retained nine-worktree inventory,

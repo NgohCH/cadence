@@ -46,3 +46,14 @@ The [M1 sequence amendment](CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md) is
 VS005 does not close its requirements, accept CAD-WP-001/002, approve the
 amendment or activate the pilot. The Scope Baseline and existing M1 contract
 retain their authority pending explicit governance disposition.
+
+## Dependency-clearance review documents
+
+- [Draft copyright and HELP academic licence](../legal/CADENCE_COPYRIGHT_AND_LICENCE.md).
+- [Exact-source M1 sponsor decision preparation](CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md).
+- [CAD-WP-001/002 acceptance evidence checklist](CADENCE_V1_0_DEPENDENCY_ACCEPTANCE_CHECKLIST.md).
+
+These documents prepare human review only. Legal/IP authority, institutional
+execution, sponsor amendment approval/enactment and formal packet acceptance
+are distinct. All remain unconfirmed/pending here; the 68 frozen packet
+definitions and the existing M1 milestone contract remain unchanged.

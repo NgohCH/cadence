@@ -81,6 +81,35 @@ closure evidence includes the actual API, browser, authorization, isolation,
 and two-user runtime evidence recorded below and in the VS003 contract. Original
 commitments moved beyond M3: **0**.
 
+## CAD-WP-001/002 dependency-clearance preparation — no acceptance
+
+PR #11 is merged into main at
+`1058a0d96385a26630c5a9193dca6cffd4027458`; its documentary reconciliation
+does not establish legal rights or formal packet acceptance.
+
+The [draft legal document](../legal/CADENCE_COPYRIGHT_AND_LICENCE.md) records
+intended ownership subject to employment/IP confirmation, proposed HELP
+academic terms, data control and reserved third-party/commercial boundaries.
+Review of the existing ISC package label/publication history is outstanding.
+Draft existence or a legal-review request is not a completed legal/IP
+authority checkpoint. The final executed HELP licence remains a separate
+live-deployment gate; no rights or signature are asserted here.
+
+The [M1 sponsor decision preparation](CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md)
+pins the unchanged proposal at that exact merged source. No sponsor decision
+is recorded and no M1 amendment is enacted. The existing milestone contract
+remains governing.
+
+The [acceptance checklist](CADENCE_V1_0_DEPENDENCY_ACCEPTANCE_CHECKLIST.md)
+lists remaining evidence and separate human decisions. CAD-WP-001 and
+CAD-WP-002 remain **NOT ACCEPTED**. CAD-WP-003 remains blocked on their
+required formal acceptance. Archive coverage/recovery stays UNVERIFIED;
+no new investigation or recovery acceptance is claimed.
+
+Baseline requirement rows and M0–M3 assignments are unchanged. Original
+commitments removed / moved beyond M3: **0 / 0**. No numbered packet,
+implementation, deployment or institutional approval is created.
+
 ## CAD-WP-002 execution-path reconciliation — acceptance pending
 
 The V1.0 scope freeze v1.8.0 is merged at
