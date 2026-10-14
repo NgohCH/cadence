@@ -47,10 +47,18 @@ silently added as an earlier frozen packet dependency. An acceptable early
 draft/authority checkpoint does not authorise deployment while signing remains
 pending. Privacy/data-sharing and pilot/release GO decisions remain separate.
 
-Root package metadata currently labels the licence ISC while no root licence
-file was found. Its legal effect and consistency with the intended restricted
-academic grant require express review; this PR changes neither metadata nor
-past rights. Private supporting contracts/signatures remain outside GitHub.
+The Project Owner has selected proprietary Cadence software. New first-party
+root/API package metadata is UNLICENSED with `private: true`; corresponding
+lockfile root package entries agree. The web manifest stays unchanged with its
+existing private flag. HELP University is the intended non-exclusive,
+royalty-free academic/institutional licensee under a **separate written grant**.
+
+Ownership/employment IP rights remain subject to confirmation. Historical ISC
+declarations, publication history and any valid past grants still require
+legal review; metadata changes do not retroactively revoke rights. Third-party
+licences remain unaffected. This policy correction neither completes the
+legal/IP authority checkpoint nor executes the HELP licence. Private supporting
+contracts/signatures remain outside GitHub.
 
 ## Acceptance recording and next action
 

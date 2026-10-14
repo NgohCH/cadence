@@ -23,20 +23,33 @@ Proposed notice for later review: **Copyright © 2026 Ngoh Chee Hung, subject
 to confirmed rights.** This is proposed wording, not a release notice or a
 representation that rights have been confirmed.
 
-## Existing licence metadata — unresolved review item
+## Proprietary first-party metadata; historical rights review
 
-At verified main `1058a0d96385a26630c5a9193dca6cffd4027458`, root
-`package.json` contains `"license": "ISC"`; no root LICENSE/LICENCE/COPYING
-file was found. This is a discrepancy with the intended restricted academic
-terms. It is not resolved by this draft.
+The Project Owner has explicitly selected **proprietary Cadence software**.
+Root `package.json` and `apps/api/package.json` now declare
+`"license": "UNLICENSED"` and `"private": true`; their lockfile root package
+entries declare UNLICENSED consistently. The web manifest remains unchanged
+with its existing `private: true`. Third-party component licences and
+lockfile entries are unaffected.
 
-Review publication history, any earlier grants, contribution terms and
-third-party notices to establish their legal effect. Public visibility alone
-does not settle the question; this draft does not revoke existing rights,
-replace an earlier valid grant or establish that no grant exists. Package
-metadata and application code are unchanged. Required corrective wording or
-rights documentation must be expressly authorised through the existing
-governed ownership/release routes; do not silently rewrite the history.
+HELP University remains the intended **non-exclusive, royalty-free
+academic/institutional licensee under a separate written grant**. UNLICENSED
+metadata is the first-party policy declaration, not that institutional grant
+or confirmation of the intended owner's employment/IP rights.
+
+[npm's package metadata guidance](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#license)
+supports UNLICENSED and the private flag for this declaration and accidental
+npm-publication prevention. These flags do not change repository visibility,
+establish ownership or execute a licence.
+
+At main `1058a0d96385a26630c5a9193dca6cffd4027458` and the original PR #12
+head `ff414c5b1c8e759e7d6af9ad16595b2f4455c3af`, root/API metadata declared
+ISC. **Historical ISC declarations, publication history, contribution terms
+and any valid past grants still require legal review. Changing metadata does
+not retroactively revoke rights.** This correction does not purport to revoke
+an independently valid grant, rewrite that history or grant rights over
+third-party materials. Ownership, authority and final HELP signing remain
+pending as described below.
 
 ## Proposed non-exclusive, royalty-free academic licence
 

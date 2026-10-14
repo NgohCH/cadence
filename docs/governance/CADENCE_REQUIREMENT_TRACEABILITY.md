@@ -90,7 +90,7 @@ does not establish legal rights or formal packet acceptance.
 The [draft legal document](../legal/CADENCE_COPYRIGHT_AND_LICENCE.md) records
 intended ownership subject to employment/IP confirmation, proposed HELP
 academic terms, data control and reserved third-party/commercial boundaries.
-Review of the existing ISC package label/publication history is outstanding.
+Review of historical ISC declarations/publication history remains outstanding.
 Draft existence or a legal-review request is not a completed legal/IP
 authority checkpoint. The final executed HELP licence remains a separate
 live-deployment gate; no rights or signature are asserted here.

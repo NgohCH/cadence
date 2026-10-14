@@ -6,6 +6,18 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### CAD-WP-001 / PR #12 — Proprietary metadata correction
+
+- Applied the Project Owner's explicit proprietary policy: root/API manifests
+  use UNLICENSED and private metadata; lockfile root licences match.
+- Preserved dependency versions, resolved/integrity data, third-party licences
+  and the already-private web manifest.
+- Reconciled draft HELP academic/institutional licensing and historical ISC
+  review without asserting ownership, revoking past rights or executing a grant.
+- M1 proposal source/content pins, frozen packets/date and pending sponsor,
+  legal/IP and formal acceptance gates remain unchanged.
+
+
 ### V1.0 — CAD-WP-001/002 dependency-clearance preparation
 
 - Added draft copyright/HELP academic terms with explicit employment/IP,
