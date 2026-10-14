@@ -65,8 +65,10 @@ are retained, with local implementation/evidence not merged or accepted.
 
 VS005 is not represented as completed, accepted, deployed or successfully
 piloted. Historical M1 runtime, recovery/support and Agent obligations remain
-governed. Their proposed successor sequencing is not yet approved;
-the existing M1 milestone contract remains in force.
+governed. NgohCH's sponsor approval of the exact pinned successor sequence
+is now RECORDED (14 October 2026). M1 contract revision 1.1 becomes effective
+only when its governance enactment PR merges; the prior main contract remains
+in force until then. Approval and merge do not accept any implementation.
 
 The Pilot Activation Gate has not yet been satisfied and no real-user M1 pilot
 activation is claimed at this checkpoint.
@@ -92,15 +94,16 @@ part of the accepted main implementation baseline.
 
 ## Current Delivery State
 
-Active governance checkpoint: **CAD-WP-001/002 documentary and human decision
-preparation; formal acceptance pending.** The frozen V1.0 scope is merged. CAD-WP-001's
+Active governance checkpoint: **Sponsor-approved M1 sequencing enactment;
+effective only upon enactment PR merge; CAD-WP-001/002 formal acceptance pending.** The frozen V1.0 scope is merged. CAD-WP-001's
 legal/IP authority and written HELP academic licence checkpoint is outstanding;
 neither CAD-WP-001 nor CAD-WP-002 is marked ACCEPTED here.
 
 - [Draft copyright/HELP academic terms](docs/legal/CADENCE_COPYRIGHT_AND_LICENCE.md):
   ownership, authority and terms are unconfirmed/unexecuted.
-- [Exact-source M1 sponsor decision preparation](docs/governance/CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md):
-  decision PENDING; proposal unchanged; no amendment enacted.
+- [Exact-source M1 sponsor decision record](docs/governance/CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md):
+  NgohCH APPROVED on 14 October 2026; [verified decision](https://github.com/NgohCH/cadence/pull/12#issuecomment-6167888761)
+  authorises enactment; proposal commit/blob/hash unchanged.
 - [Dependency acceptance evidence checklist](docs/governance/CADENCE_V1_0_DEPENDENCY_ACCEPTANCE_CHECKLIST.md):
   completed legal/IP authority and separate sponsor packet decisions are
   still required. Final HELP institutional signing remains an independent
@@ -108,8 +111,13 @@ neither CAD-WP-001 nor CAD-WP-002 is marked ACCEPTED here.
 - [Reconciliation and salvage](docs/governance/CADENCE_V1_0_CAD_WP_002_VS005_RECONCILIATION.md).
 - [82-commit inventory](docs/governance/CADENCE_V1_0_CAD_WP_002_VS005_COMMIT_INVENTORY.json).
 - [M1 sequencing amendment](docs/governance/CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md):
-  **PROPOSED — NOT APPROVED OR APPLIED**. No protected gate or requirement
-  status changes merely because this reconciliation is merged.
+  historical source remains unchanged; sponsor approval is RECORDED.
+  [M1 v1.1](docs/milestones/M1_CONTROLLED_PILOT.md) replaces VS005/VS006/VS007
+  sequencing with frozen successors only on enactment PR merge. No protected
+  gate or requirement completion status is passed by approval or merge.
+  CAD-WP-049 remains synthetic pre-activation rehearsal; 051/052 retain support
+  and independent restore; 053 remains sponsor GO; 054 remains five working
+  days of real-user use. Real AI and separate release gates remain mandatory.
 - The restricted encrypted source checkpoint is recorded in the reconciliation.
   Operator GUI Test passed is reported evidence only; complete archive coverage
   and recovery remain **UNVERIFIED**. No further backup investigation is
@@ -119,7 +127,9 @@ neither CAD-WP-001 nor CAD-WP-002 is marked ACCEPTED here.
 - Main VS001–VS004 authority, history and module boundaries remain protected;
   no application code, migration, configuration or dependency is changed.
 
-Next engineering action, **after human PR disposition and formal CAD-WP-001/
+Next eligible preparation: assemble exact-source legal/IP and formal dependency
+acceptance evidence for human review, without dispatching dependent packets.
+Next engineering action, **after enactment merge and formal CAD-WP-001/
 CAD-WP-002 dependency acceptance**: CAD-WP-003 API/event/schema/interface
 catalogue in a fresh source-pinned worktree. CAD-WP-007 isolated baseline
 reproduction follows its own accepted dependency and controlled test authority.

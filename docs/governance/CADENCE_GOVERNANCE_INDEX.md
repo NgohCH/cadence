@@ -41,19 +41,23 @@ unchanged. Read the [CAD-WP-002 reconciliation](CADENCE_V1_0_CAD_WP_002_VS005_RE
 and [commit inventory](CADENCE_V1_0_CAD_WP_002_VS005_COMMIT_INVENTORY.json) for
 the retained VS005 work and selective successor routes.
 
-The [M1 sequence amendment](CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md) is
-**PROPOSED — NOT APPROVED OR APPLIED**. The Owner's decision to stop selecting
-VS005 does not close its requirements, accept CAD-WP-001/002, approve the
-amendment or activate the pilot. The Scope Baseline and existing M1 contract
-retain their authority pending explicit governance disposition.
+The unchanged [M1 sequence proposal](CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md)
+has **SPONSOR APPROVAL RECORDED**, with exact pins and decision evidence in the
+[M1 decision record](CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md).
+[M1 contract v1.1](../milestones/M1_CONTROLLED_PILOT.md) enacts the frozen packet
+successor sequence **only upon enactment PR merge**. Approval/merge neither
+closes VS005 requirements, accepts CAD-WP-001/002 nor activates the pilot.
+The Scope Baseline remains authoritative; the prior main M1 contract governs
+until merge.
 
 ## Dependency-clearance review documents
 
 - [Draft copyright and HELP academic licence](../legal/CADENCE_COPYRIGHT_AND_LICENCE.md).
-- [Exact-source M1 sponsor decision preparation](CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md).
+- [Exact-source M1 sponsor decision record](CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md).
 - [CAD-WP-001/002 acceptance evidence checklist](CADENCE_V1_0_DEPENDENCY_ACCEPTANCE_CHECKLIST.md).
 
-These documents prepare human review only. Legal/IP authority, institutional
-execution, sponsor amendment approval/enactment and formal packet acceptance
-are distinct. All remain unconfirmed/pending here; the 68 frozen packet
-definitions and the existing M1 milestone contract remain unchanged.
+Legal/IP authority, institutional execution, sponsor sequencing approval,
+enactment and formal packet acceptance remain distinct. Sponsor approval and
+enactment authority are recorded; enactment is effective only upon PR merge.
+Legal/IP, the HELP written licence and CAD-WP-001/002 formal acceptance remain
+unresolved. The 68 frozen packet definitions/dependencies remain unchanged.

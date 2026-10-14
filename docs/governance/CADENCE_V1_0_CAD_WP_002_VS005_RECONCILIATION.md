@@ -23,8 +23,9 @@ accepted dependencies, source-pinned authority and fresh acceptance evidence.
 The [Scope Baseline](CADENCE_PROJECT_SCOPE_BASELINE.md) remains authoritative.
 The [Traceability Register](CADENCE_REQUIREMENT_TRACEABILITY.md) remains the
 status ledger. The [M1 sequencing amendment](CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md)
-is **PROPOSED — NOT APPROVED OR APPLIED**; stopping VS005 does not activate its
-proposed successor milestone gates.
+has sponsor approval RECORDED in the [decision record](CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md).
+M1 v1.1 successor sequencing is effective only upon its enactment PR merge.
+Stopping VS005, approval and governance merge do not pass any activation gate.
 
 ## Pinned baseline
 
@@ -195,10 +196,12 @@ or removes the full original outcome.
 
 ## Acceptance and next action
 
-This PR prepares CAD-WP-002's inventory and salvage deliverables only.
-Formal acceptance remains pending CAD-WP-001's outstanding legal/IP and licence
-checkpoint, human review of this reconciliation, and required governance
-disposition of the proposed M1 sequence. Archive coverage/recovery uncertainty
+The original reconciliation prepared CAD-WP-002's inventory and salvage
+deliverables only. Formal acceptance remains pending CAD-WP-001's outstanding
+legal/IP checkpoint, human review of this reconciliation and effective M1
+governance enactment. Sponsor sequencing approval is now RECORDED; enactment
+takes effect only when its PR merges. The HELP written licence remains a
+separate unresolved live-deployment gate. Archive coverage/recovery uncertainty
 is retained; it is neither waived nor converted to PASS.
 
 Next: human review/merge disposition and dependency acceptance. Once

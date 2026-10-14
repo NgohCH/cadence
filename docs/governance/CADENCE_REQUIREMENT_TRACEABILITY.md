@@ -95,10 +95,12 @@ Draft existence or a legal-review request is not a completed legal/IP
 authority checkpoint. The final executed HELP licence remains a separate
 live-deployment gate; no rights or signature are asserted here.
 
-The [M1 sponsor decision preparation](CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md)
-pins the unchanged proposal at that exact merged source. No sponsor decision
-is recorded and no M1 amendment is enacted. The existing milestone contract
-remains governing.
+The [M1 sponsor decision record](CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md)
+records NgohCH's explicit APPROVED decision and enactment authority dated
+14 October 2026, linked to PR #12 comment 6167888761. The unchanged proposal
+remains pinned at that exact merged source. M1 contract revision 1.1 replaces
+VS005/VS006/VS007 execution with the frozen packet successors **only when this
+enactment PR merges**; the prior main contract governs until then.
 
 The [acceptance checklist](CADENCE_V1_0_DEPENDENCY_ACCEPTANCE_CHECKLIST.md)
 lists remaining evidence and separate human decisions. CAD-WP-001 and
@@ -123,8 +125,14 @@ This is inventory and successor-route evidence only. VS005 completion,
 acceptance, deployment, pilot operation and formal retirement are not claimed.
 CAD-WP-001's legal/IP/licence checkpoint remains outstanding; CAD-WP-001 and
 CAD-WP-002 are not ACCEPTED. Archive coverage/recovery remains UNVERIFIED.
-The [M1 amendment proposal](CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md)
-is not approved/applied. Main's existing milestone contract remains governing.
+The unchanged [M1 amendment proposal](CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md)
+has sponsor approval RECORDED in the [decision record](CADENCE_V1_0_M1_SEQUENCE_SPONSOR_DECISION.md).
+Its [M1 v1.1 successor sequence](../milestones/M1_CONTROLLED_PILOT.md) becomes
+effective only upon enactment PR merge. CAD-WP-049 synthetic rehearsal,
+051 support, 052 independent restore, 053 sponsor GO and 054 five-working-day
+real-user pilot preserve original M1 gates; 063/064/067 and all transitive
+prerequisites remain required. Real AI via 017–023/065/055 and separate 057/058
+release gates remain mandatory; no gate is passed by this documentation.
 
 | Affected obligation | Existing successor route | Status treatment |
 |---|---|---|
@@ -136,7 +144,7 @@ is not approved/applied. Main's existing milestone contract remains governing.
 | C06.2/C06.3/C07.1–C07.5 | Main foundation; CAD-WP-007/028/030/050/063/064 | Existing delivered outcomes remain regression-protected; no new closure. |
 | C08.1/C08.2/C08.4; INIT-AC-03 | Main foundation; CAD-WP-007/049/054 | Existing delivered outcomes protected; C08.3 remains PARTIAL/due M2. |
 | C14/C18/C19; INIT-AC-15/17; F11/F12 | CAD-WP-019/020/023/033/049/054/055 | Existing human authority/provenance protected; no parent-status advancement. |
-| C17.1–C17.5 | CAD-WP-017–023/065/055; proposed bounded M1 CAD-WP-049/054 | C17 remains PARTIAL/due M3; deterministic flow is not real-AI evidence or full Agent closure. |
+| C17.1–C17.5 | CAD-WP-017–023/065/055; sponsor-approved bounded M1 CAD-WP-049/054, effective upon enactment merge | C17 remains PARTIAL/due M3; deterministic flow is not real-AI evidence or full Agent closure. |
 
 Milestone assignments are unchanged. No original commitment is removed,
 incorporated by assertion or moved beyond M3. Parent total remains 44, child
