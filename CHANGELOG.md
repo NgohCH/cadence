@@ -6,6 +6,21 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### V1.0 — Sponsor-approved M1 sequencing enactment
+
+- Recorded NgohCH's explicit 14 October 2026 approval and enactment authority
+  at PR #12 comment 6167888761, preserving the exact proposal source/blob/hash.
+- Prepared M1 contract v1.1 to replace VS005/VS006/VS007 execution dependencies
+  with the existing frozen packet successors, effective only on this PR's merge.
+- Preserved synthetic CAD-WP-049 rehearsal, 051 support, 052 independent
+  restore, 053 sponsor GO, 054 five-working-day real-user pilot, real AI before
+  V1.0 release, original M1 activation/closure and every M3 commitment.
+- Updated decision, traceability, navigation, dependency checklist and HANDOFF;
+  formal CAD-WP-001/002 acceptance, legal/IP and HELP signing remain unresolved.
+- No frozen packet/dependency, requirement completion status, release date,
+  application, migration, hosting, credential or legacy worktree change.
+
+
 ### CAD-WP-001 / PR #12 — Proprietary metadata correction
 
 - Applied the Project Owner's explicit proprietary policy: root/API manifests

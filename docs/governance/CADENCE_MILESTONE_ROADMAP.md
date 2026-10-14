@@ -69,7 +69,9 @@ intervention in normal workflow is not.
 ### Entry conditions
 
 - M0 governance closure remains valid.
-- The M1 contract and approved slice boundaries are accepted.
+- The M1 contract and approved execution boundaries govern work. Its frozen
+  V1.0 successor sequence is sponsor-approved and becomes effective only upon
+  enactment PR merge; each packet still requires its own accepted dependencies.
 - VS-001 and VS-002 remain closed with no concrete frozen-contract violation.
 - Pilot environment, hosting, backup, and bootstrap decisions are understood
   well enough to design M1 work.
