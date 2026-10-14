@@ -57,11 +57,16 @@ main integration baseline.
 DH-001 — Progressive Project Formalisation and Complex Governance is recorded
 as DEFERRED / NOT BASELINED and creates no VS005 scope change.
 
-VS005 — Pilot Runtime and Worker Scheduling is the next planned M1 vertical
-slice and has not started.
+The Cadence V1.0 scope freeze v1.8.0 is merged at
+`5429fac82fcf80d764ff2ea0f9d9f78da65fb82f`. The Project Owner has selected
+the existing 68-packet V1.0 programme as the successor execution pathway.
+VS005 is no longer selected for active execution. Its nine existing worktrees
+are retained, with local implementation/evidence not merged or accepted.
 
-VS006 — Pilot Operations, Recovery and Support remains planned after VS005
-under the single-stream rule.
+VS005 is not represented as completed, accepted, deployed or successfully
+piloted. Historical M1 runtime, recovery/support and Agent obligations remain
+governed. Their proposed successor sequencing is not yet approved;
+the existing M1 milestone contract remains in force.
 
 The Pilot Activation Gate has not yet been satisfied and no real-user M1 pilot
 activation is claimed at this checkpoint.
@@ -80,30 +85,41 @@ v0.1 - Development
 
 `main`
 
-The implementation baseline is the merged `main` branch. No VS005
-implementation branch exists at this checkpoint.
+The implementation baseline is frozen `main` at
+`5429fac82fcf80d764ff2ea0f9d9f78da65fb82f`. The remote VS005 branch and
+unpublished auxiliary branches exist as retained historical work; they are not
+part of the accepted main implementation baseline.
 
 ## Current Delivery State
 
-Next Vertical Slice:
+Active governance checkpoint: **CAD-WP-002 inventory and salvage reconciliation;
+formal acceptance pending.** The frozen V1.0 scope is merged. CAD-WP-001's
+legal/IP authority and written HELP academic licence checkpoint is outstanding;
+neither CAD-WP-001 nor CAD-WP-002 is marked ACCEPTED here.
 
-`VS005 - Pilot Runtime and Worker Scheduling`
+- [Reconciliation and salvage](docs/governance/CADENCE_V1_0_CAD_WP_002_VS005_RECONCILIATION.md).
+- [82-commit inventory](docs/governance/CADENCE_V1_0_CAD_WP_002_VS005_COMMIT_INVENTORY.json).
+- [M1 sequencing amendment](docs/governance/CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md):
+  **PROPOSED — NOT APPROVED OR APPLIED**. No protected gate or requirement
+  status changes merely because this reconciliation is merged.
+- The restricted encrypted source checkpoint is recorded in the reconciliation.
+  Operator GUI Test passed is reported evidence only; complete archive coverage
+  and recovery remain **UNVERIFIED**. No further backup investigation is
+  authorised under CAD-WP-002, and the original worktrees must remain.
+- M1 remains a governed active milestone. Pilot Activation, real-user pilot
+  and V1.0 release are not authorised or evidenced by this PR.
+- Main VS001–VS004 authority, history and module boundaries remain protected;
+  no application code, migration, configuration or dependency is changed.
 
-Status:
+Next engineering action, **after human PR disposition and formal CAD-WP-001/
+CAD-WP-002 dependency acceptance**: CAD-WP-003 API/event/schema/interface
+catalogue in a fresh source-pinned worktree. CAD-WP-007 isolated baseline
+reproduction follows its own accepted dependency and controlled test authority.
+Dispatch by the unchanged frozen dependencies, one coding packet initially.
+Do not resume VS005, enable unattended execution or bypass approvals.
 
-**NOT STARTED — VS005 is the next planned M1 delivery slice. Contract and
-governance reconciliation must be completed before implementation begins.**
-
-Current checkpoint:
-
-**VS003 and VS004 are closed and merged. DH-001 is recorded as deferred and
-not baselined. The repository is at the post-VS004 M1 handoff checkpoint,
-before VS005 design/contract work begins.**
-
-- M1 Controlled Pilot remains active.
-- Pilot Activation has not occurred.
-- VS006 remains planned after VS005.
-- No baseline requirement is changed by this handoff update.
+Historical implementation sections below retain their provenance. They do not
+override this checkpoint or authorise old VS001/VS002/VS005 instructions.
 
 ## VS004 Closure Record
 
@@ -5701,7 +5717,7 @@ When adding or changing functionality:
 
 ---
 
-# Immediate Next Engineering Step
+# Historical VS001-10H Next-Step Record
 
 VS001-10H My Tasks and Audit browser integration and live acceptance verification are complete.
 
@@ -7577,7 +7593,8 @@ A new engineer should be able to determine:
 
 by reading the repository documentation and inspecting the code.
 
-The immediate continuation point is:
+The historical VS002 continuation point below is retained for provenance;
+current execution follows the Current Delivery State above:
 
 ```text
 VS-002 CLOSED

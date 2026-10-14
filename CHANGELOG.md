@@ -6,6 +6,20 @@ Cadence was conceptualized and prepared by Ngoh Chee Hung.
 
 ## Unreleased
 
+### CAD-WP-002 — V1.0 execution-path reconciliation
+
+- Recorded the merged v1.8.0 scope freeze, retained nine-worktree inventory,
+  exact 82 unpublished commits and selective salvage routes within the
+  existing 68 packets; VS005 is no longer selected for active execution.
+- Updated current HANDOFF and traceability navigation without claiming VS005
+  completion/acceptance/deployment/pilot or changing baseline status/milestones.
+- Prepared an exact sponsor-review proposal for the M1 successor sequence;
+  it is not approved/applied and all protected gates remain mandatory.
+- Retained the archive coverage/recovery limitation and outstanding
+  CAD-WP-001 legal/IP/licence checkpoint. Formal CAD-WP-002 acceptance remains
+  pending. No application, migration, dependency or frozen-contract change.
+
+
 ### M1 Controlled Pilot / VS003 implementation and closure reconciliation
 
 - Implemented the durable Discussion read and return path through the owning

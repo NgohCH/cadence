@@ -81,6 +81,43 @@ closure evidence includes the actual API, browser, authorization, isolation,
 and two-user runtime evidence recorded below and in the VS003 contract. Original
 commitments moved beyond M3: **0**.
 
+## CAD-WP-002 execution-path reconciliation — acceptance pending
+
+The V1.0 scope freeze v1.8.0 is merged at
+`5429fac82fcf80d764ff2ea0f9d9f78da65fb82f`. The Project Owner has selected
+its existing 68 packets instead of VS005 for active execution.
+[CAD-WP-002 reconciliation](CADENCE_V1_0_CAD_WP_002_VS005_RECONCILIATION.md)
+records the nine retained worktrees, 82 unpublished commits, working-state
+inventory and KEEP/EXTRACT/REPLACE/EXCLUDE candidates.
+
+This is inventory and successor-route evidence only. VS005 completion,
+acceptance, deployment, pilot operation and formal retirement are not claimed.
+CAD-WP-001's legal/IP/licence checkpoint remains outstanding; CAD-WP-001 and
+CAD-WP-002 are not ACCEPTED. Archive coverage/recovery remains UNVERIFIED.
+The [M1 amendment proposal](CADENCE_V1_0_M1_SEQUENCE_AMENDMENT_PROPOSAL.md)
+is not approved/applied. Main's existing milestone contract remains governing.
+
+| Affected obligation | Existing successor route | Status treatment |
+|---|---|---|
+| F13.1–F13.4 | CAD-WP-012/063/064/067 | No change; environment, secret, authority and institutional separation evidence required. |
+| F17.1–F17.4 | CAD-WP-007–016/051/067/057/058 | No change; hosting, promotion/rollback and ownership outcomes remain due under M1/M3. |
+| F10.3/F14.3/F18.3 | CAD-WP-010/011/014 | No change; independent jobs, retry and hosted fault/recovery evidence required. |
+| F16.3/F18.1/F18.2/F18.4 | CAD-WP-051/052/067, then CAD-WP-053 | No change; source archive is not application-data restore proof; full M3 recovery scope remains. |
+| F19.1–F19.5 | CAD-WP-003/007/016/017–023/048/056–058 and governed ADR/release evidence | No change; truthful source, schema, AI, version and decision provenance required. |
+| C06.2/C06.3/C07.1–C07.5 | Main foundation; CAD-WP-007/028/030/050/063/064 | Existing delivered outcomes remain regression-protected; no new closure. |
+| C08.1/C08.2/C08.4; INIT-AC-03 | Main foundation; CAD-WP-007/049/054 | Existing delivered outcomes protected; C08.3 remains PARTIAL/due M2. |
+| C14/C18/C19; INIT-AC-15/17; F11/F12 | CAD-WP-019/020/023/033/049/054/055 | Existing human authority/provenance protected; no parent-status advancement. |
+| C17.1–C17.5 | CAD-WP-017–023/065/055; proposed bounded M1 CAD-WP-049/054 | C17 remains PARTIAL/due M3; deterministic flow is not real-AI evidence or full Agent closure. |
+
+Milestone assignments are unchanged. No original commitment is removed,
+incorporated by assertion or moved beyond M3. Parent total remains 44, child
+records 178 and initiation acceptance criteria 20. F01–F19 remain governing.
+No numbered packet is added and no implementation is changed.
+
+Baseline status transitions: **None**. Original commitments removed: **0**.
+Original commitments moved beyond M3: **0**. Unmapped implementation changes:
+**0**. This record is not vertical-slice closure or formal packet acceptance.
+
 ## Product parent register
 
 | Requirement ID | Parent ID | Original commitment | Source | Intended outcome | Type | Current status | Milestone due | Vertical slice(s) | Implementation evidence | Test/evidence | Remaining gap | Closure evidence |
