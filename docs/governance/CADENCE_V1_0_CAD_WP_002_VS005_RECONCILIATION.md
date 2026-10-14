@@ -147,6 +147,30 @@ No classification closes a baseline requirement.
 | EXCLUDE | Custom PA-01/reproof controllers, sealed loaders, authority journals, native fixtures and workstation machinery | No implementation destination. Preserve locally; V1.0 explicitly excludes unrelated VS005 deployment-authority machinery. CAD-WP-068 is not authority to import it. |
 | EXCLUDE | Raw receipts/logs, unfinished proposals, reviews, local governance edits and historical backup/readback evidence | Local provenance only. Sanitised disposition is recorded by CAD-WP-002; none proves implementation or restore acceptance. |
 
+### Explicit legacy acceptance safeguards
+
+The frozen VS005 contract's acceptance items 7, 8 and 14–16 remain protected
+intended outcomes. The generic routes above do not waive these specific
+conditions. Their successor evidence is **OUTSTANDING**, not implied by the
+inventory, old reviews, green CI or an isolated local database.
+
+| Legacy acceptance outcome | Existing owner packets | Required successor evidence |
+|---|---|---|
+| Missed-schedule recovery and backlog behaviour | CAD-WP-010/011/014 | A missed hosted invocation leaves durable pending work; subsequent scheduled cycles recover it without starvation, loss or duplicate materialisation. |
+| Membership-expiry overlap/concurrency | CAD-WP-007/010/014 | Overlapping cycles preserve expiry idempotency, access denial, protected roles and truthful membership/audit history. |
+| Material configuration drift detection | CAD-WP-012/013/015/016 | Independently detect and fail closed on material target/config/release drift during deployment, verification and rollback; a matching self-reported fingerprint alone is insufficient. |
+| Worker, request and log resource boundaries | CAD-WP-009/010/011/014 | Request/body, execution/dependency waits, retry/backlog and safe log output remain bounded, with truthful deadline/partial/unknown results and no sensitive-output leakage. |
+| Clean-room hosted deployment independent of personal credentials | CAD-WP-007/008/013/014/051/067 | An authorised independent operator reconstructs the selected hosted web/API/scheduled-worker route from pinned sources and documented configuration without the original developer's credentials, laptop paths or infrastructure access. |
+
+These are original outcome safeguards within the named packets, not new packet
+definitions or acceptance waivers. If an outcome cannot be evidenced within
+the frozen owner packet, record the gap as BLOCKED and seek the required
+sponsor disposition; do not invent a packet or silently discard the outcome.
+The old fixed Cloudflare target is a historical implementation commitment.
+Any successor primary/fallback selection requires CAD-WP-008's sponsor
+decision and proof of the portable intended outcome; this reconciliation
+neither selects a provider nor asserts equivalence or closes VS005.
+
 ## Protected requirements and successor evidence routes
 
 All affected foundational boundaries F01–F10 and F12–F19 remain governing;
